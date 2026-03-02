@@ -3,7 +3,15 @@ project(embr)
 
 set(CMAKE_CXX_STANDARD 23)
 
-add_executable(embr main.cpp)
+# transport lib
+add_library(embr_lib
+        src/transport/tcp_server.cpp
+        src/transport/tcp_client.cpp
+)
+target_include_directories(embr_lib PUBLIC src)
+
+add_executable(embr src/main.cpp)
+target_link_libraries(embr embr_lib)
 
 include(FetchContent)
 FetchContent_Declare(

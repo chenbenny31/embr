@@ -1,6 +1,6 @@
 # embr
 
-A high-performance peer-to-peer file transfer tool built with C++20, QUIC, and zero-copy I/O.
+A high-performance peer-to-peer file transfer tool built with C++23, QUIC, and zero-copy I/O.
 
 *From Old English ǣmyrġe, "smoldering ash." A shared file is like an ember: still glowing, passed from hand to hand, never fully extinguished.*
 
@@ -26,7 +26,9 @@ embr pull Kf3xQ9mZ 192.168.1.50
 
 ## How It Works
 
-Files are split into 16MB chunks transferred in parallel over multiplexed QUIC streams. A lightweight tracker server handles peer discovery via capability tokens. Integrity is verified per-chunk using SHA256.
+Files are split into 16MB chunks transferred in parallel over multiplexed QUIC streams. Integrity is verified per-chunk using SHA256.
+
+**Tracker mode** — sender registers with a lightweight tracker server, receiver resolves the token to discover the peer:
 
 ```
 Sender                        Tracker                      Receiver
@@ -39,18 +41,31 @@ Sender                        Tracker                      Receiver
   │<════════════ QUIC connect + parallel chunk transfer ═══════>│
 ```
 
+**Direct mode** — receiver connects straight to the sender's IP, no tracker needed:
+
+```
+Sender                                                     Receiver
+  │                                                            │
+  │  embr push file.tar.gz                                     │
+  │  → Token: Kf3xQ9mZ                                        │
+  │  → Listening on :9876                                      │
+  │                              embr pull Kf3xQ9mZ 192.168.1.50
+  │                                                            │
+  │<════════════ QUIC connect + parallel chunk transfer ═══════>│
+```
+
 ## Build
 
 ```bash
-cmake -B build -DCMAKE_BUILD_TYPE=Release
+cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build
 ```
 
 ### Dependencies
 
-- C++20 compiler (GCC 12+ / Clang 15+)
-- CMake 3.20+
+- C++23 compiler (GCC 13+ / Clang 17+)
+- CMake 4.1+
 - OpenSSL
 - GoogleTest (fetched via CMake FetchContent)
 
@@ -62,10 +77,10 @@ embr/
 │   ├── main.cpp
 │   ├── core/           # chunk_manager, buffer_pool, hash
 │   ├── transport/
-│   │   ├── transport.hpp        # abstract interface
-│   │   ├── tcp_transport.cpp    # v0.1-v0.2
-│   │   ├── msquic_transport.cpp # v0.3
-│   │   └── quiche_transport.cpp # v0.8+
+│   │   ├── tcp_server.hpp/.cpp   # TCP server with pluggable handler
+│   │   ├── tcp_client.hpp/.cpp   # TCP client
+│   │   ├── transport.hpp         # abstract interface (planned)
+│   │   └── quic_transport.cpp    # QUIC via msquic (planned)
 │   ├── io/             # io_uring_ctx, mmap_file
 │   ├── tracker/        # tracker_client, token
 │   └── util/           # metrics, logger
@@ -74,7 +89,7 @@ embr/
 └── benchmarks/
 ```
 
-Business logic talks to the `Transport` interface, never to raw sockets. Swapping TCP → QUIC → quiche is a one-file change.
+Business logic talks to the `Transport` interface, never to raw sockets. Swapping TCP → QUIC is a one-file change.
 
 ## Roadmap
 
@@ -90,10 +105,11 @@ Business logic talks to the `Transport` interface, never to raw sockets. Swappin
 
 ## Current Status
 
-**v0.1 — TCP prototype in progress.**
+**v0.1 — TCP echo prototype**
 
-- [x] Project skeleton, CMake, GoogleTest
-- [ ] TCP server/client
+- [x] Project skeleton, CMake + Ninja, GoogleTest
+- [x] TCP server/client with pluggable handler abstraction
+- [x] Echo round-trip test
 - [ ] Wire protocol (`[version:u8][type:u8][len:u32][payload]`)
 - [ ] Single file transfer
 - [ ] Chunked transfer with SHA256 verification
@@ -102,6 +118,4 @@ Business logic talks to the `Transport` interface, never to raw sockets. Swappin
 
 ## License
 
-[Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/)
-
-Modify embr's files → your changes must be open source. Use embr in your own project → your new files can be any license.
+[Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/) — Modify embr's files → your changes must be open source. Use embr in your own project → your new files can be any license.
