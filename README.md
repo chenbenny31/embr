@@ -48,7 +48,7 @@ Sender                                                     Receiver
   │                                                            │
   │  embr push file.tar.gz                                     │
   │  → Token: Kf3xQ9mZ                                        │
-  │  → Listening on :9876                                      │
+  │  → Listening on :9000                                      │
   │                              embr pull Kf3xQ9mZ 192.168.1.50
   │                                                            │
   │<════════════ QUIC connect + parallel chunk transfer ═══════>│
@@ -64,8 +64,8 @@ ctest --test-dir build
 
 ### Dependencies
 
-- C++23 compiler (GCC 13+ / Clang 17+)
-- CMake 4.1+
+- C++20 compiler (GCC 12+ / Clang 15+)
+- CMake 3.25
 - OpenSSL
 - GoogleTest (fetched via CMake FetchContent)
 
