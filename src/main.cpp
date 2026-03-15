@@ -1,47 +1,65 @@
+#include <iostream>
+#include <string>
+#include <cstdint>
+#include <core/pull.hpp>
+#include <core/push.hpp>
 #include "transport/tcp_server.hpp"
 #include "transport/tcp_client.hpp"
-#include <iostream>
-#include <cstring>
 
-constexpr uint16_t PORT = 9000;
-constexpr size_t BUF_SIZE = 1024;
+static constexpr uint16_t DEFAULT_PORT = 9000;
 
-void run_server() {
-    TcpServer server(PORT);
-    server.start();
-}
-
-void run_client() {
-    TcpClient client("127.0.0.1", PORT);
-    client.connect();
-
-    const char* msg = "hello embr";
-    client.send(msg, strlen(msg));
-
-    char buf[BUF_SIZE]{};
-    ssize_t n = client.recv(buf, sizeof(buf));
-    if (n > 0) {
-        std::cout << "[client] echoed: " << std::string(buf, n) << "\n";
-    }
-
-    client.close();
+static void usage() {
+    std::cerr << "Usage:\n"
+              << " embr push <file> [--port PORT]\n"
+              << " embr pull <ip> [--port PORT] [--out PATH]\n";
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 2) {
-        std::cerr << "Usage: embr <server|client>\n";
-        return 1;
+    if (argc < 3) {
+        usage(); return 1;
     }
 
-    std::string mode = argv[1];
-    if (mode == "server") {
-        run_server();
-    } else if (mode == "client") {
-        run_client();
-    } else {
-        std::cerr << "unknown server mode: " << mode << "\n";
+    std::string cmd = argv[1];
+    std::string arg = argv[2];
+    uint16_t port = DEFAULT_PORT;
+    std::string out_path;
+
+    // parse optional flags
+    for (int i = 3; i < argc; i++) {
+        std::string flag = argv[i];
+        if (flag == "--port" && i + 1 < argc) {
+            port = static_cast<uint16_t>(std::stoi(argv[++i]));
+        } else if (flag == "--out" && i + 1 < argc) {
+            out_path = argv[++i];
+        } else {
+            std::cerr << "\nUnknown flag: " << flag << "\n";
+            usage();
+            return 1;
+        }
+    }
+
+    try {
+        if (cmd == "push") {
+            // transport setup to TCP
+            SocketFd listen_fd = tcp_listen(port);
+            std::cout << "[main] listening on port " << port << "\n";
+            auto conn = tcp_accept(listen_fd.get());
+            std::cout << "[main] connection established\n";
+            run_push(*conn, arg);
+        } else if (cmd == "pull") {
+            // transport set to TCP
+            auto conn = tcp_connect(arg, port);
+            std::cout << "[main] connected to " << arg << ":" << port << "\n";
+            run_pull(*conn, out_path);
+        } else {
+            std::cerr << "\nUnknown command: " << cmd << "\n";
+            usage();
+            return 1;
+        }
+    } catch (const std::exception& ex) {
+        std::cerr << "[error]" << ex.what() << "\n";
+        return 1;
     }
 
     return 0;
 }
-

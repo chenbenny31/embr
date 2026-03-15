@@ -1,8 +1,7 @@
-enable_testing()
-find_package(GTest REQUIRED)
-add_executable(embr_tests
-        dummy_test.cpp
-        echo_test.cpp
+add_executable(test
+        tests/test_protocol.cpp
 )
-target_link_libraries(embr_tests GTest::gtest_main embr_lib)
-add_test(NAME embr_tests COMMAND embr_tests)
+target_link_libraries(test PRIVATE core GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(test)

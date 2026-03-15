@@ -1,25 +1,44 @@
 cmake_minimum_required(VERSION 3.25)
-project(embr)
+project(embr LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
-# transport lib
-add_library(embr_lib
+# Transport lib
+add_library(transport
         src/transport/tcp_server.cpp
         src/transport/tcp_client.cpp
+        src/transport/tcp_transport.cpp
 )
-target_include_directories(embr_lib PUBLIC src)
+target_include_directories(transport PUBLIC src)
 
+# Core lib
+add_library(core
+        src/core/protocol.cpp
+        src/core/push.cpp
+        src/core/pull.cpp
+)
+target_link_libraries(core PUBLIC transport)
+target_include_directories(core PUBLIC src)
+
+# Main bin
 add_executable(embr src/main.cpp)
-target_link_libraries(embr embr_lib)
+target_link_libraries(embr PRIVATE core)
 
+# Test
 include(FetchContent)
 FetchContent_Declare(
         googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.17.0
+        GIT_TAG v1.14.0
 )
 FetchContent_MakeAvailable(googletest)
 
-enable_testing()
-add_subdirectory(tests)
+add_executable(test
+        tests/test_protocol.cpp
+)
+target_link_libraries(test PRIVATE core GTest::gtest_main)
+
+include(GoogleTest)
+gtest_discover_tests(test)

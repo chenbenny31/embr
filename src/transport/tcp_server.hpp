@@ -3,25 +3,12 @@
 //
 
 #pragma once
+
+#include "transport.hpp"
+#include "../util/socket_fd.hpp"
+#include <memory>
 #include <cstdint>
-#include <functional>
 
-class TcpServer {
-public:
-    using Handler = std::function<void(int client_fd)>;
-
-    explicit TcpServer(uint16_t port);
-    ~TcpServer();
-
-    void set_handler(Handler handler);
-    void start();
-    void stop();
-
-    uint16_t port() const { return port_; }
-
-private:
-    int server_fd_ = -1;
-    uint16_t port_;
-    bool running_ = false;
-    Handler handler_;
-};
+// Factory: passive side
+SocketFd tcp_listen(uint16_t port);
+std::unique_ptr<Transport> tcp_accept(int listen_fd);
