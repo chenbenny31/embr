@@ -1,5 +1,5 @@
 ### `README.md`
-```markdown
+
 # embr
 
 A high-performance peer-to-peer file transfer tool built with C++20, QUIC, and zero-copy I/O.
@@ -132,7 +132,6 @@ Message types:
 ## License
 
 [Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/) — Modify embr's files → your changes must be open source. Use embr in your own project → your new files can be any license.
-```
 
 ---
 
