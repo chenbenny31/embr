@@ -26,6 +26,11 @@ namespace {
         pos += str.size();
     }
 
+    void put_bytes(Buffer& buf, size_t& pos, const uint8_t* data, size_t len) {
+        std::memcpy(buf.get() + pos, data, len);
+        pos += len;
+    }
+
     struct Reader {
         const uint8_t* data;
         size_t pos;
@@ -56,6 +61,15 @@ namespace {
             std::string str(reinterpret_cast<const char*>(data + pos), str_len);
             pos += str_len;
             return str;
+        }
+
+        template<size_t N>
+        std::array<uint8_t, N> get_bytes() {
+            ensure(N);
+            std::array<uint8_t, N> out{};
+            std::memcpy(out.data(), data + pos, N);
+            pos += N;
+            return out;
         }
     };
 
@@ -106,13 +120,16 @@ Message recv_msg(Transport& t) {
     return msg;
 }
 
-Message make_filemeta(FileMeta meta) {
-    // wire layout: : [file_size:u64 BE][filename_len:u32 BE][filename:utf8]
-    size_t payload_size = FILE_SIZE_BYTES + LEN_PREFIX_BYTES + meta.filename.size();
+Message make_filemeta(FileMeta file_meta) {
+    // wire layout: [file_size:u64 BE][filename_len:u32 BE][filename:utf8]
+    size_t payload_size = FILE_SIZE_BYTES + LEN_PREFIX_BYTES + file_meta.filename.size()
+                        + sizeof(uint32_t) + sizeof(uint32_t); // chunk_size + chunk_count
     Buffer buf(payload_size);
     size_t pos = 0;
-    put_u64(buf, pos, meta.file_size);
-    put_str(buf, pos, meta.filename);
+    put_u64(buf, pos, file_meta.file_size);
+    put_str(buf, pos, file_meta.filename);
+    put_u32(buf, pos, file_meta.chunk_size);
+    put_u32(buf, pos, file_meta.chunk_count);
     return Message{MsgType::FILE_META, std::move(buf)};
 }
 
@@ -121,22 +138,70 @@ Message make_complete() {
 }
 
 Message make_error(std::string reason) {
-    // ERROR payload: raw UFT-8 bytes, length implied by payload_len in header, no length prefix
+    // ERROR payload: raw UTFF-8 bytes, length implied by payload_len in header, no length prefix
     Buffer buf(reason.size());
     std::memcpy(buf.get(), reason.data(), reason.size());
     return Message{MsgType::ERROR, std::move(buf)};
 }
 
+Message make_handshake(HandshakePayload p) {
+    size_t payload_size = LEN_PREFIX_BYTES + p.token.size();
+    Buffer buf(payload_size);
+    size_t pos = 0;
+    put_str(buf, pos, p.token);
+    return Message{MsgType::HANDSHAKE, std::move(buf)};
+}
+
+Message make_chunk_req(ChunkReq req) {
+    Buffer buf(sizeof(uint32_t));
+    size_t pos = 0;
+    put_u32(buf, pos, req.chunk_index);
+    return Message{MsgType::CHUNK_REQ, std::move(buf)};
+}
+
+Message make_chunk_hdr(ChunkHdr chunk_hdr) {
+    // header only: chunk_index + chunk_hash
+    size_t payload_size = sizeof(uint32_t) + sizeof(chunk_hdr.chunk_hash);
+    Buffer buf(payload_size);
+    size_t pos = 0;
+    put_u32(buf, pos, chunk_hdr.chunk_index);
+    put_bytes(buf, pos, chunk_hdr.chunk_hash.data(), sizeof(chunk_hdr.chunk_hash));
+    return Message{MsgType::CHUNK_HDR, std::move(buf)};
+}
+
 FileMeta parse_filemeta(const Message& msg) {
     if (msg.type != MsgType::FILE_META) { throw std::runtime_error("parse_filemeta: wrong type"); }
     Reader reader{msg.payload.get(), 0, msg.payload.size};
-    FileMeta meta;
-    meta.file_size = reader.get_u64();
-    meta.filename = reader.get_str();
-    return meta;
+    FileMeta file_meta;
+    file_meta.file_size = reader.get_u64();
+    file_meta.filename = reader.get_str();
+    file_meta.chunk_size = reader.get_u32();
+    file_meta.chunk_count = reader.get_u32();
+    return file_meta;
 }
 
 std::string parse_error(const Message& msg) {
     if (msg.type != MsgType::ERROR) { throw std::runtime_error("parse_error: wrong type"); }
     return std::string(reinterpret_cast<const char*>(msg.payload.get()), msg.payload.size);
+}
+
+HandshakePayload parse_handshake(const Message& msg) {
+    if (msg.type != MsgType::HANDSHAKE) { throw std::runtime_error("parse_handshake: wrong type"); }
+    Reader r{msg.payload.get(), 0, msg.payload.size};
+    return HandshakePayload{r.get_str()};
+}
+
+ChunkReq parse_chunk_req(const Message& msg) {
+    if (msg.type != MsgType::CHUNK_REQ) { throw std::runtime_error("parse_chunk_req: wrong type"); }
+    Reader r{msg.payload.get(), 0, msg.payload.size};
+    return ChunkReq{r.get_u32()};
+}
+
+ChunkHdr parse_chunk_hdr(const Message& msg) {
+    if (msg.type != MsgType::CHUNK_HDR) { throw std::runtime_error("parse_chunk_hdr: wrong type"); }
+    Reader r{msg.payload.get(), 0, msg.payload.size};
+    ChunkHdr chunk_hdr;
+    chunk_hdr.chunk_index = r.get_u32();
+    chunk_hdr.chunk_hash = r.get_bytes<sizeof(chunk_hdr.chunk_hash)>();
+    return chunk_hdr;
 }

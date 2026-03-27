@@ -4,17 +4,21 @@
 
 #pragma once
 
-#include <cstdint>
 #include <cstring>
 #include <cerrno>
 #include <functional>
 #include <memory>
-#include <vector>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <arpa/inet.h>
+#include <array>
+#include <cstdint>
+#include <cstddef>
+#include <cstring>
+#include "hash.hpp"
 #include "../transport/transport.hpp"
+#include "../util/constants.hpp"
 
 
 inline constexpr uint8_t PROTOCOL_VERSION = 0x01;
@@ -23,15 +27,12 @@ inline constexpr size_t FILE_SIZE_BYTES = sizeof(uint64_t); // 8 - [file_size:u6
 inline constexpr size_t LEN_PREFIX_BYTES = sizeof(uint32_t); // 4 - [filename_len:u32 BE]
 inline constexpr uint32_t MAX_PAYLOAD_SIZE = 64 * 1024 * 1024; // 64MB, guard against malformed headers
 
-inline constexpr size_t READ_BUF_SIZE = 1024 * 1024; // 1MB - v0.1 I/O buffer
-inline constexpr size_t CHUNK_SIZE = 16 * 1024 * 1024; // 16MB - v0.2 chunk boundary
-
 enum class MsgType : uint8_t {
     INVALID = 0x00, // sentinel for zero-value init
     HANDSHAKE = 0x01, // v0.2: HANDSHAKE introduced for tracker + token resolution
     FILE_META = 0x02, // v0.1: connections start directly with FILE_META
     CHUNK_REQ = 0x03,
-    CHUNK_DATA = 0x04,
+    CHUNK_HDR = 0x04,
     RESUME = 0x05,
     COMPLETE = 0x06,
     ERROR = 0x07, // Error: sender emits reason string, both sides close connection
@@ -39,9 +40,12 @@ enum class MsgType : uint8_t {
 };
 
 // Wire Format
-// all multi-bte fields are big-endian (network byte order)
+// all multi-byte fields are big-endian (network byte order)
 // Header: [version:u8][type:u8][payload_len:u32 BE]
 // FILE_META payload: [file_size:u64 BE][filename_len:u32 BE][filename:utf8]
+// HandshakePayload [token_len:u32 BE][token:utf8]
+// ChunkReq: [chunk_index:u32 BE]
+// ChunkHdr: [chunk_index:u32 BE][chunk_hash:32 bytes]
 // COMPLETE payload: empty
 // ERROR payload: [reason:utf8] (length = payload_len)
 struct Header {
@@ -52,7 +56,7 @@ struct Header {
 
 // Buffer
 // move-only, supports both owned and pool-handle paths
-// v0.1 heap: Buffer(n) - owned = make_unique<uint8_[]>(n), release = nullptr
+// v0.1 heap: Buffer(n) - owned = make_unique<uint8_t[]>(n), release = nullptr
 // v0.3 mmap: Buffer(ptr, n, [n](uint8_t* p){ munmap(p, n); }
 // v0.4 io_uring registered pool: Buffer(ptr, n, [&pool](uint8_t* p) { pool.release(p); })
 // std::function as type-erased release callback unifies three memory ownership models
@@ -105,7 +109,7 @@ struct Buffer {
 
 // Message
 // move only, control plane only
-// Data plane (v0.1): raw file bytes send via send_exact, bypassing Message
+// Data plane (v0.1): raw file bytes sent via send_exact, bypassing Message
 // v0.2+: raw file bytes send as Message, bypass removed
 struct Message {
     MsgType type{}; // zero-inited - 0x00 is INVALID MsgType
@@ -127,6 +131,21 @@ struct Message {
 struct FileMeta {
     std::string filename;
     uint64_t file_size{}; // bytes, big-endian on wire
+    uint32_t chunk_size{};
+    uint32_t chunk_count{};
+};
+
+struct HandshakePayload {
+    std::string token; // v0.2: empty, v0.3: real token
+};
+
+struct ChunkReq {
+    uint32_t chunk_index{};
+};
+
+struct ChunkHdr {
+    uint32_t chunk_index{};
+    std::array<uint8_t, 32> chunk_hash{};
 };
 
 // Exact I/O, inline, Transport& only
@@ -163,10 +182,16 @@ void send_msg(Transport& t, Message&& msg); // move only
 Message recv_msg(Transport& t);
 
 // Builders
-Message make_filemeta(FileMeta meta);
+Message make_filemeta(FileMeta file_meta);
 Message make_complete();
 Message make_error(std::string reason);
+Message make_handshake(HandshakePayload p);
+Message make_chunk_req(ChunkReq req);
+Message make_chunk_hdr(ChunkHdr chunk_hdr); // header only, raw bytes separate
 
 // Parsers
 FileMeta parse_filemeta(const Message& msg);
 std::string parse_error(const Message& msg);
+HandshakePayload parse_handshake(const Message& msg);
+ChunkReq parse_chunk_req(const Message& msg);
+ChunkHdr parse_chunk_hdr(const Message& msg);

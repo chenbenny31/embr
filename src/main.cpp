@@ -1,8 +1,8 @@
 #include <iostream>
 #include <string>
 #include <cstdint>
-#include <core/pull.hpp>
-#include <core/push.hpp>
+#include "core/pull.hpp"
+#include "core/push.hpp"
 #include "transport/tcp_server.hpp"
 #include "transport/tcp_client.hpp"
 
@@ -16,7 +16,8 @@ static void usage() {
 
 int main(int argc, char* argv[]) {
     if (argc < 3) {
-        usage(); return 1;
+        usage();
+        return 1;
     }
 
     std::string cmd = argv[1];
@@ -57,7 +58,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
     } catch (const std::exception& ex) {
-        std::cerr << "[error]" << ex.what() << "\n";
+        std::cerr << "[error] " << ex.what() << "\n";
         return 1;
     }
 

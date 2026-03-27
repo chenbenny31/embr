@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(OpenSSL REQUIRED)
+
 # Transport lib
 add_library(transport
         src/transport/tcp_server.cpp
@@ -18,8 +20,9 @@ add_library(core
         src/core/protocol.cpp
         src/core/push.cpp
         src/core/pull.cpp
+        src/core/hash.cpp
 )
-target_link_libraries(core PUBLIC transport)
+target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
 
 # Main bin
@@ -28,8 +31,7 @@ target_link_libraries(embr PRIVATE core)
 
 # Test
 include(FetchContent)
-FetchContent_Declare(
-        googletest
+FetchContent_Declare( googletest
         GIT_REPOSITORY https://github.com/google/googletest.git
         GIT_TAG v1.14.0
 )
@@ -39,6 +41,8 @@ add_executable(test
         tests/test_protocol.cpp
 )
 target_link_libraries(test PRIVATE core GTest::gtest_main)
+find_package(Threads REQUIRED)
+target_link_directories(test PRIVATE Threads::Threads)
 
 include(GoogleTest)
 gtest_discover_tests(test)
