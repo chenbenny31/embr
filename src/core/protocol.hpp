@@ -19,6 +19,7 @@
 #include "hash.hpp"
 #include "../transport/transport.hpp"
 #include "../util/constants.hpp"
+#include "../util/io.hpp"
 
 
 inline constexpr uint8_t PROTOCOL_VERSION = 0x01;
@@ -147,35 +148,6 @@ struct ChunkHdr {
     uint32_t chunk_index{};
     std::array<uint8_t, 32> chunk_hash{};
 };
-
-// Exact I/O, inline, Transport& only
-inline void send_exact(Transport& t, const uint8_t* buf, size_t len) {
-    size_t sent = 0;
-    while (sent < len) {
-        ssize_t n = t.send(buf + sent, len - sent);
-        if (n == 0) { throw std::runtime_error("send_exact: connection closed"); }
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
-            throw std::runtime_error(
-                std::string("send_exact: ") + std::strerror(errno));
-        }
-        sent += static_cast<size_t>(n);
-    }
-}
-
-inline void recv_exact(Transport& t, uint8_t* buf, size_t len) {
-    size_t got = 0;
-    while (got < len) {
-        ssize_t n = t.recv(buf + got, len - got);
-        if (n == 0) { throw std::runtime_error("recv_exact: connection closed"); }
-        if (n < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
-            throw std::runtime_error(
-                std::string("recv_exact: ") + std::strerror(errno));
-        }
-        got += static_cast<size_t>(n);
-    }
-}
 
 // Public APIs
 void send_msg(Transport& t, Message&& msg); // move only
