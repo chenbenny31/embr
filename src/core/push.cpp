@@ -2,18 +2,20 @@
 // Created by benny on 3/14/26.
 //
 
-#include "push.hpp"
-#include "protocol.hpp"
-#include "chunk_manager.hpp"
-#include "hash.hpp"
-#include "../util/constants.hpp"
-#include "../util/socket_fd.hpp"
 #include <fcntl.h>
 #include <unistd.h>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
 #include <algorithm>
+#include <cstring>
+#include <sys/mman.h>
+#include "push.hpp"
+#include "protocol.hpp"
+#include "chunk_manager.hpp"
+#include "hash.hpp"
+#include "../util/constants.hpp"
+#include "../util/socket_fd.hpp"
 
 void run_push(Transport& transport, const std::string& filepath) {
     // open file
@@ -29,9 +31,39 @@ void run_push(Transport& transport, const std::string& filepath) {
         throw std::runtime_error("run_push: file is empty: " + filepath);
     }
 
-    std::string filename = std::filesystem::path(filepath).filename().string();
+    std::string file_name = std::filesystem::path(filepath).filename().string();
     auto chunk_count = static_cast<uint32_t>(
         (file_size + CHUNK_SIZE - 1) / CHUNK_SIZE);
+
+    // pre-hash: mmap entire file, sha256 per chunk
+    std::cout << "[push] hashing " << file_name
+              << " (" << chunk_count << " chunks)...\n";
+
+    void* file_map = ::mmap(nullptr, file_size, PROT_READ, MAP_SHARED, fd.get(), 0);
+
+    if (file_map == MAP_FAILED) {
+        throw std::runtime_error(
+            std::string("run_push: mmap failed: ") + std::strerror(errno));
+    }
+
+    FileMeta file_meta{
+        .file_name = file_name,
+        .file_size = file_size,
+        .chunk_size = static_cast<uint32_t>(CHUNK_SIZE),
+        .chunk_count = chunk_count,
+    };
+    file_meta.chunk_hashes.resize(chunk_count);
+
+    for (uint32_t i = 0; i < chunk_count; ++i) {
+        uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
+        uint64_t remain = file_size - offset;
+        size_t chunk_len = static_cast<size_t>(
+            std::min(static_cast<uint64_t>(CHUNK_SIZE), remain));
+        file_meta.chunk_hashes[i] = sha256_buf(static_cast<uint8_t*>(file_map) + offset, chunk_len);
+        std::cout << "[push] hashing " << i + 1 << "/" << chunk_count << "\r" << std::flush;
+    }
+    ::munmap(file_map, file_size);
+    std::cout << "\n[push] hashing complete\n";
 
     // recv handshake
     Message hs = recv_msg(transport);
@@ -44,53 +76,28 @@ void run_push(Transport& transport, const std::string& filepath) {
               << handshake.token <<"'\n";
 
     // send FILE_META
-    send_msg(transport, make_filemeta(FileMeta{
-        .filename = filename,
-        .file_size = file_size,
-        .chunk_size = static_cast<uint32_t>(CHUNK_SIZE),
-        .chunk_count = chunk_count,
-    }));
-    std::cout << "[push] sent FILE_META - file=" << filename
+    send_msg(transport, make_filemeta(std::move(file_meta)));
+    std::cout << "[push] sent FILE_META - file=" << file_name
               << " size=" << file_size
               << " chunks=" << chunk_count << "\n";
 
-    // serve chunk requests
+    // stream chunks
     ChunkManager cm(chunk_count);
-    Buffer buf(CHUNK_SIZE);
 
-    while (!cm.all_done()) {
-        Message req = recv_msg(transport);
-        if (req.type != MsgType::CHUNK_REQ) {
-            throw std::runtime_error("run_push: expected CHUNK_REQ");
-        }
-        auto chunk_req = parse_chunk_req(req);
-        uint32_t idx = chunk_req.chunk_index;
-        uint64_t offset = static_cast<uint64_t>(idx) * CHUNK_SIZE;
+    for (uint32_t i = 0; i < chunk_count; ++i) {
+        uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
         uint64_t remain = file_size - offset;
-        auto chunk_len = static_cast<size_t>(
+        size_t chunk_len = static_cast<size_t>(
             std::min(static_cast<uint64_t>(CHUNK_SIZE), remain));
 
-        // pread: atomic, no modify file offset
-        ssize_t bytes_read = ::pread(fd.get(), buf.get(), chunk_len,
-            static_cast<off_t>(offset));
-        if (bytes_read != static_cast<ssize_t>(chunk_len)) {
-            throw std::runtime_error("run_push: pread failed at chunk: " +
-                                     std::to_string(idx) + " - " +
-                                     std::strerror(errno));
-        }
+        // send CHUNK_HDR
+        send_msg(transport, make_chunk_hdr(ChunkHdr{.chunk_index = i}));
 
-        auto chunk_hash = sha256_buf(buf.get(), chunk_len);
+        // send_file: sendfile() system call, 0 copy on TCP path
+        transport.send_file(fd.get(), offset, chunk_len);
 
-        // send CHUNK_DATA header (Message) + raw bytes (data plane)
-        send_msg(transport, make_chunk_hdr({
-            .chunk_index = idx,
-            .chunk_hash = chunk_hash,
-        }));
-        send_exact(transport, buf.get(), chunk_len);
-
-        cm.mark_done(idx);
-        std::cout << "[push] chunk " << idx + 1 << "/" << chunk_count << "\r"
-                  << std::flush;
+        cm.mark_done(i);
+        std::cout << "[push] chunk " << i + 1 << "/" << chunk_count << "\r" << std::flush;
     }
     std::cout << "\n[push] all chunks sent\n";
 
@@ -100,4 +107,4 @@ void run_push(Transport& transport, const std::string& filepath) {
         throw std::runtime_error("run_push: expected COMPLETE");
     }
     std::cout << "[push] transfer complete\n";
-}
+};

@@ -121,15 +121,27 @@ Message recv_msg(Transport& t) {
 }
 
 Message make_filemeta(FileMeta file_meta) {
+    if (file_meta.chunk_hashes.size() != file_meta.chunk_count) {
+        throw std::runtime_error("make_filemeta: wrong number of chunk hashes - " +
+            std::to_string(file_meta.chunk_hashes.size()) +
+            " != chunk_count " + std::to_string(file_meta.chunk_count));
+    }
+
     // wire layout: [file_size:u64 BE][filename_len:u32 BE][filename:utf8]
-    size_t payload_size = FILE_SIZE_BYTES + LEN_PREFIX_BYTES + file_meta.filename.size()
-                        + sizeof(uint32_t) + sizeof(uint32_t); // chunk_size + chunk_count
+    //              [chunk_size:u32][chunk_count:u32]
+    //              [chunk_hashes[0]:32B]...[chunk_hashes[N-1]:32B]
+    size_t payload_size = FILE_SIZE_BYTES + LEN_PREFIX_BYTES + file_meta.file_name.size()
+                        + sizeof(uint32_t) + sizeof(uint32_t)
+                        + file_meta.chunk_count * 32;
     Buffer buf(payload_size);
     size_t pos = 0;
     put_u64(buf, pos, file_meta.file_size);
-    put_str(buf, pos, file_meta.filename);
+    put_str(buf, pos, file_meta.file_name);
     put_u32(buf, pos, file_meta.chunk_size);
     put_u32(buf, pos, file_meta.chunk_count);
+    for (const auto& hash : file_meta.chunk_hashes) {
+        put_bytes(buf, pos, hash.data(), sizeof(hash));
+    }
     return Message{MsgType::FILE_META, std::move(buf)};
 }
 
@@ -138,7 +150,7 @@ Message make_complete() {
 }
 
 Message make_error(std::string reason) {
-    // ERROR payload: raw UTFF-8 bytes, length implied by payload_len in header, no length prefix
+    // ERROR payload: raw UTF-8 bytes, length implied by payload_len in header, no length prefix
     Buffer buf(reason.size());
     std::memcpy(buf.get(), reason.data(), reason.size());
     return Message{MsgType::ERROR, std::move(buf)};
@@ -161,11 +173,10 @@ Message make_chunk_req(ChunkReq req) {
 
 Message make_chunk_hdr(ChunkHdr chunk_hdr) {
     // header only: chunk_index + chunk_hash
-    size_t payload_size = sizeof(uint32_t) + sizeof(chunk_hdr.chunk_hash);
+    size_t payload_size = sizeof(uint32_t);
     Buffer buf(payload_size);
     size_t pos = 0;
     put_u32(buf, pos, chunk_hdr.chunk_index);
-    put_bytes(buf, pos, chunk_hdr.chunk_hash.data(), sizeof(chunk_hdr.chunk_hash));
     return Message{MsgType::CHUNK_HDR, std::move(buf)};
 }
 
@@ -174,9 +185,15 @@ FileMeta parse_filemeta(const Message& msg) {
     Reader reader{msg.payload.get(), 0, msg.payload.size};
     FileMeta file_meta;
     file_meta.file_size = reader.get_u64();
-    file_meta.filename = reader.get_str();
+    file_meta.file_name = reader.get_str();
     file_meta.chunk_size = reader.get_u32();
     file_meta.chunk_count = reader.get_u32();
+    // bounds check before allocation - guard malicious or corrupt chunk_count e.g. 0XFFFFFFFF
+    reader.ensure(static_cast<size_t>(file_meta.chunk_count) * 32);
+    file_meta.chunk_hashes.resize(file_meta.chunk_count);
+    for (auto& hash : file_meta.chunk_hashes) {
+        hash = reader.get_bytes<32>();
+    }
     return file_meta;
 }
 
@@ -202,6 +219,5 @@ ChunkHdr parse_chunk_hdr(const Message& msg) {
     Reader r{msg.payload.get(), 0, msg.payload.size};
     ChunkHdr chunk_hdr;
     chunk_hdr.chunk_index = r.get_u32();
-    chunk_hdr.chunk_hash = r.get_bytes<sizeof(chunk_hdr.chunk_hash)>();
     return chunk_hdr;
 }

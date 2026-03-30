@@ -15,14 +15,14 @@
 #include <array>
 #include <cstdint>
 #include <cstddef>
-#include <cstring>
+#include <vector>
 #include "hash.hpp"
 #include "../transport/transport.hpp"
 #include "../util/constants.hpp"
 #include "../util/io.hpp"
 
 
-inline constexpr uint8_t PROTOCOL_VERSION = 0x01;
+inline constexpr uint8_t PROTOCOL_VERSION = 0x02; // v0,3: chunk_hashes in FILE_META, ChunkHdr drop hash
 inline constexpr size_t HEADER_SIZE = 6; // version(1) + type(1) + payload_len(4)
 inline constexpr size_t FILE_SIZE_BYTES = sizeof(uint64_t); // 8 - [file_size:u64 BE]
 inline constexpr size_t LEN_PREFIX_BYTES = sizeof(uint32_t); // 4 - [filename_len:u32 BE]
@@ -46,7 +46,7 @@ enum class MsgType : uint8_t {
 // FILE_META payload: [file_size:u64 BE][filename_len:u32 BE][filename:utf8]
 // HandshakePayload [token_len:u32 BE][token:utf8]
 // ChunkReq: [chunk_index:u32 BE]
-// ChunkHdr: [chunk_index:u32 BE][chunk_hash:32 bytes]
+// ChunkHdr: [chunk_index:u32 BE]
 // COMPLETE payload: empty
 // ERROR payload: [reason:utf8] (length = payload_len)
 struct Header {
@@ -130,10 +130,11 @@ struct Message {
 
 // Typed payload structs, in-memory only
 struct FileMeta {
-    std::string filename;
+    std::string file_name;
     uint64_t file_size{}; // bytes, big-endian on wire
     uint32_t chunk_size{};
     uint32_t chunk_count{};
+    std::vector<std::array<uint8_t, 32>> chunk_hashes{}; // pre-computed, one per chunk
 };
 
 struct HandshakePayload {
@@ -146,7 +147,6 @@ struct ChunkReq {
 
 struct ChunkHdr {
     uint32_t chunk_index{};
-    std::array<uint8_t, 32> chunk_hash{};
 };
 
 // Public APIs

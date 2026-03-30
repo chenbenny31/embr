@@ -2,6 +2,7 @@
 // Created by benny on 3/15/26.
 //
 #include <gtest/gtest.h>
+#include <arpa/inet.h>
 #include <cstring>
 #include <vector>
 #include "core/protocol.hpp"
@@ -24,6 +25,12 @@ public:
         read_pos_ += to_copy;
         return static_cast<ssize_t>(to_copy);
     }
+    void send_file(int /*file_fd*/, uint64_t /*offset*/, size_t /*len*/) override {
+        throw std::runtime_error("MockTransport: send_file not supported");
+    }
+    void recv_file(int /*file_fd*/, uint64_t /*offset*/, size_t /*len*/) override {
+        throw std::runtime_error("MockTransport: recv_file not supported");
+    }
     void inject(const uint8_t* data, size_t len) {
         buf_.insert(buf_.end(), data, data + len);
     }
@@ -33,36 +40,84 @@ public:
 
 TEST(Protocol, FileMetaRoundTrip) {
     MockTransport t;
+    constexpr uint32_t kChunkCount = 3;
+    std::array<uint8_t, 32> hash0{}, hash1{}, hash2{};
+    hash0.fill(0xAA); hash1.fill(0xBB); hash2.fill(0xCC);
     FileMeta original{
-        .filename    = "testfile.iso",
-        .file_size   = 3ULL * 1024 * 1024 * 1024,
-        .chunk_size  = 16 * 1024 * 1024,
-        .chunk_count = 192,
+        .file_name     = "testfile.iso",
+        .file_size    = 3ULL * 1024 * 1024 * 1024,
+        .chunk_size   = 16 * 1024 * 1024,
+        .chunk_count  = kChunkCount,
+        .chunk_hashes = {hash0, hash1, hash2},
     };
 
     send_msg(t, make_filemeta(FileMeta{original}));
-    Message received = recv_msg(t);
+    FileMeta parsed = parse_filemeta(recv_msg(t));
 
-    ASSERT_EQ(received.type, MsgType::FILE_META);
-    FileMeta parsed = parse_filemeta(received);
-
-    EXPECT_EQ(parsed.filename,    original.filename);
+    EXPECT_EQ(parsed.file_name,    original.file_name);
     EXPECT_EQ(parsed.file_size,   original.file_size);
     EXPECT_EQ(parsed.chunk_size,  original.chunk_size);
     EXPECT_EQ(parsed.chunk_count, original.chunk_count);
+    ASSERT_EQ(parsed.chunk_hashes.size(), kChunkCount);
+    EXPECT_EQ(parsed.chunk_hashes[0], hash0);
+    EXPECT_EQ(parsed.chunk_hashes[1], hash1);
+    EXPECT_EQ(parsed.chunk_hashes[2], hash2);
 }
 
 TEST(Protocol, FileMetaEmptyFilename) {
     MockTransport t;
-    FileMeta meta{.filename = "", .file_size = 1024, .chunk_size = 16, .chunk_count = 1};
-
+    std::array<uint8_t, 32> hash{};
+    hash.fill(0x01);
+    FileMeta meta{
+        .file_name     = "",
+        .file_size    = 1024,
+        .chunk_size   = 16,
+        .chunk_count  = 1,
+        .chunk_hashes = {hash},
+    };
     send_msg(t, make_filemeta(FileMeta{meta}));
     FileMeta parsed = parse_filemeta(recv_msg(t));
 
-    EXPECT_EQ(parsed.filename,    "");
+    EXPECT_EQ(parsed.file_name,    "");
     EXPECT_EQ(parsed.file_size,   1024ULL);
     EXPECT_EQ(parsed.chunk_size,  16U);
     EXPECT_EQ(parsed.chunk_count, 1U);
+    ASSERT_EQ(parsed.chunk_hashes.size(), 1U);
+    EXPECT_EQ(parsed.chunk_hashes[0], hash);
+}
+
+TEST(Protocol, FileMetaHashCountMismatchThrows) {
+    FileMeta meta{
+        .file_name     = "bad.bin",
+        .file_size    = 1024,
+        .chunk_size   = 512,
+        .chunk_count  = 3,
+        .chunk_hashes = {},   // size=0, count=3 → mismatch
+    };
+    EXPECT_THROW(make_filemeta(std::move(meta)), std::runtime_error);
+}
+
+TEST(Protocol, ParseFileMetaMaliciousChunkCountThrows) {
+    MockTransport t;
+    constexpr uint32_t kFakeCount = 0x00FFFFFF;
+
+    // payload: file_size(8) + file_name_len(4) + file_name(0) + chunk_size(4) + chunk_count(4)
+    // = 20 bytes, but claims kFakeCount * 32 hashes follow — they don't
+    uint8_t payload[20] = {};
+    payload[7] = 0x01;                          // file_size = 1
+    payload[13] = 0x02; payload[14] = 0x00;     // chunk_size = 512
+    uint32_t net_count = htonl(kFakeCount);
+    std::memcpy(payload + 16, &net_count, 4);   // chunk_count = kFakeCount
+
+    uint8_t hdr[HEADER_SIZE];
+    hdr[0] = PROTOCOL_VERSION;
+    hdr[1] = static_cast<uint8_t>(MsgType::FILE_META);
+    uint32_t net_plen = htonl(static_cast<uint32_t>(sizeof(payload)));
+    std::memcpy(hdr + 2, &net_plen, 4);
+    t.inject(hdr, HEADER_SIZE);
+    t.inject(payload, sizeof(payload));
+
+    EXPECT_THROW(parse_filemeta(recv_msg(t)), std::runtime_error);
 }
 
 // ── HANDSHAKE round-trip ──────────────────────────────────────────────────────
@@ -107,32 +162,23 @@ TEST(Protocol, ChunkReqZeroIndex) {
 }
 
 // ── ChunkHdr round-trip ───────────────────────────────────────────────────────
+// v0.3: ChunkHdr carries only chunk_index — hash pre-communicated in FILE_META
 
 TEST(Protocol, ChunkHdrRoundTrip) {
     MockTransport t;
-    std::array<uint8_t, 32> hash{};
-    for (uint8_t i = 0; i < 32; ++i) { hash[i] = i; }
-
-    send_msg(t, make_chunk_hdr(ChunkHdr{.chunk_index = 7, .chunk_hash = hash}));
+    send_msg(t, make_chunk_hdr(ChunkHdr{.chunk_index = 7}));
     Message received = recv_msg(t);
 
     ASSERT_EQ(received.type, MsgType::CHUNK_HDR);
     ChunkHdr parsed = parse_chunk_hdr(received);
-
     EXPECT_EQ(parsed.chunk_index, 7U);
-    EXPECT_EQ(parsed.chunk_hash,  hash);
 }
 
-TEST(Protocol, ChunkHdrZeroHash) {
+TEST(Protocol, ChunkHdrPayloadIsFourBytes) {
     MockTransport t;
-    std::array<uint8_t, 32> zero_hash{};
-    zero_hash.fill(0);
-
-    send_msg(t, make_chunk_hdr(ChunkHdr{.chunk_index = 0, .chunk_hash = zero_hash}));
-    ChunkHdr parsed = parse_chunk_hdr(recv_msg(t));
-
-    EXPECT_EQ(parsed.chunk_index, 0U);
-    EXPECT_EQ(parsed.chunk_hash,  zero_hash);
+    send_msg(t, make_chunk_hdr(ChunkHdr{.chunk_index = 0}));
+    Message received = recv_msg(t);
+    EXPECT_EQ(received.payload.size, sizeof(uint32_t));
 }
 
 // ── COMPLETE ──────────────────────────────────────────────────────────────────
