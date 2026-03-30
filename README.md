@@ -11,17 +11,19 @@ embr pipelines disk and network operations in parallel and eliminates intermedia
 
 ## Two Transfer Modes
 
-**Trusted network (LAN / datacenter)** — vanilla UDP + io_uring:
+**Trusted network (LAN / datacenter)** — custom UDP reliability layer + io_uring:
 - No TLS overhead, io_uring registered buffers, self-managed reliability (seq/ACK/retransmit)
 - Target: saturate 10G+ links at <30% single-core CPU
+- TCP available as fallback for restricted networks
 
 **Public P2P** — ngtcp2 + io_uring:
 - TLS 1.3, NAT traversal, token-based peer discovery via tracker
 - Same io_uring buffer infrastructure, ngtcp2 QUIC state machine on top
+- TCP available as fallback where QUIC is blocked
 
 ## Usage
 ```bash
-# v0.2 — chunked transfer (current)
+# v0.3 — zero-copy TCP + pre-committed integrity (current)
 embr push <file> [--port PORT]
 embr pull <ip>   [--port PORT] [--out PATH]
 
@@ -33,27 +35,31 @@ embr pull Kf3xQ9mZ 192.168.1.50  # direct mode, skip tracker
 
 ## How It Works
 
-**Direct mode (v0.2 — current)**
+**Direct mode (v0.3 — current)**
 ```
 Sender                                                     Receiver
   │  embr push file.tar.gz                                     │
   │  → listening on :9000                                      │
   │  ←──────────── HANDSHAKE ───────────────────────────────── │
-  │  ──────────── FILE_META ───────────────────────────────→   │
+  │  ─── FILE_META {filename, size, chunk_hashes[0..N]} ────→  │
   │  ←──────────── CHUNK_REQ{0} ────────────────────────────── │
-  │  ──────── CHUNK_HDR{0,hash} + raw bytes ───────────────→   │
+  │  ──── CHUNK_HDR{0} + raw bytes (sendfile) ─────────────→   │
   │  ←──────────── CHUNK_REQ{1} ────────────────────────────── │
-  │  ──────── CHUNK_HDR{1,hash} + raw bytes ───────────────→   │
-  │  ...                                                        │
+  │  ──── CHUNK_HDR{1} + raw bytes (sendfile) ─────────────→   │
+  │  ...                                                       │
   │  ←──────────── COMPLETE ────────────────────────────────── │
 ```
+
+Push pre-computes SHA256 for all chunks before transfer and commits them in `FILE_META`.
+Pull verifies each chunk on arrival against the pre-committed hash — no extra round trips.
+Data plane uses `sendfile()` on push (0 copies) and `mmap(MAP_SHARED)` on pull (1 copy).
 
 **Tracker mode (v0.4+)**
 ```
 Sender                        Tracker                      Receiver
   │──── POST /register ───────>│                              │
-  │<─── token: Kf3xQ9mZ ──────│                              │
-  │                            │<──── GET /resolve/Kf3xQ9mZ ─│
+  │<─── token: Kf3xQ9mZ ───────│                              │
+  │                            │<──── GET /resolve/Kf3xQ9mZ ─ │
   │                            │───── {addr, size} ──────────>│
   │<══════════ UDP + parallel chunk transfer ════════════════>│
 ```
@@ -90,10 +96,11 @@ embr/
 │   │   └── tcp_server.hpp/.cpp    # tcp_listen() / tcp_accept() factories
 │   └── util/
 │       ├── socket_fd.hpp          # RAII fd wrapper
+│       ├── io.hpp                 # send_exact / recv_exact
 │       └── constants.hpp          # CHUNK_SIZE, READ_BUF_SIZE
-├── tracker/                       # standalone tracker server (v0.4+)
 ├── tests/
-│   └── test_protocol.cpp
+│   ├── test_protocol.cpp
+│   └── test_tcp.cpp
 └── CMakeLists.txt
 ```
 
@@ -108,8 +115,9 @@ Message types:
   HANDSHAKE  (0x01)  [token_len:u32 BE][token:utf8]
   FILE_META  (0x02)  [file_size:u64 BE][filename_len:u32 BE][filename:utf8]
                      [chunk_size:u32 BE][chunk_count:u32 BE]
+                     [chunk_hash[0]:32B]...[chunk_hash[N-1]:32B]
   CHUNK_REQ  (0x03)  [chunk_index:u32 BE]
-  CHUNK_HDR  (0x04)  [chunk_index:u32 BE][chunk_hash:32 bytes] + raw bytes via data plane
+  CHUNK_HDR  (0x04)  [chunk_index:u32 BE] + raw bytes via data plane
   COMPLETE   (0x06)  (no payload)
   ERROR      (0x07)  [reason:utf8]
   CANCEL     (0x08)  (no payload)
@@ -120,8 +128,8 @@ Message types:
 | Phase | What |
 |-------|------|
 | v0.1 | TCP whole-file transfer, pluggable transport, wire protocol ✓ |
-| **v0.2** | **16MB chunking + SHA256 per-chunk integrity ✓** |
-| v0.3 | TCP + mmap + sendfile(), zero-copy on TCP path |
+| v0.2 | 16MB chunking + SHA256 per-chunk integrity ✓ |
+| **v0.3** | **TCP + sendfile() + mmap(MAP_SHARED), zero-copy data plane ✓** |
 | v0.4-v0.5 | Vanilla UDP + io_uring, self-managed reliability, 1-to-1 trusted network |
 | v0.6-v0.7 | Parallel chunks in flight, sliding window, atomic ChunkManager, Prometheus metrics |
 | v0.8+ | ngtcp2 + io_uring, public P2P, TLS 1.3, NAT traversal, 1-to-N fanout |
@@ -129,26 +137,29 @@ Message types:
 
 ## Current Status
 
-**v0.2 — 16MB chunking + SHA256 per-chunk integrity**
+**v0.3 — zero-copy TCP data plane + pre-committed chunk integrity**
 
 - [x] Project skeleton, CMake, GoogleTest
-- [x] Pluggable `Transport` interface
+- [x] Pluggable `Transport` interface — control plane `send`/`recv`, data plane `send_file`/`recv_file`
 - [x] `TcpTransport` + `tcp_connect` / `tcp_listen` / `tcp_accept` factories
+- [x] `TcpTransport::send_file` — `sendfile()` syscall, 0 copies push
+- [x] `TcpTransport::recv_file` — `mmap(MAP_SHARED)` + `recv_exact`, 1 copy pull
 - [x] `SocketFd` RAII wrapper
+- [x] `util/io.hpp` — `send_exact` / `recv_exact`, no circular dep
 - [x] `util/constants.hpp` — `CHUNK_SIZE`, `READ_BUF_SIZE`
-- [x] Custom binary wire protocol (`protocol.hpp/.cpp`)
+- [x] Custom binary wire protocol (`protocol.hpp/.cpp`), `PROTOCOL_VERSION=0x02`
 - [x] `Buffer` — move-only, unified heap/mmap/io_uring backing via `std::function` release callback
 - [x] `ChunkManager` — `vector<bool>` bitmap, bounds-checked, parallel-ready interface
 - [x] `hash.hpp/.cpp` — SHA256 via OpenSSL EVP, `EvpCtx` RAII wrapper
-- [x] 16MB chunking — `CHUNK_HDR` + raw bytes via data plane, `pread`/`pwrite` offset-safe
+- [x] Pre-committed chunk hashes — all SHA256s computed before transfer, embedded in `FILE_META`
+- [x] `ChunkHdr` carries index only — hash pre-communicated, no per-chunk hash on wire
 - [x] `ftruncate` pre-allocation — `pwrite` at arbitrary offsets, parallel-ready
-- [x] `file_hash` removed — per-chunk SHA256 provides full integrity coverage
 - [x] Whole-file + chunked push/pull over TCP
 - [x] CLI: `embr push <file>` / `embr pull <ip>`
-- [x] Protocol unit tests — `HandshakePayload`, `ChunkReq`, `ChunkHdr` round-trips
-- [x] End-to-end validated: 3.2GB ISO to remote VPS, SHA256 matched
+- [x] Protocol unit tests — round-trips, malicious chunk_count guard, Buffer ownership
+- [x] Transport unit tests — echo, aligned/unaligned send_file/recv_file
+- [x] Benchmark (localhost, 3GB): sendfile matches scp kernel throughput (0.78s sys vs 0.79s)
 
 ## License
 
 [Mozilla Public License 2.0](https://www.mozilla.org/en-US/MPL/2.0/) — Modify embr's files → your changes must be open source. Use embr in your own project → your new files can be any license.
-```
