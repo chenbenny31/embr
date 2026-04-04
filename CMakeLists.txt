@@ -12,6 +12,8 @@ add_library(transport
         src/transport/tcp_server.cpp
         src/transport/tcp_client.cpp
         src/transport/tcp_transport.cpp
+        src/transport/udp_transport.cpp
+        src/transport/udp_transport.hpp
 )
 target_include_directories(transport PUBLIC src)
 
@@ -21,6 +23,8 @@ add_library(core
         src/core/push.cpp
         src/core/pull.cpp
         src/core/hash.cpp
+        src/util/io_uring_ctx.cpp
+        src/util/io_uring_ctx.hpp
 )
 target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
