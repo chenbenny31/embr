@@ -2,6 +2,12 @@
 // Created by benny on 3/14/26.
 //
 
+#include "push.hpp"
+#include "protocol.hpp"
+#include "chunk_manager.hpp"
+#include "hash.hpp"
+#include "util/constants.hpp"
+#include "util/socket_fd.hpp"
 #include <fcntl.h>
 #include <unistd.h>
 #include <filesystem>
@@ -10,12 +16,6 @@
 #include <algorithm>
 #include <cstring>
 #include <sys/mman.h>
-#include "push.hpp"
-#include "protocol.hpp"
-#include "chunk_manager.hpp"
-#include "hash.hpp"
-#include "../util/constants.hpp"
-#include "../util/socket_fd.hpp"
 
 FileMeta precompute_meta(const std::string& filepath) {
     if (!std::filesystem::exists(filepath)) {
@@ -29,15 +29,15 @@ FileMeta precompute_meta(const std::string& filepath) {
     uint32_t chunk_count = static_cast<uint32_t>(
         (file_size + CHUNK_SIZE - 1) / CHUNK_SIZE);
 
-    FileMeta file_meta{
+    FileMeta meta{
         .file_name = std::move(file_name),
         .file_size = file_size,
         .chunk_size = static_cast<uint32_t>(CHUNK_SIZE),
         .chunk_count = chunk_count,
     };
 
-    std::cout << "[push] hashing " << file_name << " (" << chunk_count << " chunks)...\n";
-    file_meta.chunk_hashes.resize(chunk_count);
+    std::cout << "[push] hashing " << meta.file_name << " (" << chunk_count << " chunks)...\n";
+    meta.chunk_hashes.resize(chunk_count);
 
     SocketFd fd{::open(filepath.c_str(), O_RDONLY)};
     if (fd.get() < 0) {
@@ -53,13 +53,14 @@ FileMeta precompute_meta(const std::string& filepath) {
 
     for (uint32_t i = 0; i < chunk_count; ++i) {
         uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
-        size_t chunk_len = std::min(static_cast<uint64_t>(CHUNK_SIZE), file_size - offset);
-        file_meta.chunk_hashes[i] = sha256_buf(static_cast<uint8_t*>(mapped) + offset, chunk_len);
+        size_t chunk_len = static_cast<size_t>(
+            std::min(static_cast<uint64_t>(CHUNK_SIZE), file_size - offset));
+        meta.chunk_hashes[i] = sha256_buf(static_cast<uint8_t*>(mapped) + offset, chunk_len);
         std::cout << "[push] hashing " << i + 1 << "/" << chunk_count << "\r" << std::flush;
     }
     ::munmap(mapped, file_size);
     std::cout << "\n[push] hashing complete\n";
-    return file_meta;
+    return meta;
 }
 
 void run_push(Transport& transport, SocketFd fd, FileMeta file_meta) {
@@ -82,25 +83,12 @@ void run_push(Transport& transport, SocketFd fd, FileMeta file_meta) {
               << " size=" << file_size
               << " chunks=" << chunk_count << "\n";
 
-    // stream chunks
-    ChunkManager cm(chunk_count);
 
-    for (uint32_t i = 0; i < chunk_count; ++i) {
-        uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
-        uint64_t remain = file_size - offset;
-        size_t chunk_len = static_cast<size_t>(
-            std::min(static_cast<uint64_t>(CHUNK_SIZE), remain));
-
-        // send CHUNK_HDR
-        send_msg(transport, make_chunk_hdr(ChunkHdr{.chunk_index = i}));
-
-        // send_file: sendfile() system call, 0 copy on TCP path
-        transport.send_file(fd.get(), offset, chunk_len);
-
-        cm.mark_done(i);
-        std::cout << "[push] chunk " << i + 1 << "/" << chunk_count << "\r" << std::flush;
-    }
-    std::cout << "\n[push] all chunks sent\n";
+    // stream entire file - transport handles chunking
+    // TCP path: sendfile() loop, 0 copy
+    // UDP path: READ_FIXED + fragment + sendmsg, double-buffer pipline, 0 copy
+    transport.send_file(fd.get(), 0, file_size);
+    std::cout << "[push] file sent\n";
 
     // recv COMPLETE
     Message done = recv_msg(transport);
@@ -108,4 +96,4 @@ void run_push(Transport& transport, SocketFd fd, FileMeta file_meta) {
         throw std::runtime_error("run_push: expected COMPLETE");
     }
     std::cout << "[push] transfer complete\n";
-};
+}
