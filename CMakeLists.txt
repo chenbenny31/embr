@@ -14,6 +14,10 @@ add_library(transport
         src/transport/tcp_transport.cpp
         src/transport/udp_transport.cpp
         src/transport/udp_transport.hpp
+        src/transport/udp_connect.cpp
+        src/transport/udp_connect.hpp
+        src/transport/udp_bind.cpp
+        src/transport/udp_bind.hpp
 )
 target_include_directories(transport PUBLIC src)
 
