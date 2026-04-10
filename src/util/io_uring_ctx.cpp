@@ -3,13 +3,17 @@
 //
 
 #include "io_uring_ctx.hpp"
-#include "constants.hpp"
-#include <liburing.h>
+
 #include <sys/mman.h>
+
 #include <cerrno>
 #include <cstring>
+#include <iostream>
 #include <stdexcept>
 #include <vector>
+
+#include "constants.hpp"
+#include <liburing.h>
 
 IoUringCtx::IoUringCtx(size_t chunk_buf_count, size_t chunk_buf_size,
                        size_t frag_buf_count, size_t frag_buf_size)
@@ -23,9 +27,10 @@ IoUringCtx::IoUringCtx(size_t chunk_buf_count, size_t chunk_buf_size,
     // CQ=256 * 2: sufficient for concurrent RECV+WRITE CQEs
     constexpr unsigned QUEUE_DEPTH = 256;
 
-    if (io_uring_queue_init(QUEUE_DEPTH, &ring_, 0) < 0) {
+    int init_ret = io_uring_queue_init(QUEUE_DEPTH, &ring_, 0);
+    if (init_ret < 0) {
         throw std::runtime_error("IoUringCtx: io_uring_queue_init failed: " +
-                                 std::string(std::strerror(errno)));
+                                 std::string(std::strerror(-init_ret)));
     }
 
     // allocate buf backing mem (page-aligned via mmap)
@@ -66,21 +71,33 @@ IoUringCtx::IoUringCtx(size_t chunk_buf_count, size_t chunk_buf_size,
         iovecs[chunk_buf_count_ + i].iov_len = frag_buf_size_;
     }
 
-    if (io_uring_register_buffers(&ring_,
-        iovecs.data(), static_cast<unsigned>(iovecs.size())) < 0) {
-        ::munmap(frag_mem_, frag_total);
-        ::munmap(chunk_mem_, chunk_total);
-        io_uring_queue_exit(&ring_);
-        throw std::runtime_error("IoUringCtx: register_buffers failed: " +
-            std::string(std::strerror(errno)));
+    int ret = io_uring_register_buffers(&ring_,
+                                  iovecs.data(), static_cast<unsigned>(iovecs.size()));
+    if (ret < 0) {
+        if (-ret == ENOMEM) {
+            // memlock limit exceeded - fall back to unregistered buffers
+            // data plane will use prep_read_prep_write instead of _fixed variants
+            std::cerr << "[io_uring] memlock limit exceeded, falling back to "
+                         "unregistered buffers (zero-copy disabled)\n";
+        } else {
+            ::munmap(frag_mem_, frag_total);
+            ::munmap(chunk_mem_, chunk_total);
+            io_uring_queue_exit(&ring_);
+            throw std::runtime_error("IoUringCtx: register_buffers failed: " +
+                                     std::string(std::strerror(-ret)));
+        }
+    } else {
+        registered_buffers_ = true;
     }
 }
 
 IoUringCtx::~IoUringCtx() {
+    if (registered_buffers_) {
         io_uring_unregister_buffers(&ring_);
-        io_uring_queue_exit(&ring_);
-        ::munmap(frag_mem_, frag_buf_count_ * frag_buf_size_);
-        ::munmap(chunk_mem_, chunk_buf_count_ * chunk_buf_size_);
+    }
+    io_uring_queue_exit(&ring_);
+    ::munmap(frag_mem_, frag_buf_count_ * frag_buf_size_);
+    ::munmap(chunk_mem_, chunk_buf_count_ * chunk_buf_size_);
 }
 
 uint8_t* IoUringCtx::chunk_buf(size_t idx) {

@@ -28,6 +28,7 @@ public:
     uint8_t* chunk_buf(size_t idx); // idx < chunk_buf_count
     uint8_t* frag_buf(size_t idx); // idx < frag_buf_count
     io_uring* ring();
+    bool has_registered_buffers() const { return registered_buffers_; }
 
     size_t chunk_buf_count() const { return chunk_buf_count_; }
     size_t chunk_buf_size() const { return chunk_buf_size_; }
@@ -37,6 +38,7 @@ public:
     size_t ring_index_frag(size_t idx) const { return chunk_buf_count_ + idx; }
 
 private:
+    bool registered_buffers_{false};
     io_uring ring_{};
 
     // contiguous backing mem - chunk buf first then frag buf
