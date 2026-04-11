@@ -63,6 +63,6 @@ private:
     bool read_completed_{false};
     int32_t read_result_{0};
 
-    friend std::unique_ptr<Transport> udp_connect(const std::string& host, uint16_t port);
-    friend std::unique_ptr<Transport> udp_wait_peer(SocketFd fd);
+    friend std::unique_ptr<Transport> udp_data_client_connect(const std::string& host, uint16_t port);
+    friend std::unique_ptr<Transport> udp_data_server_connect(SocketFd fd);
 };

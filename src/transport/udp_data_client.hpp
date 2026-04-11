@@ -9,5 +9,5 @@
 #include <string>
 #include <cstdint>
 
-// Creates a connected UDP socket on host:port, performs HELLO to lock peer addr
-std::unique_ptr<Transport> udp_connect(const std::string& host, uint16_t port);
+// Connect UDP socket to host:port, sends 1-byte probe
+std::unique_ptr<Transport> udp_data_client_connect(const std::string& host, uint16_t port);
