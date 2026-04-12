@@ -11,4 +11,4 @@
 
 // Share side
 FileMeta precompute_meta(const std::string& filepath);
-void run_push(Transport& transport, SocketFd file_fd, FileMeta meta);
+void run_push(Transport& tcp, Transport& udp, SocketFd file_fd, FileMeta meta);

@@ -8,6 +8,7 @@
 #include "hash.hpp"
 #include "util/constants.hpp"
 #include "util/socket_fd.hpp"
+#include "util/io.hpp"
 #include <fcntl.h>
 #include <unistd.h>
 #include <filesystem>
@@ -63,13 +64,13 @@ FileMeta precompute_meta(const std::string& filepath) {
     return meta;
 }
 
-void run_push(Transport& transport, SocketFd fd, FileMeta file_meta) {
+void run_push(Transport& tcp, Transport& udp, SocketFd fd, FileMeta file_meta) {
     const std::string file_name = file_meta.file_name; // cheap copy, keep file_name in FILE_META
     const uint64_t file_size = file_meta.file_size;
     const uint32_t chunk_count = file_meta.chunk_count;
 
     // recv handshake
-    Message hs = recv_msg(transport);
+    Message hs = recv_msg(tcp);
     if (hs.type != MsgType::HANDSHAKE) {
         throw std::runtime_error("run_push: expected HANDSHAKE");
     }
@@ -78,20 +79,23 @@ void run_push(Transport& transport, SocketFd fd, FileMeta file_meta) {
               << handshake.token <<"'\n";
 
     // send FILE_META
-    send_msg(transport, make_filemeta(std::move(file_meta)));
+    send_msg(tcp, make_filemeta(std::move(file_meta)));
     std::cout << "[push] sent FILE_META - file=" << file_name
               << " size=" << file_size
               << " chunks=" << chunk_count << "\n";
 
+    // wait for pull to signal recv_file SQEs submitted
+    uint8_t data_ready{};
+    recv_exact(tcp, &data_ready, 1);
 
     // stream entire file - transport handles chunking
     // TCP path: sendfile() loop, 0 copy
     // UDP path: READ_FIXED + fragment + sendmsg, double-buffer pipline, 0 copy
-    transport.send_file(fd.get(), 0, file_size);
+    udp.send_file(fd.get(), 0, file_size);
     std::cout << "[push] file sent\n";
 
     // recv COMPLETE
-    Message done = recv_msg(transport);
+    Message done = recv_msg(tcp);
     if (done.type != MsgType::COMPLETE) {
         throw std::runtime_error("run_push: expected COMPLETE");
     }

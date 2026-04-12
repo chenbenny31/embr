@@ -8,4 +8,4 @@
 #include <string>
 
 // fetch side
-void run_pull(Transport& transport, const std::string& output_path);
+void run_pull(Transport& tcp, Transport& udp, const std::string& output_path);

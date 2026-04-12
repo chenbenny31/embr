@@ -18,12 +18,12 @@
 #include <algorithm>
 #include <cstring>
 
-void run_pull(Transport& transport, const std::string& output_path) {
+void run_pull(Transport& tcp, Transport& udp, const std::string& output_path) {
     // send HANDSHAKE
-    send_msg(transport, make_handshake(HandshakePayload{""}));
+    send_msg(tcp, make_handshake(HandshakePayload{""}));
 
     // recv FILE_META
-    Message meta_msg = recv_msg(transport);
+    Message meta_msg = recv_msg(tcp);
     if (meta_msg.type != MsgType::FILE_META) {
         throw std::runtime_error("run_pull: expected FILE_META");
     }
@@ -47,17 +47,21 @@ void run_pull(Transport& transport, const std::string& output_path) {
                                  std::string(std::strerror(errno)));
     }
 
+    // signal push: recv_file SQEs about to be submitted
+    uint8_t data_ready = 1;
+    send_exact(tcp, &data_ready, 1);
+
     // recv entire file - transport handles chunking
     // TCP path: mmap(MAP_SHARED) + recv_exact, 1 copy
     // UDP path: RECV_FIXED + WRITE_FIXED direct-to-disk, 0 copy
-    transport.recv_file(fd.get(), 0, meta.file_size);
+    udp.recv_file(fd.get(), 0, meta.file_size);
 
     // verify chunk hashes
     std::cout << "[pull] verifying chunks...\n";
     for (uint32_t chunk_idx = 0; chunk_idx < meta.chunk_count; ++chunk_idx) {
         uint64_t offset = static_cast<uint64_t>(chunk_idx) * CHUNK_SIZE;
         size_t chunk_len = static_cast<size_t>(
-            std::min(static_cast<uint64_t>(CHUNK_SIZE), meta.file_size - offset));
+            std::min(static_cast<uint64_t>(meta.chunk_size), meta.file_size - offset));
 
         void* mapped = ::mmap(nullptr, chunk_len, PROT_READ, MAP_SHARED,
                               fd.get(), static_cast<off_t>(offset));
@@ -78,6 +82,6 @@ void run_pull(Transport& transport, const std::string& output_path) {
     std::cout << "\n[pull] all chunks verified\n";
 
     // send COMPLETE
-    send_msg(transport, make_complete());
+    send_msg(tcp, make_complete());
     std::cout << "[pull] transfer complete - saved to " << out << "\n";
 }
