@@ -23,11 +23,14 @@ embr pipelines disk and network operations in parallel and eliminates intermedia
 
 ## Usage
 ```bash
-# v0.3 — zero-copy TCP + pre-committed integrity (current)
-embr push <file> [--port PORT]
-embr pull <ip>   [--port PORT] [--out PATH]
+# v0.4 — zero-copy TCP + UDP + io_uring (current)
+embr push <file> [--port PORT] [--tcp]
+embr pull <ip>   [--port PORT] [--out PATH] [--tcp]
 
-# v0.4+ — tracker mode
+# Default: TCP control channel (port) + UDP data plane (port+1)
+# --tcp: single TCP connection for both control and data
+
+# v0.6+ — tracker mode (planned)
 embr push large_dataset.tar.gz   # → token: Kf3xQ9mZ
 embr pull Kf3xQ9mZ               # resolves via tracker
 embr pull Kf3xQ9mZ 192.168.1.50  # direct mode, skip tracker
@@ -35,26 +38,26 @@ embr pull Kf3xQ9mZ 192.168.1.50  # direct mode, skip tracker
 
 ## How It Works
 
-**Direct mode (v0.3 — current)**
+**Direct mode (v0.4 — current)**
 ```
 Sender                                                     Receiver
   │  embr push file.tar.gz                                     │
-  │  → listening on :9000                                      │
-  │  ←──────────── HANDSHAKE ───────────────────────────────── │
-  │  ─── FILE_META {filename, size, chunk_hashes[0..N]} ────→  │
-  │  ←──────────── CHUNK_REQ{0} ────────────────────────────── │
-  │  ──── CHUNK_HDR{0} + raw bytes (sendfile) ─────────────→   │
-  │  ←──────────── CHUNK_REQ{1} ────────────────────────────── │
-  │  ──── CHUNK_HDR{1} + raw bytes (sendfile) ─────────────→   │
+  │  → listening on :9000 (TCP control) + :9001 (UDP data)     │
+  │  ←──────────── HANDSHAKE ──────────────────── [TCP] ─────  │
+  │  ─── FILE_META {filename, size, chunk_hashes[0..N]} ─────→ │
+  │  ←──────────── ready byte ─────────────────── [TCP] ─────  │
+  │  ──── fragments (io_uring sendmsg, 0 copies) ── [UDP] ───→ │
+  │  ←──────────── ACK{chunk_index} ──────────── [TCP] ─────   │
   │  ...                                                       │
-  │  ←──────────── COMPLETE ────────────────────────────────── │
+  │  ←──────────── COMPLETE ───────────────────── [TCP] ─────  │
 ```
 
 Push pre-computes SHA256 for all chunks before transfer and commits them in `FILE_META`.
-Pull verifies each chunk on arrival against the pre-committed hash — no extra round trips.
-Data plane uses `sendfile()` on push (0 copies) and `mmap(MAP_SHARED)` on pull (1 copy).
+Pull verifies all chunks after transfer against pre-committed hashes.
+UDP data plane uses io_uring registered buffers — disk reads via READ_FIXED, network sends via sendmsg scatter-gather, network receives via RECV + WRITE_FIXED direct-to-disk.
+TCP fallback uses `sendfile()` on push (0 copies) and `mmap(MAP_SHARED)` on pull (1 copy).
 
-**Tracker mode (v0.4+)**
+**Tracker mode (v0.6+ — planned)**
 ```
 Sender                        Tracker                      Receiver
   │──── POST /register ───────>│                              │
@@ -64,43 +67,110 @@ Sender                        Tracker                      Receiver
   │<══════════ UDP + parallel chunk transfer ════════════════>│
 ```
 
+## Benchmark
+
+Localhost, 3GB file (Fedora ISO), `MTU=65000`:
+
+| Tool | Wall | User | Sys | Throughput |
+|------|------|------|-----|------------|
+| embr UDP + io_uring | 2.113s | 1.142s | 0.775s | 1.22 GB/s |
+| embr TCP + sendfile | 1.851s | 1.092s | 0.709s | 1.39 GB/s |
+| scp | 1.064s | 0.295s | 0.936s | 2.28 GB/s |
+
+Remote VPS, 3GB file, ~25 MB/s uplink:
+
+| Tool | Wall | User | Sys | Throughput |
+|------|------|------|-----|------------|
+| embr TCP + sendfile | 131.2s | 2.0s | 8.9s | 23.4 MB/s |
+| scp | 117.7s | 3.6s | 12.5s | 26.1 MB/s |
+
+embr TCP uses 44% less userspace CPU than scp on the remote path (2.0s vs 3.6s user) — SHA256 is pre-computed before transfer begins, not in the hot path.
+
+UDP sys time matches TCP (0.775s vs 0.709s) — io_uring kernel overhead eliminated at large MTU. Remaining wall-time gap vs TCP = stop-and-wait ACK latency (2616 chunks × TCP RTT). Sliding window is deferred to the ngtcp2 phase where QUIC streams provide it for free. Gap vs scp = SHA256 chunk verification cost (user time). scp performs no integrity verification.
+
 ## Build
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
 ctest --test-dir build
 ```
+## Install Dependencies
 
+**Fedora / RHEL / Rocky:**
+```bash
+sudo dnf install cmake ninja-build gcc-c++ openssl-devel liburing-devel
+```
+
+**Ubuntu / Debian:**
+```bash
+sudo apt install cmake ninja-build g++ libssl-dev liburing-dev
+```
+
+**macOS (development only — io_uring not supported, TCP path only):**
+```bash
+brew install cmake ninja openssl
+```
+
+**Kernel requirement:** Linux 6.0+ for io_uring RECV/WRITE_FIXED on UDP sockets. Older kernels fall back to unregistered buffers automatically.
+
+**memlock limit:** io_uring registered buffers require sufficient locked memory. Default 8MB is sufficient for `CHUNK_SIZE=1MB` (2MB chunk pool + 2MB frag pool). Verify with `ulimit -l`.
+
+## Benchmark
+
+Localhost, 3GB file (Fedora ISO), `MTU=65000`:
+
+| Tool | Wall | User | Sys | Throughput |
+|------|------|------|-----|------------|
+| embr UDP + io_uring | 2.113s | 1.142s | 0.775s | 1.22 GB/s |
+| embr TCP + sendfile | 1.851s | 1.092s | 0.709s | 1.39 GB/s |
+| scp | 1.064s | 0.295s | 0.936s | 2.28 GB/s |
+
+Remote VPS, 3GB file, ~25 MB/s uplink:
+
+| Tool | Wall | User | Sys | Throughput |
+|------|------|------|-----|------------|
+| embr TCP + sendfile | 131.2s | 2.0s | 8.9s | 23.4 MB/s |
+| scp | 117.7s | 3.6s | 12.5s | 26.1 MB/s |
+
+embr TCP uses 44% less userspace CPU than scp on the remote path (2.0s vs 3.6s user) — SHA256 is pre-computed before transfer begins, not in the hot path.
+
+UDP sys time matches TCP (0.775s vs 0.709s) — io_uring kernel overhead eliminated at large MTU. Remaining wall-time gap vs TCP = stop-and-wait ACK latency (2616 chunks × TCP RTT). Sliding window is deferred to the ngtcp2 phase where QUIC streams provide it for free. Gap vs scp = SHA256 chunk verification cost (user time). scp performs no integrity verification.
 ### Dependencies
 
 - C++20 compiler (GCC 12+ / Clang 15+)
 - CMake 3.25+
 - OpenSSL (SHA256 via EVP interface)
+- liburing (io_uring support)
 - GoogleTest (fetched via CMake FetchContent)
 
 ## Architecture
 ```
 embr/
 ├── src/
-│   ├── main.cpp                   # CLI routing, transport lifecycle
+│   ├── main.cpp                        # CLI routing, transport lifecycle
 │   ├── core/
-│   │   ├── protocol.hpp/.cpp      # send_msg/recv_msg, wire format
-│   │   ├── chunk_manager.hpp      # chunk state bitmap
-│   │   ├── hash.hpp/.cpp          # SHA256 via OpenSSL EVP
-│   │   ├── push.hpp/.cpp          # sharer logic
-│   │   └── pull.hpp/.cpp          # fetcher logic
+│   │   ├── protocol.hpp/.cpp           # send_msg/recv_msg, wire format
+│   │   ├── chunk_manager.hpp           # chunk state bitmap
+│   │   ├── hash.hpp/.cpp               # SHA256 via OpenSSL EVP
+│   │   ├── push.hpp/.cpp               # sharer logic
+│   │   └── pull.hpp/.cpp               # fetcher logic
 │   ├── transport/
-│   │   ├── transport.hpp          # abstract interface
-│   │   ├── tcp_transport.hpp/.cpp # TCP implementation
-│   │   ├── tcp_client.hpp/.cpp    # tcp_connect() factory
-│   │   └── tcp_server.hpp/.cpp    # tcp_listen() / tcp_accept() factories
+│   │   ├── transport.hpp               # abstract interface
+│   │   ├── tcp_transport.hpp/.cpp      # TCP implementation
+│   │   ├── tcp_client.hpp/.cpp         # tcp_connect() factory
+│   │   ├── tcp_server.hpp/.cpp         # tcp_listen() / tcp_accept() factories
+│   │   ├── udp_transport.hpp/.cpp      # UDP + io_uring implementation
+│   │   ├── udp_bind.hpp/.cpp           # udp_data_server_bind/connect factories
+│   │   └── udp_connect.hpp/.cpp        # udp_data_client_connect factory
 │   └── util/
-│       ├── socket_fd.hpp          # RAII fd wrapper
-│       ├── io.hpp                 # send_exact / recv_exact
-│       └── constants.hpp          # CHUNK_SIZE, READ_BUF_SIZE
+│       ├── socket_fd.hpp               # RAII fd wrapper
+│       ├── io.hpp                      # send_exact / recv_exact
+│       ├── io_uring_ctx.hpp/.cpp       # io_uring ring + registered buffer pool
+│       └── constants.hpp              # CHUNK_SIZE, UDP_MTU, fragment geometry
 ├── tests/
 │   ├── test_protocol.cpp
-│   └── test_tcp.cpp
+│   ├── test_tcp.cpp
+│   └── test_udp.cpp
 └── CMakeLists.txt
 ```
 
@@ -123,42 +193,51 @@ Message types:
   CANCEL     (0x08)  (no payload)
 ```
 
+UDP fragment format (10 bytes, prepended to each datagram):
+```
+[chunk_index:u32 BE][frag_index:u32 BE][frag_len:u16 BE]
+```
+
 ## Roadmap
 
 | Phase | What |
 |-------|------|
 | v0.1 | TCP whole-file transfer, pluggable transport, wire protocol ✓ |
 | v0.2 | 16MB chunking + SHA256 per-chunk integrity ✓ |
-| **v0.3** | **TCP + sendfile() + mmap(MAP_SHARED), zero-copy data plane ✓** |
-| v0.4-v0.5 | Vanilla UDP + io_uring, self-managed reliability, 1-to-1 trusted network |
-| v0.6-v0.7 | Parallel chunks in flight, sliding window, atomic ChunkManager, Prometheus metrics |
-| v0.8+ | ngtcp2 + io_uring, public P2P, TLS 1.3, NAT traversal, 1-to-N fanout |
+| v0.3 | TCP + sendfile() + mmap(MAP_SHARED), zero-copy data plane ✓ |
+| **v0.4** | **UDP + io_uring, registered buffers, direct-to-disk recv, dual-channel (TCP control + UDP data) ✓** |
+| v0.5 | Resume interrupted transfers — .embr.partial bitmap, CHUNK_REQ selective resend |
+| v0.6 | Token + tracker HTTP server, embr push → token, embr pull \<token\> |
+| v0.7+ | ngtcp2 + io_uring, public P2P, TLS 1.3, NAT traversal, sliding window, 1-to-N fanout |
 | v1.x | ngtcp2 + eBPF/XDP, AF_XDP bypass, multi-seeder |
 
 ## Current Status
 
-**v0.3 — zero-copy TCP data plane + pre-committed chunk integrity**
+**v0.4 — UDP + io_uring data plane, TCP control channel**
 
 - [x] Project skeleton, CMake, GoogleTest
 - [x] Pluggable `Transport` interface — control plane `send`/`recv`, data plane `send_file`/`recv_file`
 - [x] `TcpTransport` + `tcp_connect` / `tcp_listen` / `tcp_accept` factories
 - [x] `TcpTransport::send_file` — `sendfile()` syscall, 0 copies push
 - [x] `TcpTransport::recv_file` — `mmap(MAP_SHARED)` + `recv_exact`, 1 copy pull
+- [x] `UdpTransport` — io_uring registered buffers, READ_FIXED + sendmsg scatter-gather, RECV + WRITE_FIXED direct-to-disk
+- [x] Dual-channel: TCP for HANDSHAKE / FILE_META / ACK / COMPLETE, UDP for file data
+- [x] Double-buffer pipeline: disk read of chunk N+1 overlaps network send of chunk N
+- [x] Per-chunk ACK over TCP: stop-and-wait, whole-chunk retransmit on loss
+- [x] IoUringCtx: single `io_uring_register_buffers` call, ENOMEM fallback to unregistered
+- [x] UDP peer discovery: probe-based (`udp_data_server_bind/connect` + `udp_data_client_connect`)
 - [x] `SocketFd` RAII wrapper
-- [x] `util/io.hpp` — `send_exact` / `recv_exact`, no circular dep
-- [x] `util/constants.hpp` — `CHUNK_SIZE`, `READ_BUF_SIZE`
+- [x] `util/io.hpp` — `send_exact` / `recv_exact`
+- [x] `util/constants.hpp` — `CHUNK_SIZE=1MB`, `UDP_MTU`, fragment geometry
 - [x] Custom binary wire protocol (`protocol.hpp/.cpp`), `PROTOCOL_VERSION=0x02`
 - [x] `Buffer` — move-only, unified heap/mmap/io_uring backing via `std::function` release callback
 - [x] `ChunkManager` — `vector<bool>` bitmap, bounds-checked, parallel-ready interface
 - [x] `hash.hpp/.cpp` — SHA256 via OpenSSL EVP, `EvpCtx` RAII wrapper
 - [x] Pre-committed chunk hashes — all SHA256s computed before transfer, embedded in `FILE_META`
-- [x] `ChunkHdr` carries index only — hash pre-communicated, no per-chunk hash on wire
 - [x] `ftruncate` pre-allocation — `pwrite` at arbitrary offsets, parallel-ready
-- [x] Whole-file + chunked push/pull over TCP
-- [x] CLI: `embr push <file>` / `embr pull <ip>`
+- [x] CLI: `embr push <file> [--tcp]` / `embr pull <ip> [--out PATH] [--tcp]`
 - [x] Protocol unit tests — round-trips, malicious chunk_count guard, Buffer ownership
-- [x] Transport unit tests — echo, aligned/unaligned send_file/recv_file
-- [x] Benchmark (localhost, 3GB): sendfile matches scp kernel throughput (0.78s sys vs 0.79s)
+- [x] Transport unit tests — echo, aligned/unaligned send_file/recv_file, UDP multi-chunk
 
 ## License
 
