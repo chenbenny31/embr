@@ -8,6 +8,9 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(OpenSSL REQUIRED)
 
 find_package(PkgConfig REQUIRED)
+
+find_package(Threads REQUIRED)
+
 pkg_check_modules(URING REQUIRED liburing)
 
 # Transport lib
@@ -32,7 +35,6 @@ add_library(core
         src/core/hash.cpp
         src/core/chunk_manager.cpp
         src/core/partial_file.cpp
-        src/core/partial_file.hpp
 )
 target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
@@ -53,10 +55,10 @@ add_executable(test
         tests/test_protocol.cpp
         tests/test_tcp.cpp
         tests/test_udp.cpp
+        tests/test_resume.cpp
 )
-target_link_libraries(test PRIVATE core GTest::gtest_main)
+target_link_libraries(test PRIVATE core GTest::gtest_main Threads::Threads)
 find_package(Threads REQUIRED)
-target_link_directories(test PRIVATE Threads::Threads)
 
 include(GoogleTest)
 gtest_discover_tests(test)
