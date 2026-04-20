@@ -5,6 +5,9 @@
 #pragma once
 #include <cstddef>
 
+// Hash
+inline constexpr size_t HASH_SIZE = 32;
+
 // Chunk
 inline constexpr size_t READ_BUF_SIZE = 1 * 1024 * 1024; // TCP-path fallback, L2 cache fit
 inline constexpr size_t CHUNK_SIZE = 1 * 1024 * 1024; // v0.5 adapt: 16MB raise memlock

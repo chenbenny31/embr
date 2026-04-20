@@ -31,6 +31,8 @@ add_library(core
         src/core/pull.cpp
         src/core/hash.cpp
         src/core/chunk_manager.cpp
+        src/core/partial_file.cpp
+        src/core/partial_file.hpp
 )
 target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
