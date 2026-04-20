@@ -1,5 +1,5 @@
 # embr
-A zero-copy large file transfer engine built with C++20, zero-copy I/O (send_file / io_uring), and a pluggable transport layer.
+A zero-copy large file transfer engine built with C++20, send_file / io_uring, and a pluggable transport layer.
 
 *From Old English ǣmyrġe, "smoldering ash." A shared file is like an ember: still glowing, passed from hand to hand, never fully extinguished.*
 
