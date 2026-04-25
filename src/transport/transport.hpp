@@ -3,9 +3,11 @@
 //
 
 #pragma once
-#include <cstdint>
-#include <cstddef>
 #include <sys/types.h>
+#include <cstring>
+#include <cstddef>
+#include <cstdint>
+#include <stdexcept>
 
 // Abstract transport interface
 // Low-level byte I/O (control plane):
@@ -36,3 +38,37 @@ public:
 
     virtual ~Transport() = default;
 };
+
+// Exact I/O over Transport
+
+inline void send_exact(Transport& t, const uint8_t* buf, size_t len) {
+    size_t sent = 0;
+    while (sent < len) {
+        ssize_t n = t.send(buf + sent, len - sent);
+        if (n == 0) {
+            throw std::runtime_error("send exact: connection closed");
+        }
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
+            throw std::runtime_error("send exact: send failed: " +
+                                     std::string(std::strerror(errno)));
+        }
+        sent += static_cast<size_t>(n);
+    }
+}
+
+inline void recv_exact(Transport& t, uint8_t* buf, size_t len) {
+    size_t received = 0;
+    while (received < len) {
+        ssize_t n = t.recv(buf + received, len - received);
+        if (n == 0) {
+            throw std::runtime_error("recv exact: connection closed");
+        }
+        if (n < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
+            throw std::runtime_error("recv exact: recv failed: " +
+                                     std::string(std::strerror(errno)));
+        }
+        received += static_cast<size_t>(n);
+    }
+}

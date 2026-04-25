@@ -5,6 +5,7 @@
 #include "partial_file.hpp"
 #include "chunk_manager.hpp"
 #include "util/constants.hpp"
+#include "util/exact_io.hpp"
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
@@ -13,39 +14,9 @@
 #include <string>
 #include <vector>
 
-// .embr.partial format:
+// .embr.partial format: (local cache only)
 //   [file_hash: 32 bytes]
 //   [bitmap: ceil(chunk_count / 8) bytes, LSB = chunk 0]
-
-namespace {
-
-void write_exact(int fd, const void* buf, size_t len) {
-    const uint8_t* offset = static_cast<const uint8_t*>(buf);
-    size_t remaining = len;
-    while (remaining > 0) {
-        ssize_t written = ::write(fd, offset, remaining);
-        if (written <= 0) {
-            throw std::runtime_error("partial_file::write_exact: write failed");
-        }
-        offset += written;
-        remaining -= written;
-    }
-}
-
-void read_exact(int fd, void* buf, size_t len) {
-    uint8_t* offset = static_cast<uint8_t*>(buf);
-    size_t remaining = len;
-    while (remaining > 0) {
-        ssize_t got = ::read(fd, offset, remaining);
-        if (got <= 0) {
-            throw std::runtime_error("partial_file::read_exact: read failed");
-        }
-        offset += got;
-        remaining -= got;
-    }
-}
-
-}
 
 std::string PartialFile::path_for(const std::string& output_path) {
     const size_t slash_pos = output_path.rfind('/');
@@ -63,11 +34,11 @@ std::optional<ChunkManager> PartialFile::load(const std::string& output_path,
     if (fd < 0) { return std::nullopt; } // no partial file (fresh)
 
     try {
-        std::array<uint8_t, HASH_SIZE> stored_hash;
+        std::array<uint8_t, HASH_SIZE> stored_hash{};
         read_exact(fd, stored_hash.data(), sizeof(stored_hash));
         if (std::memcmp(stored_hash.data(), file_hash.data(), sizeof(stored_hash)) != 0) {
             ::close(fd);
-            return std::nullopt; // diff file (as fresh)
+            return std::nullopt; // different file (treat as fresh)
         }
 
         struct stat st{};
@@ -90,7 +61,7 @@ std::optional<ChunkManager> PartialFile::load(const std::string& output_path,
         }
         return chunk_manager;
 
-    } catch (...) {
+    } catch (const std::runtime_error& e) {
         ::close(fd);
         return std::nullopt; // corrupted partial -- treat as fresh
     }

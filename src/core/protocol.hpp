@@ -4,21 +4,21 @@
 
 #pragma once
 
-#include "hash.hpp"
 #include "transport/transport.hpp"
 #include "util/constants.hpp"
-#include "util/io.hpp"
-#include <cstring>
+#include "util/exact_io.hpp"
+#include "hash.hpp"
+#include <arpa/inet.h>
+#include <array>
 #include <cerrno>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
-#include <arpa/inet.h>
-#include <array>
-#include <cstdint>
-#include <cstddef>
 #include <vector>
 
 inline constexpr uint8_t PROTOCOL_VERSION = 0x02; // v0.3: chunk_hashes in FILE_META, ChunkHdr drop hash

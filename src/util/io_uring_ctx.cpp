@@ -3,16 +3,13 @@
 //
 
 #include "io_uring_ctx.hpp"
-
+#include "constants.hpp"
 #include <sys/mman.h>
-
 #include <cerrno>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <vector>
-
-#include "constants.hpp"
 #include <liburing.h>
 
 IoUringCtx::IoUringCtx(size_t chunk_buf_count, size_t chunk_buf_size,

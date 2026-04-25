@@ -3,7 +3,6 @@
 //
 
 #include "chunk_manager.hpp"
-
 #include <stdexcept>
 
 ChunkManager::ChunkManager(uint32_t chunk_count)
