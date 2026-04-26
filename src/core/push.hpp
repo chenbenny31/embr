@@ -10,7 +10,7 @@
 #include <cstdint>
 
 // Phase 1: mmap entire file, compute SHA256 per chunk, return FileMeta with chunk_hashes
-FileMeta precompute_meta(const std::string& filepath);
+FileMeta precompute_meta(const std::string& file_path);
 
 // Phase 2: serve file to peer over transport
 // request-driven: recv CHUNK_REQ, send CHUNK_HDR + senf_file; break on COMPLETE

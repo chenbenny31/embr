@@ -41,9 +41,9 @@ std::optional<ChunkManager> PartialFile::load(const std::string& output_path,
             return std::nullopt; // different file (treat as fresh)
         }
 
-        struct stat st{};
-        if (::stat(output_path.c_str(), &st) < 0 ||
-            static_cast<uint64_t>(st.st_size) != static_cast<uint64_t>(chunk_count) * CHUNK_SIZE) {
+        struct stat file_stat{};
+        if (::stat(output_path.c_str(), &file_stat) < 0 ||
+            static_cast<uint64_t>(file_stat.st_size) != static_cast<uint64_t>(chunk_count) * CHUNK_SIZE) {
             ::close(fd);
             return std::nullopt;
         }

@@ -12,6 +12,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/mman.h>
+#include <sys/stat.h>
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -19,16 +20,25 @@
 #include <cstring>
 #include <string>
 
-FileMeta precompute_meta(const std::string& filepath) {
-    if (!std::filesystem::exists(filepath)) {
-        throw std::runtime_error("precompute_meta: file does not exist: " + filepath);
+FileMeta precompute_meta(const std::string& file_path) {
+    if (!std::filesystem::exists(file_path)) {
+        throw std::runtime_error("precompute_meta: file does not exist: " + file_path);
     }
-    uint64_t file_size = std::filesystem::file_size(filepath);
+    uint64_t file_size = std::filesystem::file_size(file_path);
     if (file_size == 0) {
-        throw std::runtime_error("precompute_meta: file is empty: " + filepath);
+        throw std::runtime_error("precompute_meta: file is empty: " + file_path);
     }
-    std::string file_name = std::filesystem::path(filepath).filename().string();
-    uint32_t chunk_count = static_cast<uint32_t>(
+
+    struct stat file_stat{};
+    if (::stat(file_path.c_str(), &file_stat) < 0) {
+        throw std::runtime_error("precompute_meta: stat failed: " +
+                                 std::string(std::strerror(errno)));
+    }
+    const uint64_t mtime_ns = static_cast<uint64_t>(file_stat.st_mtim.tv_sec) * 1'000'000'000ULL +
+                              static_cast<uint64_t>(file_stat.st_mtim.tv_nsec);
+
+    std::string file_name = std::filesystem::path(file_path).filename().string();
+    const uint32_t chunk_count = static_cast<uint32_t>(
         (file_size + CHUNK_SIZE - 1) / CHUNK_SIZE);
 
     FileMeta file_meta{
@@ -37,11 +47,20 @@ FileMeta precompute_meta(const std::string& filepath) {
         .chunk_size = static_cast<uint32_t>(CHUNK_SIZE),
         .chunk_count = chunk_count,
     };
-
-    std::cout << "[push] hashing " << file_meta.file_name << " (" << chunk_count << " chunks)...\n";
     file_meta.chunk_hashes.resize(chunk_count);
 
-    SocketFd fd{::open(filepath.c_str(), O_RDONLY)};
+    // try loading from cache first
+    if (hash_cache_load(file_path, file_size, mtime_ns,
+                        chunk_count, file_meta.chunk_hashes)) {
+        std::cout << "[push] loaded chunk hashes from cache\n";
+        return file_meta;
+    }
+
+    // cache miss, compute hashes
+    std::cout << "[push] hashing " << file_meta.file_name
+              << " (" << chunk_count << " chunks)...\n";
+
+    SocketFd fd{::open(file_path.c_str(), O_RDONLY)};
     if (fd.get() < 0) {
         throw std::runtime_error("precompute_meta: open failed: " +
                                  std::string(std::strerror(errno)));
@@ -62,6 +81,10 @@ FileMeta precompute_meta(const std::string& filepath) {
     }
     ::munmap(mapped, file_size);
     std::cout << "\n[push] hashing complete\n";
+
+    // persist cache
+    hash_cache_save(file_path, file_size, mtime_ns,
+                    static_cast<uint32_t>(CHUNK_SIZE), chunk_count, file_meta.chunk_hashes);
     return file_meta;
 }
 
