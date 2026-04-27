@@ -1,81 +1,33 @@
-#include "core/protocol.hpp"
-#include "core/pull.hpp"
-#include "core/push.hpp"
-#include "transport//udp_data_server.hpp"
-#include "transport/tcp_client.hpp"
-#include "transport/tcp_server.hpp"
-#include "transport/udp_data_client.hpp"
-#include "util/socket_fd.hpp"
-
-#include <fcntl.h>
-
-#include <cerrno>
-#include <cstdint>
-#include <cstring>
+#include "cli/pull_cli.hpp"
+#include "cli/push_cli.hpp"
+#include "cli/tracker_cli.hpp"
 #include <iostream>
 #include <string>
 
-static constexpr uint16_t DEFAULT_PORT        = 9000;
-static constexpr uint16_t UDP_DATA_PORT_OFFSET = 1;
+namespace {
 
-static void usage() {
+void print_usage() {
     std::cerr << "Usage:\n"
-              << "  embr push <file> [--port PORT]\n"
-              << "  embr pull <ip>   [--port PORT] [--out PATH]\n";
+              << "  embr push <file>        [--port PORT] [--tracker URL] [--ip IP]\n"
+              << "  embr pull <token-or-ip> [--port PORT] [--tracker URL] [--out PATH]\n"
+              << "  embr tracker            [--bind ADDR] [--port PORT] [--ttl MINUTES]\n";
+}
+
 }
 
 int main(int argc, char* argv[]) {
-    if (argc < 3) {
-        usage();
+    if (argc < 2) {
+        print_usage();
         return 1;
     }
 
-    std::string cmd      = argv[1];
-    std::string arg      = argv[2];
-    uint16_t    port     = DEFAULT_PORT;
-    std::string out_path;
+    const std::string verb = argv[1];
 
-    for (int i = 3; i < argc; ++i) {
-        std::string flag = argv[i];
-        if (flag == "--port" && i + 1 < argc) {
-            port = static_cast<uint16_t>(std::stoi(argv[++i]));
-        } else if (flag == "--out" && i + 1 < argc) {
-            out_path = argv[++i];
-        } else {
-            std::cerr << "\nUnknown flag: " << flag << "\n";
-            usage();
-            return 1;
-        }
-    }
+    if (verb == "push") { return run_push_cli(argc - 1, argv + 1); }
+    if (verb == "pull") { return run_pull_cli(argc - 1, argv + 1); }
+    if (verb == "tracker") { return run_tracker_cli(argc - 1, argv + 1); }
 
-    try {
-        if (cmd == "push") {
-            FileMeta file_meta = precompute_meta(arg);
-            SocketFd file_fd{::open(arg.c_str(), O_RDONLY)};
-            if (file_fd.get() < 0) {
-                throw std::runtime_error("failed to open file: " +
-                                         arg + " - " + std::strerror(errno));
-            }
-            SocketFd listen_fd = tcp_listen(port);
-            std::cout << "[main] listening on port " << port << "\n";
-            auto conn = tcp_accept(listen_fd.get());
-            std::cout << "[main] TCP connection established\n";
-            run_push(*conn, std::move(file_fd), std::move(file_meta));
-
-        } else if (cmd == "pull") {
-            auto conn = tcp_connect(arg, port);
-            std::cout << "[main] TCP connected to " << arg << ":" << port << "\n";
-            run_pull(*conn, out_path);
-
-        } else {
-            std::cerr << "\nUnknown command: " << cmd << "\n";
-            usage();
-            return 1;
-        }
-    } catch (const std::exception& ex) {
-        std::cerr << "[error] " << ex.what() << "\n";
-        return 1;
-    }
-
-    return 0;
+    std::cerr << "Unknown command: " << verb << "\n";
+    print_usage();
+    return 1;
 }

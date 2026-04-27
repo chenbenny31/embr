@@ -1,17 +1,28 @@
 cmake_minimum_required(VERSION 3.25)
 project(embr LANGUAGES CXX)
-
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(OpenSSL REQUIRED)
-
 find_package(PkgConfig REQUIRED)
-
 find_package(Threads REQUIRED)
-
 pkg_check_modules(URING REQUIRED liburing)
+
+
+include(FetchContent)
+
+FetchContent_Declare(httplib
+        GIT_REPOSITORY https://github.com/yhirose/cpp-httplib.git
+        GIT_TAG v0.16.0
+)
+FetchContent_MakeAvailable(httplib)
+
+FetchContent_Declare(googletest
+        GIT_REPOSITORY https://github.com/google/googletest.git
+        GIT_TAG v1.14.0
+)
+FetchContent_MakeAvailable(googletest)
 
 # Transport lib
 add_library(transport
@@ -39,26 +50,37 @@ add_library(core
 target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
 
+# Tracker lib
+add_library(tracker
+        src/tracker/tracker_client.cpp
+        src/tracker/token_store.cpp
+        src/tracker/tracker_handlers.cpp
+        src/tracker/tracker_server.cpp
+)
+target_link_libraries(tracker PUBLIC core httplib::httplib OpenSSL::SSL OpenSSL::Crypto)
+target_include_directories(tracker PUBLIC src)
+
+# CLI lib
+add_library(cli
+        src/cli/push_cli.cpp
+        src/cli/pull_cli.cpp
+        src/cli/tracker_cli.cpp
+)
+target_link_libraries(cli PUBLIC core tracker)
+target_include_directories(cli PUBLIC src)
+
 # Main bin
 add_executable(embr src/main.cpp)
-target_link_libraries(embr PRIVATE core)
+target_link_libraries(embr PRIVATE cli)
 
 # Test
-include(FetchContent)
-FetchContent_Declare(googletest
-        GIT_REPOSITORY https://github.com/google/googletest.git
-        GIT_TAG v1.14.0
-)
-FetchContent_MakeAvailable(googletest)
-
 add_executable(test
         tests/test_protocol.cpp
         tests/test_tcp.cpp
         tests/test_udp.cpp
         tests/test_resume.cpp
+        tests/test_tracker.cpp
 )
-target_link_libraries(test PRIVATE core GTest::gtest_main Threads::Threads)
-find_package(Threads REQUIRED)
-
+target_link_libraries(test PRIVATE core tracker GTest::gtest_main Threads::Threads)
 include(GoogleTest)
 gtest_discover_tests(test)

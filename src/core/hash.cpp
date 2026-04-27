@@ -106,7 +106,7 @@ void hash_cache_save(const std::string& file_path,
                      uint64_t mtime_ns,
                      uint32_t chunk_size,
                      uint32_t chunk_count,
-                     std::vector<std::array<uint8_t, HASH_SIZE>>& chunk_hashes) {
+                     const std::vector<std::array<uint8_t, HASH_SIZE>>& chunk_hashes) {
     const std::string cache_path = hash_cache_path_for(file_path);
     int fd = ::open(cache_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
