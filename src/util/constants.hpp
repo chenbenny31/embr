@@ -12,6 +12,9 @@ inline constexpr size_t HASH_SIZE = 32;
 inline constexpr size_t READ_BUF_SIZE = 1 * 1024 * 1024; // TCP-path fallback, L2 cache fit
 inline constexpr size_t CHUNK_SIZE = 1 * 1024 * 1024; // v0.5 adapt: 16MB raise memlock
 
+// Token
+inline constexpr size_t TOKEN_SIZE = 16; // token set to 16 hex lowercase chars
+
 // UDP / io_uring
 // UDP fragment
 inline constexpr size_t UDP_MTU = 65000; // for localhost benchmark only
