@@ -4,7 +4,6 @@
 
 #include "tcp_client.hpp"
 #include "tcp_transport.hpp"
-
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>

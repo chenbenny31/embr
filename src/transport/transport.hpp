@@ -17,9 +17,10 @@
 // High-level file I/O (data plane):
 //   send_file/recv_file - throw error if failed, chunk-level calls
 //   each transport implements its own zero-copy strategy
+//
 // override per transport for zero-copy:
 //    TcpTransport::send_file - sendfile() system call (v0.3, 0 copy push)
-//    TcpTransport::recv_file - mmap output + recv_exact (v0.3, 1 copy pull)
+//    TcpTransport::recv_file - splice() socket + pipe (v0.6, 0 copy pull)
 //    UdpTransport::send_file - io_uring SEND_FIXED() (v0.4, 0 copy push)
 //    UdpTransport::recv_file - io_uring RECV_FIXED() (v0.4, 0 copy pull)
 class Transport {

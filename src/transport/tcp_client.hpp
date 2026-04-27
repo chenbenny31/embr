@@ -9,5 +9,5 @@
 #include <cstdint>
 #include <string>
 
-// Factory: active site
+// Client establishes a TCP connection to host::port, returns a TcpTransport
 std::unique_ptr<Transport> tcp_connect(const std::string& host, uint16_t port);

@@ -2,17 +2,18 @@
 // Created by benny on 3/14/26.
 //
 
-#include <sys/socket.h>
-#include <sys/sendfile.h>
+#include "tcp_transport.hpp"
+#include "util/constants.hpp"
+#include "util/exact_io.hpp"
 #include <sys/mman.h>
+#include <sys/sendfile.h>
+#include <sys/socket.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
-#include <algorithm>
-#include "tcp_transport.hpp"
-#include "../util/io.hpp"
-#include "../util/constants.hpp"
 
 // --- Control plane ---
 ssize_t TcpTransport::send(const uint8_t* buf, size_t len) {
@@ -41,41 +42,58 @@ void TcpTransport::send_file(int file_fd, uint64_t offset, size_t len) {
     }
 }
 
-// recv_file: mmap out file (MAP_SHARED) + recv_exact
+// recv_file: splice() socket -> pipe -> file, zero user-space copy
+// pipe is lazily initialized on first call, reused across chunks
 void TcpTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
-    size_t remain = len;
-    while (remain > 0) {
-        size_t bulk = std::min(remain, READ_BUF_SIZE);
-        void* mapped = ::mmap(nullptr, bulk, PROT_READ | PROT_WRITE, MAP_SHARED,
-                              file_fd, static_cast<off_t>(offset));
-        if (mapped == MAP_FAILED) {
-            throw std::runtime_error(
-                std::string("TcpTransport::recv_file: mmap failed: ") +
-                std::strerror(errno));
+    // lazy pipe init: one pipe per TcpTransport instance
+    if (pipe_rd_ < 0) {
+        int pipefd[2];
+        if (::pipe(pipefd) < 0) {
+            throw std::runtime_error(std::string("TcpTransport::recv_file: pipe failed: ") +
+                                     std::strerror(errno));
+        }
+        pipe_rd_ = pipefd[0];
+        pipe_wr_ = pipefd[1];
+        // set pipe buffer to CHUNK_SIZE: matches one chunk exactly
+        ::fcntl(pipe_wr_, F_SETPIPE_SZ, static_cast<int>(CHUNK_SIZE));
+    }
+
+    off_t file_offset = static_cast<off_t>(offset);
+    size_t remaining = len;
+
+    while (remaining > 0) {
+        // splice socket -> pipe
+        ssize_t spliced = ::splice(fd_.get(), nullptr,
+                                   pipe_wr_, nullptr,
+                                   remaining,
+                                   SPLICE_F_MOVE | SPLICE_F_MORE);
+        if (spliced == 0) {
+            throw std::runtime_error("TcpTransport::recv_file: connection closed");
+        }
+        if (spliced < 0) {
+            if (errno == EINTR) { continue; }
+            throw std::runtime_error(std::string("TcpTransport::recv_file: socket->pipe failed: ") +
+                                     std::strerror(errno));
         }
 
-        // recv directly into mmap region: 1 copy - socket buf -> page cache
-        size_t got = 0;
-        while (got < bulk) {
-            ssize_t n = ::recv(fd_.get(),
-                               static_cast<uint8_t*>(mapped) + got,
-                               bulk - got, 0);
-            if (n == 0) {
-                ::munmap(mapped, bulk);
-                throw std::runtime_error(
-                    "TcpTransport::recv_file: connection closed");
+        // splice pipe -> file at file_offset
+        size_t remaining_pipe = static_cast<size_t>(spliced);
+        while (remaining_pipe > 0) {
+            ssize_t written = ::splice(pipe_rd_, nullptr,
+                                       file_fd, &file_offset,
+                                       remaining_pipe,
+                                       SPLICE_F_MOVE | SPLICE_F_MORE);
+            if (written == 0) {
+                throw std::runtime_error(std::string("TcpTransport::recv_file: pipe->file EOF"));
             }
-            if (n < 0) {
-                if (errno == EAGAIN || errno == EWOULDBLOCK) { continue; }
-                ::munmap(mapped, bulk);
-                throw std::runtime_error(
-                    std::string("TcpTransport::recv_file: recv failed: ") +
-                    std::strerror(errno));
+            if (written < 0) {
+                if (errno == EINTR) { continue; }
+                throw std::runtime_error(std::string("TcpTransport::recv_file: pipe->file failed: ") +
+                                         std::strerror(errno));
             }
-            got += static_cast<size_t>(n);
+            remaining_pipe -= static_cast<size_t>(written);
         }
-        ::munmap(mapped, bulk);
-        offset += bulk;
-        remain-= bulk;
+
+        remaining -= static_cast<size_t>(spliced);
     }
 }
