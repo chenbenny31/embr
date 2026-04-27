@@ -1,10 +1,9 @@
 //
 // Created by benny on 3/29/26.
 //
-#include <gtest/gtest.h>
 #include "transport/tcp_client.hpp"
 #include "transport/tcp_server.hpp"
-#include "util/io.hpp"
+#include "util/exact_io.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
@@ -14,6 +13,7 @@
 #include <cstring>
 #include <memory>
 #include <thread>
+#include <gtest/gtest.h>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

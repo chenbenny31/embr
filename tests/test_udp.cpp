@@ -5,22 +5,22 @@
 // Created by benny on 3/29/26.
 //
 
+#include "transport/tcp_client.hpp"
+#include "transport/tcp_server.hpp"
+#include "transport/udp_data_client.hpp"
+#include "transport/udp_data_server.hpp"
+#include "util/exact_io.hpp"
+#include "util/socket_fd.hpp"
+#include <arpa/inet.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
+#include <cstring>
+#include <future>
+#include <memory>
+#include <thread>
+#include <vector>
 #include <gtest/gtest.h>
-#include "transport/tcp_client.hpp"     // tcp_connect
-#include "transport/tcp_server.hpp"     // tcp_listen, tcp_accept
-#include "transport/udp_data_server.hpp"       // udp_data_server_bind, udp_data_server_connect
-#include "transport/udp_data_client.hpp"    // udp_data_client_connect
-#include "util/io.hpp"                  // send_exact, recv_exact
-#include "util/socket_fd.hpp"           // SocketFd
-#include <arpa/inet.h>                  // htons, ntohs, getsockname, sockaddr_in
-#include <fcntl.h>                      // ::open, O_RDWR, O_CREAT, O_TRUNC, O_RDONLY
-#include <sys/mman.h>                   // ::mmap, ::munmap, PROT_READ, MAP_SHARED, MAP_FAILED
-#include <unistd.h>                     // ::ftruncate, ::pread, ::write, ::unlink
-#include <cstring>                      // std::memcmp
-#include <future>                       // std::promise, std::future
-#include <memory>                       // std::unique_ptr
-#include <thread>                       // std::jthread
-#include <vector>                       // std::vector
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 

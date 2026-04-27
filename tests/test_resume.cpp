@@ -4,19 +4,16 @@
 
 // tests/test_resume.cpp
 
-#include "core/chunk_manager.hpp"   // ChunkManager
-#include "core/partial_file.hpp"    // PartialFile
-#include "core/hash.hpp"            // sha256_buf
-#include "util/constants.hpp"       // HASH_SIZE
-
-#include <fcntl.h>    // ::open, O_RDWR, O_CREAT, O_TRUNC
-#include <unistd.h>   // ::close, ::unlink, ::ftruncate, ::write
-
-#include <array>      // std::array
-#include <cstdint>    // uint8_t, uint32_t
-#include <cstring>    // std::memset
-#include <string>     // std::string
-
+#include "core/chunk_manager.hpp"
+#include "core/partial_file.hpp"
+#include "core/hash.hpp"
+#include "util/constants.hpp"
+#include <fcntl.h>
+#include <unistd.h>
+#include <array>
+#include <cstdint>
+#include <cstring>
+#include <string>
 #include <gtest/gtest.h>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
