@@ -12,7 +12,7 @@
 // upserts if token exists and throws on error
 void tracker_register(const std::string& tracker_url,
                       const std::string& token,
-                      uint16_t port);
+                      uint16_t sender_port);
 
 // Resolves token to (sender_ip, sender_port)
 std::pair<std::string, uint16_t> tracker_resolve(const std::string& tracker_url,

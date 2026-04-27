@@ -3,6 +3,7 @@
 //
 
 #include "tracker_client.hpp"
+#include "util/json_parser.hpp"
 #include <httplib.h>
 #include <cstdint>
 #include <stdexcept>
@@ -11,34 +12,14 @@
 
 namespace {
 
-// Parses value of string field: "key":"value", return empty if no such key
-std::string json_get_str(const std::string& body, const std::string& key) {
-    const std::string needle = "\"" + key + "\":\"";
-    const size_t key_pos = body.find(needle);
-    if (key_pos == std::string::npos) { return {}; }
-    const size_t val_start = key_pos + needle.size();
-    const size_t val_end = body.find('"', val_start);
-    if (val_end == std::string::npos) { return {}; }
-    return body.substr(val_start, val_end - val_start);
-}
-
-// Parses value of an integer field: "key":value, return 0 if no such key
-uint16_t json_get_u16(const std::string& body, const std::string& key) {
-    const std::string needle = "\"" + key + "\":";
-    const size_t key_pos = body.find(needle);
-    if (key_pos == std::string::npos) { return 0; }
-    const size_t val_start = key_pos + needle.size();
-    return static_cast<uint16_t>(std::stoul(body.substr(val_start)));
-}
-
-// Splits tracker_url into (host, port, base_path)
-// e.g. "http://plurb.org:10007" -> ("plurb.org", 10007, "")
 struct ParsedUrl {
-    std::string host;
-    int port;
+    std::string tracker_host; // domain or ip of tracker
+    int tracker_port;
 };
+
+// Parse "http://host:port" -> {tracker_host, tracker_port}, throw on malformed URL
 ParsedUrl parse_url(const std::string& tracker_url) {
-    const std::string prefix = "http://";
+    const std::string prefix = "http://"; // no support TLS yet
     size_t start = 0;
     if (tracker_url.substr(0, prefix.size()) == prefix) {
         start = prefix.size();
@@ -55,16 +36,17 @@ ParsedUrl parse_url(const std::string& tracker_url) {
 
 }
 
+// Sender registers token with (sender_ip, sender_port) at tracker
 void tracker_register(const std::string& tracker_url,
                       const std::string& token,
-                      uint16_t port) {
-    auto [host, http_port] = parse_url(tracker_url);
-    httplib::Client client(host, http_port);
+                      uint16_t sender_port) {
+    auto [tracker_host, tracker_port] = parse_url(tracker_url);
+    httplib::Client client(tracker_host, tracker_port);
     client.set_connection_timeout(10);
     client.set_read_timeout(10);
 
     const std::string body = "{\"token\":\"" + token + "\","
-                             "\"port\":" + std::to_string(port) + "}";
+                             "\"sender_port\":" + std::to_string(sender_port) + "}";
     auto result = client.Post("/register", body, "application/json");
     if (!result) {
         throw std::runtime_error("tracker_register: connection failed to " + tracker_url);
@@ -76,10 +58,11 @@ void tracker_register(const std::string& tracker_url,
     }
 }
 
+// Receiver asks tracker to resolve token, gets sender_ip, sender_port
 std::pair<std::string, uint16_t> tracker_resolve(const std::string& tracker_url,
                                                  const std::string& token) {
-    auto [host, http_port] = parse_url(tracker_url);
-    httplib::Client client(host, http_port);
+    auto [tracker_host, tracker_port] = parse_url(tracker_url);
+    httplib::Client client(tracker_host, tracker_port);
     client.set_connection_timeout(10);
     client.set_read_timeout(10);
 
@@ -97,22 +80,23 @@ std::pair<std::string, uint16_t> tracker_resolve(const std::string& tracker_url,
     }
 
     const std::string sender_ip = json_get_str(result->body, "sender_ip");
-    const uint16_t sender_port = json_get_u16(result->body, "port");
+    const uint16_t sender_port = json_get_u16(result->body, "sender_port");
     if (sender_ip.empty() || sender_port == 0) {
         throw std::runtime_error("tracker_resolve: malformed response: " + result->body);
     }
     return {sender_ip, sender_port};
 }
 
+// Sender informs tracker to unregister its token
 void tracker_unregister(const std::string& tracker_url,
                         const std::string& token) noexcept {
     try {
-        auto [host, http_port] = parse_url(tracker_url);
-        httplib::Client client(host, http_port);
+        auto [tracker_host, tracker_port] = parse_url(tracker_url);
+        httplib::Client client(tracker_host, tracker_port);
         client.set_connection_timeout(10);
         client.set_read_timeout(10);
-        client.Delete("/unregister/" + token);
+        client.Post("/unregister/" + token, "", "application/json");
     } catch (...) {
-
+        // best effort unregister
     }
 }
