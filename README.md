@@ -11,12 +11,12 @@ embr pipelines disk and network operations in parallel and eliminates intermedia
 
 ## Two Transfer Modes
 
-**Trusted network (LAN / datacenter)** — TCP with kernel-bypass I/O:
+**Trusted network (LAN / datacenter)** — TCP with zero-copy I/O:
 - `sendfile()` on push (0 copies), `splice()` on pull (0 copies)
 - SO_SNDBUF/SO_RCVBUF sized to bandwidth-delay product, TCP_NODELAY on control messages
 - io_uring UDP data plane available (benchmarked, closed pending single-transport refactor)
 
-**Public P2P** — ngtcp2 + io_uring (planned):
+**Public network (P2P / discovery)** — ngtcp2 + io_uring (planned):
 - TLS 1.3, NAT traversal, token-based peer discovery via tracker
 - Same io_uring buffer infrastructure, ngtcp2 QUIC state machine on top
 
@@ -85,7 +85,6 @@ Push answers requests and holds no session state — stateless across connection
 
 ## Benchmark
 
-Localhost, 2.6GB Fedora ISO:
 Localhost, 2.6GB Fedora ISO, `MTU=65000`:
 
 | Tool | Wall | User | Sys | Throughput |
