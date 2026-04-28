@@ -65,6 +65,7 @@ add_library(cli
         src/cli/push_cli.cpp
         src/cli/pull_cli.cpp
         src/cli/tracker_cli.cpp
+        src/cli/trust_cli.cpp
 )
 target_link_libraries(cli PUBLIC core tracker)
 target_include_directories(cli PUBLIC src)
