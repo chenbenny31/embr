@@ -3,17 +3,15 @@
 //
 
 #include "push_cli.hpp"
-
 #include "core/hash.hpp"
 #include "core/push.hpp"
 #include "tracker/tracker_client.hpp"
 #include "transport/tcp_server.hpp"
 #include "util/socket_fd.hpp"
-
+#include "util/config_tracker.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
-
 #include <cstring>
 #include <iomanip>
 #include <iostream>
@@ -29,13 +27,6 @@ void print_push_usage() {
               << "  --port PORT     listen port (default: 10007)\n"
               << "  --tracker URL   tracker URL; overrides EMBR_TRACKER env var\n"
               << "  --ip IP         override sender IP under NAT\n";
-}
-
-std::string resolve_tracker_url(const std::string& flag_values) {
-    if (!flag_values.empty()) { return flag_values; }
-    const char* env = ::getenv("EMBR_TRACKER");
-    if (env && env[0] != '\0') { return std::string(env); }
-    return {};
 }
 
 // Derive 16 hex char token from file (deterministic), first 8 bytes from SHA256 hashes

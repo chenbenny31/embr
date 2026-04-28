@@ -7,6 +7,7 @@
 #include "tracker/tracker_client.hpp"
 #include "transport/tcp_client.hpp"
 #include "util/constants.hpp"
+#include "util/config_tracker.hpp"
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <algorithm>
@@ -26,13 +27,6 @@ void print_pull_usage() {
               << "  --port PORT     sender port for direct IP mode (default 10007)\n"
               << "  --tracker URL   tracker URL; overrides EMBR_TRACKER env var\n"
               << "  --out PATH      output file path (default filename from sender)\n";
-}
-
-std::string resolve_tracker_url(const std::string& flag_value) {
-    if (!flag_value.empty()) { return flag_value; }
-    const char* env = ::getenv("EMBR_TRACKER");
-    if (env && env[0] != '\0') { return std::string(env); }
-    return {};
 }
 
 bool is_ipv4(const std::string& arg) {
