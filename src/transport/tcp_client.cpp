@@ -6,6 +6,7 @@
 #include "tcp_transport.hpp"
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <cerrno>
 #include <cstring>
@@ -17,6 +18,13 @@ std::unique_ptr<Transport> tcp_connect(const std::string& host, uint16_t port) {
     if (fd < 0) {
         throw std::runtime_error(std::string("tcp_connect: socket() failed: " ) + strerror(errno));
     }
+
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
+             &TcpTransport::SNDBUF_SIZE, sizeof(TcpTransport::SNDBUF_SIZE));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+                 &TcpTransport::RCVBUF_SIZE, sizeof(TcpTransport::RCVBUF_SIZE));
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
+                 &TcpTransport::TCP_NODELAY_ON, sizeof(TcpTransport::TCP_NODELAY_ON));
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;

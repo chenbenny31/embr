@@ -75,13 +75,13 @@ add_executable(embr src/main.cpp)
 target_link_libraries(embr PRIVATE cli)
 
 # Test
-add_executable(test
+add_executable(embr_test
         tests/test_protocol.cpp
         tests/test_tcp.cpp
         tests/test_udp.cpp
         tests/test_resume.cpp
         tests/test_tracker.cpp
 )
-target_link_libraries(test PRIVATE core tracker GTest::gtest_main Threads::Threads)
+target_link_libraries(embr_test PRIVATE core tracker GTest::gtest_main Threads::Threads)
 include(GoogleTest)
-gtest_discover_tests(test)
+gtest_discover_tests(embr_test)

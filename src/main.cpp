@@ -12,7 +12,8 @@ void print_usage() {
     std::cerr << "Usage:\n"
               << "  embr push <file>        [--port PORT] [--tracker URL] [--ip IP]\n"
               << "  embr pull <token-or-ip> [--port PORT] [--tracker URL] [--out PATH]\n"
-              << "  embr tracker            [--bind ADDR] [--port PORT] [--ttl MINUTES]\n";
+              << "  embr tracker            [--bind ADDR] [--port PORT] [--ttl MINUTES]\n"
+              << "  embr trust <url>        [--list] [--clear]\n";
 }
 
 }

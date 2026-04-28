@@ -17,6 +17,11 @@
 //            pipe lazily init, reused across chunks
 class TcpTransport final : public Transport {
 public:
+    // socket optimization
+    static constexpr int SNDBUF_SIZE = 4 * 1024 * 1024; // 4MB send buffer over default 128kB
+    static constexpr int RCVBUF_SIZE = 4 * 1024 * 1024; // 4MB recv buffer over default 128KB
+    static constexpr int TCP_NODELAY_ON = 1; // disable Nagle, prevent CHUNK_REQ msg coalescing
+
     ssize_t send(const uint8_t* buf, size_t len) override;
     ssize_t recv(uint8_t* buf, size_t len) override;
     void send_file(int file_fd, uint64_t offset, size_t len) override;

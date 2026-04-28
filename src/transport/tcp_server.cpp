@@ -7,6 +7,7 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
 #include <cstring>
 #include <stdexcept>
 #include <cerrno>
@@ -43,5 +44,12 @@ std::unique_ptr<Transport> tcp_accept(int listen_fd) {
     if (fd < 0) {
         throw std::runtime_error(std::string("tcp_accept: accept() failed: ") + strerror(errno));
     }
+
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
+                 &TcpTransport::SNDBUF_SIZE, sizeof(TcpTransport::SNDBUF_SIZE));
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
+                 &TcpTransport::RCVBUF_SIZE, sizeof(TcpTransport::RCVBUF_SIZE));
+    ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
+                 &TcpTransport::TCP_NODELAY_ON, sizeof(TcpTransport::TCP_NODELAY_ON));
     return std::unique_ptr<Transport>(new TcpTransport(SocketFd{fd}));
 }
