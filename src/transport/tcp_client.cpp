@@ -8,9 +8,11 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
+#include <unistd.h>
 #include <cerrno>
 #include <cstring>
-#include <unistd.h>
+#include <memory>
+#include <string>
 #include <stdexcept>
 
 std::unique_ptr<Transport> tcp_connect(const std::string& host, uint16_t port) {
@@ -19,12 +21,12 @@ std::unique_ptr<Transport> tcp_connect(const std::string& host, uint16_t port) {
         throw std::runtime_error(std::string("tcp_connect: socket() failed: " ) + strerror(errno));
     }
 
-    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
-             &TcpTransport::SNDBUF_SIZE, sizeof(TcpTransport::SNDBUF_SIZE));
-    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
-                 &TcpTransport::RCVBUF_SIZE, sizeof(TcpTransport::RCVBUF_SIZE));
+    // TCP_NODELAY: always on, control msg no Nagle-stall
     ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
-                 &TcpTransport::TCP_NODELAY_ON, sizeof(TcpTransport::TCP_NODELAY_ON));
+                 &TcpTransport::NODELAY_ON, sizeof(TcpTransport::NODELAY_ON));
+
+    // SO_SNDBUF: not set, send-side auto-tuning
+    // SO_RCVBUF: not set, pinning disables receiver-side auto-tuning
 
     sockaddr_in addr{};
     addr.sin_family = AF_INET;

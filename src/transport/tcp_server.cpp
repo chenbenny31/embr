@@ -8,9 +8,11 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
+#include <unistd.h>
 #include <cstring>
 #include <stdexcept>
 #include <cerrno>
+#include <memory>
 
 SocketFd tcp_listen(uint16_t port) {
     int fd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -30,12 +32,10 @@ SocketFd tcp_listen(uint16_t port) {
         ::close(fd);
         throw std::runtime_error(std::string("tcp_listen: bind() failed: ") + strerror(errno));
     }
-
     if (::listen(fd, SOMAXCONN) < 0) {
         ::close(fd);
         throw std::runtime_error(std::string("tcp_listen: listen() failed: ") + strerror(errno));
     }
-
     return SocketFd(fd);
 }
 
@@ -45,11 +45,13 @@ std::unique_ptr<Transport> tcp_accept(int listen_fd) {
         throw std::runtime_error(std::string("tcp_accept: accept() failed: ") + strerror(errno));
     }
 
-    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF,
-                 &TcpTransport::SNDBUF_SIZE, sizeof(TcpTransport::SNDBUF_SIZE));
-    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF,
-                 &TcpTransport::RCVBUF_SIZE, sizeof(TcpTransport::RCVBUF_SIZE));
+    // TCP_NODELAY always on
     ::setsockopt(fd, IPPROTO_TCP, TCP_NODELAY,
-                 &TcpTransport::TCP_NODELAY_ON, sizeof(TcpTransport::TCP_NODELAY_ON));
+                 &TcpTransport::NODELAY_ON, sizeof(TcpTransport::NODELAY_ON));
     return std::unique_ptr<Transport>(new TcpTransport(SocketFd{fd}));
+}
+
+std::unique_ptr<Transport> tcp_from_fd(SocketFd fd) {
+    // caller need pre-configure the socket (SO_SNDBUF, TCP_NODELAY...)
+    return std::unique_ptr<Transport>(new TcpTransport(std::move(fd)));
 }

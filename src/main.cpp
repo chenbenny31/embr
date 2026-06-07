@@ -1,5 +1,6 @@
-#include <iostream>
 #include <string>
+#include <iostream> // std::cerr
+#include <csignal> // ::signal, SIG_IGN, SIGPIPE
 
 #include "cli/pull_cli.hpp"
 #include "cli/push_cli.hpp"
@@ -19,6 +20,9 @@ void print_usage() {
 }
 
 int main(int argc, char* argv[]) {
+    // ignore SIGPIPE process-wide, sendfile() to a reset peer raises SIGPIPE before errno/EPIPE
+    ::signal(SIGPIPE, SIG_IGN);
+
     if (argc < 2) {
         print_usage();
         return 1;

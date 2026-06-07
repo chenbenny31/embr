@@ -8,19 +8,19 @@
 #include "util/socket_fd.hpp"
 #include <memory>
 #include <string>
+#include <unistd.h>
 
 // TCP implementation of Transport
-// construct only via factories
+// construct only via factories: tcp_connect, tcp_accept, tcp_from_fd
 //
-// send_file: sendfile() system call - page cache -> socket, 0 copy
+// send_file: sendfile() - page cache -> socket, 0 copy
 // recv_file: splice() socket -> pipe -> file, 0 copy
 //            pipe lazily init, reused across chunks
+// SIGPIPE: sendfile() has no MSG_NOSIGNAL equivalent, set signal(SIGPIPE, SIG_IGN) before transfer
 class TcpTransport final : public Transport {
 public:
-    // socket optimization
-    static constexpr int SNDBUF_SIZE = 4 * 1024 * 1024; // 4MB send buffer over default 128kB
-    static constexpr int RCVBUF_SIZE = 4 * 1024 * 1024; // 4MB recv buffer over default 128KB
-    static constexpr int TCP_NODELAY_ON = 1; // disable Nagle, prevent CHUNK_REQ msg coalescing
+    // TCP_NODELAY: disable Nagle, prevents CHUNK_REQ control msg coalescing
+    static constexpr int NODELAY_ON = 1;
 
     ssize_t send(const uint8_t* buf, size_t len) override;
     ssize_t recv(uint8_t* buf, size_t len) override;
@@ -38,6 +38,7 @@ private:
 
     friend std::unique_ptr<Transport> tcp_connect(const std::string& host, uint16_t port);
     friend std::unique_ptr<Transport> tcp_accept(int listen_fd);
+    friend std::unique_ptr<Transport> tcp_from_fd(SocketFd fd);
 
     int pipe_rd_ = -1;
     int pipe_wr_ = -1;

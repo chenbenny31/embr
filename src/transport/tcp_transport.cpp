@@ -8,9 +8,9 @@
 #include <sys/mman.h>
 #include <sys/sendfile.h>
 #include <sys/socket.h>
+#include <sys/types.h>
 #include <unistd.h>
 #include <fcntl.h>
-#include <algorithm>
 #include <cerrno>
 #include <cstring>
 #include <stdexcept>
@@ -25,17 +25,23 @@ ssize_t TcpTransport::recv(uint8_t* buf, size_t len) {
 }
 
 // --- Data plane ---
-
-// send_file: sendfile() - page cache -> socket buffer, zero user-space copy
+// send_file: sendfile() - page cache -> socket buffer, zero copy
+// SIGPIPE must be ignored process-wide (in main.cpp)
+// sendfile() has no MSG_NOSIGNAL equivalent; peer reset raises SIGPIPE before EPIPE
 void TcpTransport::send_file(int file_fd, uint64_t offset, size_t len) {
     size_t remain = len;
     while (remain > 0) { // send
         off_t off = static_cast<off_t>(offset);
         ssize_t sent = ::sendfile(fd_.get(), file_fd, &off, remain);
-        if (sent <= 0) {
+        if (sent < 0) {
+            if (errno == EINTR) { continue; } // retry on signal interrupt
             throw std::runtime_error(
                 std::string("TcpTransport::send_file: sendfile failed: ") +
                 std::strerror(errno));
+        }
+        if (sent == 0) {
+            // SIGPIPE ignored, sent == 0 is near-dead but handle defensively
+            throw std::runtime_error("TcpTransport::send_file: connection closed");
         }
         offset += static_cast<size_t>(sent);
         remain -= static_cast<size_t>(sent);
@@ -55,18 +61,19 @@ void TcpTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
         pipe_rd_ = pipefd[0];
         pipe_wr_ = pipefd[1];
         // set pipe buffer to CHUNK_SIZE: matches one chunk exactly
+        // kernel clamps at fs.pipe-max-size
         ::fcntl(pipe_wr_, F_SETPIPE_SZ, static_cast<int>(CHUNK_SIZE));
     }
 
     off_t file_offset = static_cast<off_t>(offset);
-    size_t remaining = len;
+    size_t remain = len;
 
-    while (remaining > 0) {
+    while (remain > 0) {
         // splice socket -> pipe
         ssize_t spliced = ::splice(fd_.get(), nullptr,
                                    pipe_wr_, nullptr,
-                                   remaining,
-                                   SPLICE_F_MOVE | SPLICE_F_MORE);
+                                   remain,
+                                   SPLICE_F_MOVE);
         if (spliced == 0) {
             throw std::runtime_error("TcpTransport::recv_file: connection closed");
         }
@@ -77,12 +84,12 @@ void TcpTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
         }
 
         // splice pipe -> file at file_offset
-        size_t remaining_pipe = static_cast<size_t>(spliced);
-        while (remaining_pipe > 0) {
+        size_t remain_pipe = static_cast<size_t>(spliced);
+        while (remain_pipe > 0) {
             ssize_t written = ::splice(pipe_rd_, nullptr,
                                        file_fd, &file_offset,
-                                       remaining_pipe,
-                                       SPLICE_F_MOVE | SPLICE_F_MORE);
+                                       remain_pipe,
+                                       SPLICE_F_MOVE);
             if (written == 0) {
                 throw std::runtime_error(std::string("TcpTransport::recv_file: pipe->file EOF"));
             }
@@ -91,9 +98,9 @@ void TcpTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
                 throw std::runtime_error(std::string("TcpTransport::recv_file: pipe->file failed: ") +
                                          std::strerror(errno));
             }
-            remaining_pipe -= static_cast<size_t>(written);
+            remain_pipe -= static_cast<size_t>(written);
         }
 
-        remaining -= static_cast<size_t>(spliced);
+        remain -= static_cast<size_t>(spliced);
     }
 }
