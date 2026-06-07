@@ -19,6 +19,7 @@
 #include <algorithm>
 #include <cstring>
 #include <string>
+#include <thread>
 
 FileMeta precompute_meta(const std::string& file_path) {
     if (!std::filesystem::exists(file_path)) {
@@ -58,29 +59,15 @@ FileMeta precompute_meta(const std::string& file_path) {
 
     // cache miss, compute hashes
     std::cout << "[push] hashing " << file_meta.file_name
-              << " (" << chunk_count << " chunks)...\n";
+              << " (" << chunk_count << " chunks, "
+              << std::thread::hardware_concurrency() << " workers)...\n";
 
     SocketFd fd{::open(file_path.c_str(), O_RDONLY)};
     if (fd.get() < 0) {
         throw std::runtime_error("precompute_meta: open failed: " +
                                  std::string(std::strerror(errno)));
     }
-
-    void* mapped = ::mmap(nullptr, file_size, PROT_READ, MAP_SHARED, fd.get(), 0);
-    if (mapped == MAP_FAILED) {
-        throw std::runtime_error("precompute_meta: mmap failed: " +
-                                 std::string(std::strerror(errno)));
-    }
-
-    for (uint32_t i = 0; i < chunk_count; ++i) {
-        uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
-        size_t chunk_len = static_cast<size_t>(
-            std::min(static_cast<uint64_t>(CHUNK_SIZE), file_size - offset));
-        file_meta.chunk_hashes[i] = sha256_buf(static_cast<uint8_t*>(mapped) + offset, chunk_len);
-        std::cout << "[push] hashing " << i + 1 << "/" << chunk_count << "\r" << std::flush;
-    }
-    ::munmap(mapped, file_size);
-    std::cout << "\n[push] hashing complete\n";
+    file_meta.chunk_hashes = hash_compute_parallel(fd.get(), file_size, chunk_count);
 
     // persist cache
     hash_cache_save(file_path, file_size, mtime_ns,

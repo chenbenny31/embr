@@ -81,6 +81,7 @@ add_executable(embr_test
         tests/test_udp.cpp
         tests/test_resume.cpp
         tests/test_tracker.cpp
+        tests/test_hash_parallel.cpp
 )
 target_link_libraries(embr_test PRIVATE core tracker GTest::gtest_main Threads::Threads)
 include(GoogleTest)

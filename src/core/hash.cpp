@@ -7,12 +7,18 @@
 #include "util/exact_io.hpp"
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/mman.h>
 #include <openssl/evp.h>
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <exception>
+#include <mutex>
+#include <thread>
+#include <cstdint>
 
 // .embr.hash format:
 //   [file_size:u64][mtime_ns:u64][chunk_size:u32][chunk_count:u32]
@@ -128,4 +134,71 @@ void hash_cache_save(const std::string& file_path,
         ::close(fd);
         throw;
     }
+}
+
+
+std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
+                                                                  uint64_t file_size,
+                                                                  uint32_t chunk_count) {
+    void* mapped = ::mmap(nullptr, static_cast<size_t>(file_size),
+                          PROT_READ, MAP_SHARED, file_fd, 0);
+    if (mapped == MAP_FAILED) {
+        throw std::runtime_error(std::string("hash_compute_parallel: mmap failed:") +
+                                 std::strerror(errno));
+    }
+
+    std::vector<std::array<uint8_t, HASH_SIZE>> chunk_hashes(chunk_count);
+
+    // count on its own cache line, prevents false sharing between fetch_add and any adj hot data
+    struct alignas(64) AlignedCounter {
+        std::atomic<uint32_t> value{0};
+    } next_chunk;
+
+    // exception propagation, main thread re-throws workers' stored first exception
+    std::vector<std::exception_ptr> worker_exceptions;
+    std::mutex exceptions_mtx;
+
+    const uint32_t num_workers = std::min(chunk_count,
+                                          static_cast<uint32_t>(std::max(1u,
+                                              std::thread::hardware_concurrency())));
+
+    worker_exceptions.resize(num_workers, nullptr);
+
+    auto worker = [&](uint32_t worker_id) {
+        try {
+            while (true) {
+                // memory order relaxed: each independently grabs the next avail chunk index
+                const uint32_t i = next_chunk.value.fetch_add(1,
+                                                            std::memory_order_relaxed);
+                if (i >= chunk_count) { break; }
+
+                const uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
+                const size_t chunk_len = static_cast<size_t>(
+                    std::min(static_cast<uint64_t>(CHUNK_SIZE),
+                             file_size - offset));
+
+                chunk_hashes[i] = sha256_buf(
+                    static_cast<const uint8_t*>(mapped) + offset, chunk_len);
+            }
+        } catch (...) {
+            std::lock_guard<std::mutex> lock(exceptions_mtx);
+            worker_exceptions[worker_id] = std::current_exception();
+        }
+    };
+
+    {
+        std::vector<std::jthread> workers;
+        workers.reserve(num_workers);
+        for (uint32_t t = 0; t < num_workers; t++) {
+            workers.emplace_back(worker, t);
+        }
+    }
+
+    ::munmap(mapped, static_cast<size_t>(file_size));
+
+    for (const auto& ex : worker_exceptions) {
+        if (ex) { std::rethrow_exception(ex); }
+    }
+
+    return chunk_hashes;
 }
