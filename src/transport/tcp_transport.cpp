@@ -10,9 +10,11 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
-#include <fcntl.h>
+#include <fcntl.h> // ::splice, SPLICE_F_MOVE, requires _GNU_SOURCE
+#include <iostream>
 #include <cerrno>
 #include <cstring>
+#include <cstdint>
 #include <stdexcept>
 
 // --- Control plane ---
@@ -60,9 +62,10 @@ void TcpTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
         }
         pipe_rd_ = pipefd[0];
         pipe_wr_ = pipefd[1];
-        // set pipe buffer to CHUNK_SIZE: matches one chunk exactly
-        // kernel clamps at fs.pipe-max-size
-        ::fcntl(pipe_wr_, F_SETPIPE_SZ, static_cast<int>(CHUNK_SIZE));
+
+        const int granted = ::fcntl(pipe_wr_, F_SETPIPE_SZ, static_cast<int>(CHUNK_SIZE));
+        // franted is the actual pipe size after kernel rounding and clamping at fs.pipe-max-size
+        std::cerr << "[tcp] pipe size granted: " << granted << " bytes\n";
     }
 
     off_t file_offset = static_cast<off_t>(offset);

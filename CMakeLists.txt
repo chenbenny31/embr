@@ -37,6 +37,7 @@ add_library(transport
 target_include_directories(transport PUBLIC src)
 target_include_directories(transport PUBLIC ${URING_INCLUDE_DIRS})
 target_link_libraries(transport PUBLIC ${URING_LIBRARIES})
+target_compile_definitions(transport PRIVATE _GNU_SOURCE)
 
 # Core lib
 add_library(core
@@ -49,6 +50,7 @@ add_library(core
 )
 target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
+target_compile_definitions(core PRIVATE _GNU_SOURCE)
 
 # Tracker lib
 add_library(tracker
@@ -66,6 +68,10 @@ add_library(cli
         src/cli/pull_cli.cpp
         src/cli/tracker_cli.cpp
         src/cli/trust_cli.cpp
+        src/cli/latency.cpp
+        src/cli/latency.hpp
+        src/cli/bench.cpp
+        src/cli/bench.hpp
 )
 target_link_libraries(cli PUBLIC core tracker)
 target_include_directories(cli PUBLIC src)
