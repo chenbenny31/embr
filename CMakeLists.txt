@@ -68,8 +68,8 @@ add_library(cli
         src/cli/pull_cli.cpp
         src/cli/tracker_cli.cpp
         src/cli/trust_cli.cpp
-        src/cli/latency.cpp
-        src/cli/latency.hpp
+        src/bench/latency.cpp
+        src/bench/latency.hpp
         src/cli/bench.cpp
         src/cli/bench.hpp
 )

@@ -16,11 +16,11 @@
 #include <unistd.h>
 #include <algorithm>
 #include <cstdint>
-#include <cstring>
 #include <cstdio>
+#include <cstring>
+#include <ctime>
 #include <stdexcept>
 #include <string>
-#include <ctime>
 #include <vector>
 
 static uint64_t now_ns() {
