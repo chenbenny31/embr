@@ -13,7 +13,7 @@ embr pipelines disk and network operations in parallel and eliminates intermedia
 
 **Trusted network (LAN / datacenter)** — TCP with zero-copy I/O:
 - `sendfile()` on push (0 copies), `splice()` on pull (0 copies)
-- SO_SNDBUF/SO_RCVBUF sized to bandwidth-delay product, TCP_NODELAY on control messages
+- `TCP_NODELAY` on control messages, `SO_SNDBUF`/`SO_RCVBUF` OS-autotuned
 - io_uring UDP data plane available (benchmarked, closed pending single-transport refactor)
 
 **Public network (P2P / discovery)** — ngtcp2 + io_uring (planned):
@@ -85,35 +85,42 @@ Push answers requests and holds no session state — stateless across connection
 
 ## Benchmark
 
-Localhost, 2.6GB Fedora ISO, `MTU=65000`:
+See [BENCHMARKS.md](BENCHMARKS.md) for full methodology, raw data, and reproduction commands.
 
-| Tool | Wall | User | Sys | Throughput |
-|------|------|------|-----|------------|
-| embr TCP + sendfile/splice | 2.21s | 1.13s | 0.91s | 1.27 GB/s |
-| embr UDP + io_uring | 2.113s | 1.142s | 0.775s | 1.22 GB/s |
-| scp | 1.20s | 0.31s | 1.19s | 2.22 GB/s |
+### Zero-copy mechanism (strace syscall count, 1 GB loopback)
 
-embr has 24% lower sys time than scp on localhost. scp's lower wall time reflects no integrity verification — embr verifies every chunk with SHA256. scp performs no data integrity checking.
+| process | dominant syscalls | total syscalls |
+|---------|-------------------|----------------|
+| embr push | `sendfile` ×1024 | ~7,408 |
+| embr pull | `splice` ×4096 + `mmap` ×1024 (SHA-256 verify) | ~15,532 |
+| ncat sender | `read` ×131,072 + `sendto` ×131,072 + `fcntl` ×524,288* | ~917,656 |
+| ncat receiver | `recvfrom` ×131,072 + `write` ×131,072 | ~393,430 |
 
-UDP sys time matches TCP (0.775s vs 0.709s on the 3GB run) — io_uring kernel overhead eliminated at large MTU. Remaining wall-time gap vs TCP = stop-and-wait ACK latency (2616 chunks × TCP RTT). Sliding window deferred to ngtcp2 phase where QUIC streams provide it for free. UDP path closed in v0.6 pending single-transport interface refactor — benchmarked and validated, not exposed in CLI.
+\* ncat artifact, not protocol work.
 
-Remote VPS, 100MB file, ~5 MB/s uplink:
+**Bytes through userspace: embr = 0. ncat = 1 GB.** sendfile/splice move pages entirely in-kernel; ncat copies every byte through an 8 KB userspace buffer (131,072 iterations per side).
 
-| Tool                       | Avg Wall | Throughput |
-|----------------------------|----------|------------|
-| embr TCP + sendfile/splice | 19.9s | 5.0 MB/s |
-| scp                        | 22.5s | 4.4 MB/s |
+### WAN cross-region (1 GB, AWS c5n.large us-east-1 → us-east-2, n=10)
 
-embr is **12% faster than scp** on a real WAN link with full SHA256 integrity verification. scp variance is high (16s–27s) due to TLS + compression fluctuation; embr variance is tight (18.5s–20.6s).
+| tool | throughput | wall (median) | sys (median) |
+|------|-----------|--------------|-------------|
+| embr | 1.17 Gbps | 7.33s | 0.82s |
+| nc   | 1.17 Gbps | 7.33s | 0.945s |
+| scp† | 0.83 Gbps | 10.41s | 2.50s |
 
-Remote VPS, 3GB file, ~25 MB/s uplink:
+†scp is SSH-encrypted — reference only, not an I/O comparison.
 
-| Tool | Wall | User | Sys | Throughput |
-|------|------|------|-----|------------|
-| embr TCP + sendfile | 131.2s | 2.0s | 8.9s | 23.4 MB/s |
-| scp | 117.7s | 3.6s | 12.5s | 26.1 MB/s |
+embr matches raw netcat throughput while verifying end-to-end integrity, at **13–15% lower kernel CPU** (no overlap across all 10 runs: embr worst sys 0.88s < nc best 0.90s). embr user time (2.58s) is receiver-side SHA-256 verification — work nc does not do. The zero-copy advantage becomes more dramatic on a fat, low-RTT link where copy/CPU is the bottleneck, not the network.
 
-embr TCP uses 44% less userspace CPU than scp on the remote path — SHA256 pre-computed before transfer begins, not in the hot path.
+### Loopback software overhead (1 GB, Fedora laptop, n=5)
+
+| tool | throughput | send_sys | total CPU |
+|------|-----------|----------|-----------|
+| embr | 15.34 Gbps | 0.04s | 0.58s |
+| nc   | 20.45 Gbps | 0.27s | 0.67s |
+| scp† | 8.77 Gbps  | 0.00s | 0.98s |
+
+nc wins loopback throughput — no protocol overhead, no integrity verification. The signal is **send_sys: embr 0.04s vs nc 0.27s — 6.75× lower sender kernel time**. sendfile hands pages to the socket buffer in-kernel; nc's sender calls read() + send() per chunk. embr uses less total CPU (0.58s) than nc (0.67s) despite verifying every chunk with SHA-256.
 
 ## Build
 ```bash
@@ -134,11 +141,6 @@ sudo dnf install cmake ninja-build gcc-c++ openssl-devel liburing-devel
 sudo apt install cmake ninja-build g++ libssl-dev liburing-dev
 ```
 
-**macOS (development only — io_uring not supported, TCP path only):**
-```bash
-brew install cmake ninja openssl
-```
-
 **Kernel requirement:** Linux 6.0+ for io_uring RECV/WRITE_FIXED on UDP sockets. Older kernels fall back to unregistered buffers automatically.
 
 **memlock limit:** io_uring registered buffers require sufficient locked memory. Default 8MB is sufficient for `CHUNK_SIZE=1MB`. Verify with `ulimit -l`.
@@ -152,12 +154,13 @@ embr/
 │   │   ├── push_cli.hpp/.cpp           # push argparse, token derivation, tracker register
 │   │   ├── pull_cli.hpp/.cpp           # pull argparse, token detection, tracker resolve
 │   │   ├── tracker_cli.hpp/.cpp        # tracker argparse, run_tracker_server
-│   │   └── trust_cli.hpp/.cpp          # trust argparse, ~/.config/embr/tracker
+│   │   ├── trust_cli.hpp/.cpp          # trust argparse, ~/.config/embr/tracker
+│   │   └── bench.hpp/.cpp              # bench argparse, --role sender/receiver
 │   ├── core/
 │   │   ├── protocol.hpp/.cpp           # send_msg/recv_msg, wire format
 │   │   ├── chunk_manager.hpp/.cpp      # runtime bitmap of completed chunks
 │   │   ├── partial_file.hpp/.cpp       # .embr.partial serialize/deserialize
-│   │   ├── hash.hpp/.cpp               # SHA256 + .embr.hash cache
+│   │   ├── hash.hpp/.cpp               # SHA256 + parallel pre-hash + .embr.hash cache
 │   │   ├── push.hpp/.cpp               # sender logic
 │   │   └── pull.hpp/.cpp               # receiver logic, resume
 │   ├── tracker/
@@ -166,31 +169,31 @@ embr/
 │   │   ├── tracker_server.hpp/.cpp     # cpp-httplib wiring, SIGINT shutdown
 │   │   └── tracker_client.hpp/.cpp     # register/resolve/unregister HTTP client
 │   ├── transport/
-│   │   ├── transport.hpp               # abstract interface
+│   │   ├── transport.hpp               # abstract interface (frozen)
 │   │   ├── tcp_transport.hpp/.cpp      # sendfile() push, splice() pull
 │   │   ├── tcp_client.hpp/.cpp         # tcp_connect() factory
-│   │   ├── tcp_server.hpp/.cpp         # tcp_listen() / tcp_accept() factories
-│   │   ├── udp_transport.hpp/.cpp      # UDP + io_uring implementation
-│   │   ├── udp_data_client.hpp/.cpp    # udp_data_client_connect factory
-│   │   └── udp_data_server.hpp/.cpp    # udp_data_server_bind/connect factories
+│   │   └── tcp_server.hpp/.cpp         # tcp_listen() / tcp_accept() / tcp_from_fd()
 │   └── util/
 │       ├── socket_fd.hpp               # RAII fd wrapper
-│       ├── exact_io.hpp                # send_exact/recv_exact, fd_read/write_exact
+│       ├── exact_io.hpp                # send_exact/recv_exact
 │       ├── json_parser.hpp             # hand-rolled flat JSON helpers
 │       ├── config_tracker.hpp          # resolve_tracker_url, read/write config
 │       ├── io_uring_ctx.hpp/.cpp       # io_uring ring + registered buffer pool
-│       └── constants.hpp               # CHUNK_SIZE, HASH_SIZE, EMBR_PORT, TRACKER_PORT
+│       └── constants.hpp              # CHUNK_SIZE, HASH_SIZE, EMBR_PORT, TRACKER_PORT
+├── bench/
+│   ├── bench.md                        # methodology notes
+│   ├── tcp_loopback.sh                 # loopback benchmark (sender+receiver CPU)
+│   └── tcp_wan.sh                      # WAN benchmark (interleaved, retry, verify)
 ├── tests/
 │   ├── test_protocol.cpp
 │   ├── test_tcp.cpp
-│   ├── test_udp.cpp
 │   ├── test_resume.cpp
-│   └── test_tracker.cpp
+│   ├── test_tracker.cpp
+│   └── test_hash_parallel.cpp          # parallel vs serial SHA-256 correctness
 └── CMakeLists.txt
 ```
 
-Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle owned by CLI layer. Swapping transport = one file change.
-
+Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle owned by CLI layer. Swapping transport = one file change. The Transport interface survived three generations of data-plane optimization (buffered I/O → sendfile+mmap → sendfile+splice) without touching `push.cpp` or `pull.cpp`.
 ## Wire Protocol
 ```
 Header (6 bytes, always): [version:u8][type:u8][payload_len:u32 BE]
@@ -233,47 +236,60 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. File in
 | Phase | What |
 |-------|------|
 | v0.1 | TCP whole-file transfer, pluggable transport, wire protocol ✓ |
-| v0.2 | 16MB chunking + SHA256 per-chunk integrity ✓ |
+| v0.2 | 1MB chunking + SHA256 per-chunk integrity ✓ |
 | v0.3 | TCP + sendfile() + mmap(MAP_SHARED), zero-copy push ✓ |
 | v0.4 | UDP + io_uring, registered buffers, direct-to-disk recv ✓ |
 | v0.5 | Request-driven protocol, resume interrupted transfers ✓ |
-| **v0.6** | **Token + tracker, splice() zero-copy recv, .embr.hash cache, embr trust ✓** |
-| v0.7 | Persistent push daemon, multi-sender tokens, HTTPS tracker |
-| v0.8+ | ngtcp2 + io_uring, TLS 1.3, NAT traversal, sliding window, 1-to-N fanout |
-| v1.x | ngtcp2 + eBPF/XDP, AF_XDP bypass, multi-tracker federation |
+| v0.6 | Token + tracker, splice() zero-copy recv, .embr.hash cache, embr trust ✓ |
+| **v0.7** | **TCP path hardening, parallel pre-hash, strace zero-copy figure, WAN bench ✓** |
+| v0.8 | ngtcp2 + io_uring QUIC transport, TLS 1.3, NAT traversal, persistent push daemon |
+| v0.9 | SPMC lock-free ring buffer, 1-to-N fanout, parallel chunks via QUIC streams |
+| v1.x | eBPF/XDP, AF_XDP bypass, multi-tracker federation |
+
 
 ## Current Status
 
-**v0.6 — token + tracker**
+**v0.7 — TCP path hardening**
 
 - [x] Project skeleton, CMake, GoogleTest
 - [x] Pluggable `Transport` interface — control plane `send`/`recv`, data plane `send_file`/`recv_file`
-- [x] `TcpTransport` + `tcp_connect` / `tcp_listen` / `tcp_accept` factories
+- [x] `TcpTransport` + `tcp_connect` / `tcp_listen` / `tcp_accept` / `tcp_from_fd` factories
 - [x] `TcpTransport::send_file` — `sendfile()` syscall, 0 copies push
-- [x] `TcpTransport::recv_file` — `splice()` socket→pipe→file, 0 copies pull
+- [x] `TcpTransport::recv_file` — `splice()` socket→pipe→file, 0 copies pull; pipe lazy-init, reused across chunks
 - [x] `UdpTransport` — io_uring registered buffers, READ_FIXED + sendmsg, RECV + WRITE_FIXED direct-to-disk
-- [x] TCP socket tuning — `SO_SNDBUF`/`SO_RCVBUF`=4MB, `TCP_NODELAY`
+- [x] TCP socket tuning — `TCP_NODELAY` always on; `SO_SNDBUF`/`SO_RCVBUF` OS-autotuned (not pinned)
+- [x] `SIGPIPE` ignored process-wide — `sendfile()` has no `MSG_NOSIGNAL` equivalent
+- [x] `SPLICE_F_MORE` removed — no-op when destination is pipe or file
+- [x] `sendfile()` / `splice()` EINTR retry — signal interrupt no longer aborts mid-chunk transfer
+- [x] `tcp_from_fd` adopt factory — bench runner owns socket setup, wraps into TcpTransport
 - [x] `SocketFd` RAII wrapper
-- [x] `util/io.hpp` — `send_exact`/`recv_exact`, `fd_read_exact`/`fd_write_exact`
-- [x] `util/constants.hpp` — `CHUNK_SIZE`, `HASH_SIZE`, `EMBR_PORT=10007`, `TRACKER_PORT=10009`
-- [x] Custom binary wire protocol (`protocol.hpp/.cpp`), `PROTOCOL_VERSION=0x02`
+- [x] `util/exact_io.hpp` — `send_exact`/`recv_exact`
+- [x] `util/constants.hpp` — `CHUNK_SIZE=1MB`, `HASH_SIZE`, `EMBR_PORT=10007`, `TRACKER_PORT=10009`
+- [x] Custom binary wire protocol (`protocol.hpp/.cpp`), `PROTOCOL_VERSION=0x03`
 - [x] `Buffer` — move-only, unified heap/mmap/io_uring backing via `std::function` release callback
-- [x] `hash.hpp/.cpp` — SHA256 via OpenSSL EVP, `.embr.hash` cache (invalidates on mtime+size change)
+- [x] `hash.hpp/.cpp` — SHA256 via OpenSSL EVP, parallel pre-hash (`hash_compute_parallel`), `.embr.hash` cache
+- [x] Parallel pre-hash — `alignas(64)` atomic work-stealing counter, `jthread` pool, whole-file mmap (avoids TLB-shootdown), exception propagation
 - [x] Pre-committed chunk hashes — all SHA256s computed before transfer, embedded in `FILE_META`
-- [x] `ChunkManager` — `vector<bool>` bitmap, bounds-checked, `mark_done`/`mark_todo`/`needed_chunks`/`all_done`
+- [x] `ChunkManager` — `vector<bool>` bitmap, bounds-checked
 - [x] `PartialFile` — `.embr.partial` serialize/deserialize, hash + output file validation on load
 - [x] Request-driven protocol — pull sends `CHUNK_REQ` per needed chunk + `COMPLETE`; push answers, stateless
-- [x] Resume — per-chunk verify + save; partial removed only on `all_done()`; fresh/resume share one code path
+- [x] Resume — mark-after-verify ordering; in-flight chunk at kill time stays unmarked, replays on restart
 - [x] `ftruncate` pre-allocation — recv at arbitrary offsets, parallel-ready
 - [x] Token derivation — `SHA256(concat(chunk_hashes))`, first 8 bytes hex, content-derived, deterministic
-- [x] `TokenStore` — `unordered_map<token, Record>` + mutex + TTL eviction + background sweeper
+- [x] `TokenStore` — `unordered_map` + mutex + TTL eviction + background `jthread` sweeper
 - [x] Tracker HTTP server — `POST /register`, `GET /resolve/:token`, `POST /unregister/:token`
 - [x] Tracker client — `tracker_register`/`tracker_resolve`/`tracker_unregister` (noexcept unregister)
 - [x] `embr trust` — persist tracker URL to `~/.config/embr/tracker`, auto-used by push/pull
 - [x] Subcommand dispatch — `embr push` / `embr pull` / `embr tracker` / `embr trust`
 - [x] CLI: full argparse per verb, `EMBR_TRACKER` env var, `--tracker` flag override
-- [x] Protocol unit tests, transport unit tests, resume unit tests, tracker unit tests
-- [x] End-to-end demo: public internet transfer via token (RackNerd VPS → Fedora laptop)
+- [x] Bench harness — `bench/latency.hpp/.cpp`, `bench_cli`, HDR histogram, short/full loop
+- [x] `bench/tcp_loopback.sh` — sender + receiver CPU measured separately, interleaved embr/nc/scp
+- [x] `bench/tcp_wan.sh` — two-machine, retry+verify loop, interleaved, median summary
+- [x] strace zero-copy figure — `sendfile×1024` + `splice×4096` vs ncat `read/write×131,072` each side
+- [x] WAN benchmark — AWS c5n.large cross-region, 1 GB, n=10: embr matches nc throughput at 13–15% lower sys CPU
+- [x] Loopback benchmark — embr send_sys 0.04s vs nc 0.27s (6.75× lower); embr total CPU lower despite SHA-256
+- [x] Protocol unit tests, transport unit tests, resume unit tests, tracker unit tests, parallel hash tests
+- [x] `BENCHMARKS.md` — strace table, WAN raw results, loopback raw results, methodology, reproduction commands
 
 ## License
 
