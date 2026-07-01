@@ -27,7 +27,7 @@ inline constexpr size_t QUIC_MAX_BURST = 10; // max num of datagrams drained per
 // construct only via factories: quic_connect, quic_accept
 //
 // send_file: mmap datav + ngtcp2 datav->dest assembly (1 copy) + in-place AEAD on dest
-// recv_file: ngtcp2 stream reaseembly + SHA-256 verify
+// recv_file: ngtcp2 stream re-assembly + SHA-256 verify
 class QuicTransport final : public Transport {
 public:
     // --- control plane ---
@@ -54,16 +54,20 @@ private:
     ngtcp2_crypto_conn_ref crypto_conn_ref_;
 
     int64_t stream_id_{-1}; // single bidi stream, shared by control + data plane
+    std::vector<uint8_t> recv_buf_;
 
     sockaddr_storage peer_addr_{};
     socklen_t peer_addrlen_{0};
 
+    // --- I/O helpers ---
     int feed_data(const uint8_t* data,
                   size_t datalen,
                   const ngtcp2_path* path,
                   const ngtcp2_pkt_info* pi);
 
     int drain_packets();
+
+    int pump_once(const sockaddr_storage& local_addr, socklen_t local_len);
 
     int run_handshake();
 
@@ -85,15 +89,15 @@ private:
                                    uint64_t offset,
                                    const uint8_t* data,
                                    size_t datalen,
-                                   void* stream_data,
-                                   void* user_data);
+                                   void* user_data,
+                                   void* stream_user_data);
     static void on_rand(uint8_t* dest,
                        size_t destlen,
                        const ngtcp2_rand_ctx* rand_ctx);
     static int get_new_connection_id(ngtcp2_conn* conn,
                                      ngtcp2_cid* cid,
                                      uint8_t* token,
-                                     size_t cid_len,
+                                     size_t cidlen,
                                      void* user_data);
 
     friend std::unique_ptr<Transport> quic_connect(const std::string& host,
