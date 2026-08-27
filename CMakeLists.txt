@@ -14,6 +14,9 @@ set(ENV{PKG_CONFIG_PATH}
 find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
 find_package(Threads REQUIRED)
+
+set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH TRUE)
+
 pkg_check_modules(URING REQUIRED liburing)
 pkg_check_modules(NGTCP2 REQUIRED IMPORTED_TARGET libngtcp2)
 pkg_check_modules(NGTCP2_CRYPTO_WS REQUIRED IMPORTED_TARGET libngtcp2_crypto_wolfssl)
@@ -48,7 +51,7 @@ add_library(transport
 target_include_directories(transport PUBLIC src)
 target_include_directories(transport PUBLIC ${URING_INCLUDE_DIRS})
 target_link_libraries(transport PUBLIC ${URING_LIBRARIES})
-target_link_libraries(transport PUBLIC
+target_link_libraries(transport PRIVATE
         PkgConfig::NGTCP2
         PkgConfig::NGTCP2_CRYPTO_WS
         PkgConfig::WOLFSSL

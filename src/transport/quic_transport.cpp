@@ -32,17 +32,27 @@ static ngtcp2_tstamp now_ns() {
 
 }
 
-QuicTransport::QuicTransport(int udp_fd, ngtcp2_conn* conn, WOLFSSL* ssl, WOLFSSL_CTX* ssl_ctx)
-        : udp_fd_(udp_fd), conn_(conn), ssl_(ssl), ssl_ctx_(ssl_ctx) {
+QuicTransport::QuicTransport(int udp_fd, WOLFSSL* ssl, WOLFSSL_CTX* ssl_ctx)
+        : udp_fd_(udp_fd), ssl_(ssl), ssl_ctx_(ssl_ctx) {
 
-    // crypto_conn_ref_ links ngtcp2 crypto callbacks
+    // ngtcp2_crypto finds conn via wolfSSL_get_app_data(ssl)
     crypto_conn_ref_.get_conn = [](ngtcp2_crypto_conn_ref* ref) -> ngtcp2_conn* {
        return static_cast<QuicTransport*>(ref->user_data)->conn_;
     };
     crypto_conn_ref_.user_data = this;
-    // attach conn_ref to SSL session
     wolfSSL_set_app_data(ssl_, &crypto_conn_ref_);
-    // tell ngtcp2 which SSL session handles TLS for this conn
+
+    // factory must bind/connect udp_fd_ before construction
+    // this addr is also the path factory hands conn_*_new, must match
+    local_len_ = sizeof(local_addr_);
+    if (::getsockname(udp_fd_, reinterpret_cast<sockaddr*>(&local_addr_), &local_len_) < 0) {
+        throw std::runtime_error(
+            std::string("QuicTransport: getsockname failed: ") + std::strerror(errno));
+    }
+}
+
+void QuicTransport::attach_conn(ngtcp2_conn* conn) {
+    conn_ = conn;
     ngtcp2_conn_set_tls_native_handle(conn_, ssl_);
 }
 
@@ -58,10 +68,6 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
     if (stream_id_ < 0) {
         throw std::runtime_error("QuicTransport::send: no open stream");
     }
-
-    sockaddr_storage local_addr{};
-    socklen_t local_len = sizeof(local_addr);
-    ::getsockname(udp_fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len);
 
     const uint8_t* ptr = buf;
     size_t remain = len;
@@ -84,7 +90,8 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
 
         if (nwrite < 0) {
             if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
-                if (pump_once(local_addr, local_len) != 0) { return -1; }
+                // pump for MAX_STREAM_DATA
+                if (pump_once() != 0) { return -1; }
                 continue;
             }
             throw std::runtime_error(
@@ -92,23 +99,26 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
                 ngtcp2_strerror(static_cast<int>(nwrite)));
         }
 
-        if (nwrite > 0) {
-            // send assembled + encrypted packet
-            struct iovec iov{};
-            iov.iov_base = pkt;
-            iov.iov_len = static_cast<size_t>(nwrite);
+        if (nwrite == 0) {
+            // cwnd exhausted, not STREAM_DATA_BLOCKED
+            if (pump_once() != 0) { return -1; }
+            continue;
+        }
 
-            struct msghdr msg{};
-            msg.msg_name = path.remote.addr;
-            msg.msg_namelen = path.remote.addrlen;
-            msg.msg_iov = &iov;
-            msg.msg_iovlen = 1;
+        struct iovec iov{};
+        iov.iov_base = pkt;
+        iov.iov_len = static_cast<size_t>(nwrite);
 
-            if (::sendmsg(udp_fd_, &msg, 0) < 0) {
-                throw std::runtime_error(
-                    std::string("QuicTransport::send: sendmsg failed: ") +
-                    std::strerror(errno));
-            }
+        struct msghdr msg{};
+        msg.msg_name = path.remote.addr;
+        msg.msg_namelen = path.remote.addrlen;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+
+        if (::sendmsg(udp_fd_, &msg, 0) < 0) {
+            throw std::runtime_error(
+                std::string("QuicTransport::send: sendmsg failed: ") +
+                std::strerror(errno));
         }
 
         if (wdatalen > 0) {
@@ -121,17 +131,13 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
 }
 
 ssize_t QuicTransport::recv(uint8_t* buf, size_t len) {
-    if (stream_id_ < 0) {
-        throw std::runtime_error("QuicTransport::recv: no open stream");
+    // no stream_id_ guard: server is still -1 here, must pump to fire on_stream_open
+    while (recv_buf_.empty() && !stream_fin_received_) {
+        if (pump_once() != 0) { return -1; }
     }
 
-    sockaddr_storage local_addr{};
-    socklen_t local_len = sizeof(local_addr);
-    ::getsockname(udp_fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len);
-
-    // block until recv_buf_ has data, pump I/O to make progress
-    while (recv_buf_.empty()) {
-        if (pump_once(local_addr, local_len) != 0) { return -1; }
+    if (recv_buf_.empty()) {
+        return 0; // FIN and drained, EOF matches TCP recv()==0
     }
 
     const size_t n = std::min(len, recv_buf_.size());
@@ -166,24 +172,18 @@ int QuicTransport::drain_packets() {
     for (size_t i = 0; i < QUIC_MAX_BURST; i++) {
         ngtcp2_path path{};
         ngtcp2_pkt_info pi{};
-        ngtcp2_ssize wdatalen = 0;
 
+        // stream_id -1 + null datav: ACK/CRYPTO/PING only
         const ngtcp2_ssize nwrite =
             ngtcp2_conn_writev_stream(conn_, &path, &pi,
                                       buf, sizeof(buf),
-                                      &wdatalen,
+                                      nullptr,
                                       NGTCP2_WRITE_STREAM_FLAG_NONE,
-                                      stream_id_,
+                                      -1,
                                       nullptr, 0,
                                       now_ns());
         if (nwrite == 0) { break; }
-        if (nwrite < 0) {
-            if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED ||
-                nwrite == NGTCP2_ERR_STREAM_SHUT_WR) {
-                break;
-            }
-            return static_cast<int>(nwrite);
-        }
+        if (nwrite < 0) { return static_cast<int>(nwrite); }
 
         struct iovec iov{};
         iov.iov_base = buf;
@@ -204,37 +204,30 @@ int QuicTransport::drain_packets() {
 }
 
 // one recvmsg -> feed_data -> drain_packets cycle
-int QuicTransport::pump_once(const sockaddr_storage& local_addr,
-                             socklen_t local_len) {
+int QuicTransport::pump_once() {
     const ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(conn_);
     const ngtcp2_tstamp now = now_ns();
 
     struct timeval tv{};
-    if (expiry != UINT64_MAX && expiry > now) {
+    if (expiry == UINT64_MAX) {
+        tv.tv_usec = 100'000; // no timer armed
+    } else if (expiry > now) {
         const uint64_t diff_ns = expiry - now;
         tv.tv_sec = static_cast<time_t>(diff_ns / 1'000'000'000ULL);
         tv.tv_usec = static_cast<suseconds_t>(
             (diff_ns % 1'000'000'000ULL) / 1000ULL);
-    } else {
-        tv.tv_sec = 0;
-        tv.tv_usec = 100'000; // 100ms fallback
-    }
+    } // already expired: tv stays {0, 0}, poll and fall through to handle_expiry
 
     fd_set rfds{};
     FD_ZERO(&rfds);
     FD_SET(udp_fd_, &rfds);
     const int sel = ::select(udp_fd_ + 1, &rfds, nullptr, nullptr, &tv);
 
-    if (sel < 0) {
-        if (errno == EINTR) { return 0; }
-        return -1;
-    }
+    if (sel < 0 && errno != EINTR) { return -1; }
 
-    if (sel == 0) {
-        // timer fired
-        if (ngtcp2_conn_handle_expiry(conn_, now_ns()) != 0) { return -1; }
-    } else {
-        uint8_t buf[QUIC_MAX_PKTLEN];
+    if (sel > 0) {
+        // recv cap is independent of send cap
+        uint8_t buf[QUIC_MAX_RECV_PKTLEN];
         sockaddr_storage remote_addr{};
         struct iovec iov{};
         iov.iov_base = buf;
@@ -248,47 +241,45 @@ int QuicTransport::pump_once(const sockaddr_storage& local_addr,
 
         const ssize_t nread = ::recvmsg(udp_fd_, &msg, MSG_DONTWAIT);
         if (nread < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) { return 0; }
-            return -1;
-        }
+            if (errno != EAGAIN && errno != EWOULDBLOCK) { return -1; }
+        } else if (msg.msg_flags & MSG_TRUNC) {
+            return -1; // truncated packet
+        } else {
+            // path.local must equal what the factory gave conn_*_new
+            // or client discards every packets "from unknown path"
+            ngtcp2_path path{};
+            path.local.addr = reinterpret_cast<sockaddr*>(&local_addr_);
+            path.local.addrlen = local_len_;
+            path.remote.addr = reinterpret_cast<sockaddr*>(&remote_addr);
+            path.remote.addrlen = msg.msg_namelen;
 
-        ngtcp2_path path{};
-        path.local.addr = reinterpret_cast<sockaddr*>(
-            const_cast<sockaddr_storage*>(&local_addr));
-        path.local.addrlen = local_len;
-        path.remote.addr = reinterpret_cast<sockaddr*>(&remote_addr);
-        path.remote.addrlen = msg.msg_namelen;
-
-        ngtcp2_pkt_info pi{};
-        if (feed_data(buf, static_cast<size_t>(nread), &path, &pi) != 0) {
-            return -1;
+            ngtcp2_pkt_info pi{};
+            if (feed_data(buf, static_cast<size_t>(nread), &path, &pi) != 0) {
+                return -1;
+            }
         }
     }
+
+    // a due timer and an arriving packet are not mutually exclusive
+    if (ngtcp2_conn_get_expiry(conn_) <= now_ns()) {
+        if (ngtcp2_conn_handle_expiry(conn_, now_ns()) != 0) { return -1; }
+    }
+
     return drain_packets();
 }
 
 // handshake loop
 int QuicTransport::run_handshake() {
-    sockaddr_storage local_addr{};
-    socklen_t local_len = sizeof(local_addr);
-    ::getsockname(udp_fd_, reinterpret_cast<sockaddr*>(&local_addr), &local_len);
-
+    // client emits ClientHello here; needs client_initial in the factory
     if (drain_packets() != 0) { return -1; }
 
     while (!ngtcp2_conn_get_handshake_completed(conn_)) {
-        if (pump_once(local_addr, local_len) != 0) { return -1; }
+        if (pump_once() != 0) { return -1; }
     }
     return 0;
 }
 
 // --- ngtcp2 callbacks ---
-int QuicTransport::on_recv_crypto_data(ngtcp2_conn* conn, ngtcp2_encryption_level level,
-                                       uint64_t offset, const uint8_t* data, size_t datalen,
-                                       void* user_data) {
-    return ngtcp2_crypto_recv_crypto_data_cb(conn, level, offset,
-                                             data, datalen, user_data);
-}
-
 int QuicTransport::on_handshake_completed(ngtcp2_conn* conn, void* user_data) {
     (void) conn; (void) user_data;
     return 0;
@@ -306,9 +297,17 @@ int QuicTransport::on_stream_open(ngtcp2_conn* conn,
 int QuicTransport::on_recv_stream_data(ngtcp2_conn* conn, uint32_t flags, int64_t stream_id,
                                        uint64_t offset, const uint8_t* data, size_t datalen,
                                        void* user_data, void* stream_user_data) {
-    (void)conn; (void)flags; (void)stream_id; (void)offset; (void) stream_user_data;
+    (void)offset; (void) stream_user_data;
     auto* self = static_cast<QuicTransport*>(user_data);
     self->recv_buf_.insert(self->recv_buf_.end(), data, data + datalen);
+
+    if (flags & NGTCP2_STREAM_DATA_FLAG_FIN) {
+        self->stream_fin_received_ = true;
+    }
+
+    // extend credit at ingest - recv_buf_ is ours
+    ngtcp2_conn_extend_max_stream_offset(conn, stream_id, datalen);
+    ngtcp2_conn_extend_max_offset(conn, datalen);
     return 0;
 }
 

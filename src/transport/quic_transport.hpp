@@ -4,7 +4,8 @@
 
 // Dependencies:
 //   ngtcp2 >= 1.22 --with-wolfssl (libngtcp2, libngtcp2_crypto_wolfssl)
-//   woflSSL native API --enable-quic, NO --enable-opensslextra
+//   wolfSSL --enable-quic --enable-opensslextra --enable-aesecb
+//   (crypto_wolfssl needs wolfSSL_EVP_aes_{128,256}_ecb from the last two)
 
 #pragma once
 
@@ -12,6 +13,7 @@
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <ngtcp2/ngtcp2_crypto_wolfssl.h>
+#include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -20,8 +22,9 @@
 #include <string>
 #include <vector>
 
-inline constexpr size_t QUIC_MAX_PKTLEN = 1350; // whole datagram including header
-inline constexpr size_t QUIC_MAX_BURST = 10; // max num of datagrams drained per write cycle
+inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram we send include header
+inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
+inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycle
 
 // QUIC implementation of Transport
 // construct only via factories: quic_connect, quic_accept
@@ -40,24 +43,26 @@ public:
 
     ~QuicTransport();
 
-    // Non-copyable, non-movable, owns ngtcp2_conn* and WOLFSLL*
+    // Non-copyable, non-movable, owns ngtcp2_conn* and WOLFSSL*
     QuicTransport(const QuicTransport&) = delete;
     QuicTransport& operator=(const QuicTransport&) = delete;
 
 private:
-    QuicTransport(int udp_fd, ngtcp2_conn* conn, WOLFSSL* ssl, WOLFSSL_CTX* ssl_ctx);
+    QuicTransport(int udp_fd, WOLFSSL* ssl, WOLFSSL_CTX* ssl_ctx);
+    void attach_conn(ngtcp2_conn* conn); // factory calls after conn_*_new
 
     int udp_fd_;
-    ngtcp2_conn* conn_;
+    ngtcp2_conn* conn_{nullptr};
     WOLFSSL* ssl_;
     WOLFSSL_CTX* ssl_ctx_;
     ngtcp2_crypto_conn_ref crypto_conn_ref_;
 
     int64_t stream_id_{-1}; // single bidi stream, shared by control + data plane
+    bool stream_fin_received_{false}; // peer FIN, recv() returns 0 once drained
     std::vector<uint8_t> recv_buf_;
 
-    sockaddr_storage peer_addr_{};
-    socklen_t peer_addrlen_{0};
+    sockaddr_storage local_addr_{};
+    socklen_t local_len_{0};
 
     // --- I/O helpers ---
     int feed_data(const uint8_t* data,
@@ -67,17 +72,11 @@ private:
 
     int drain_packets();
 
-    int pump_once(const sockaddr_storage& local_addr, socklen_t local_len);
+    int pump_once(); // one recvmsg -> feed_data -> drain_packets cycle
 
     int run_handshake();
 
     // --- ngtcp2 callbacks ---
-    static int on_recv_crypto_data(ngtcp2_conn* conn,
-                                   ngtcp2_encryption_level level,
-                                   uint64_t offset,
-                                   const uint8_t* data,
-                                   size_t datalen,
-                                   void* user_data);
     static int on_handshake_completed(ngtcp2_conn* conn,
                                        void* user_data);
     static int on_stream_open(ngtcp2_conn* conn,
@@ -102,5 +101,7 @@ private:
 
     friend std::unique_ptr<Transport> quic_connect(const std::string& host,
                                                   uint16_t port);
-    friend std::unique_ptr<Transport> quic_accept(int listen_fd);
+    friend std::unique_ptr<Transport> quic_accept(int listen_fd,
+                                                  const std::string& cert_path,
+                                                  const std::string& key_path);
 };

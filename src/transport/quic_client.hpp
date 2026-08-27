@@ -9,5 +9,6 @@
 #include <memory>
 #include <string>
 
-// Establish a QUIC connection to host:post over UDP with TLS 1.3 handshake
+// Establish a QUIC connection to host:port over UDP with TLS 1.3 handshake
+// open the single bidi stream, returns a transport ready for send/recv
 std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port);
