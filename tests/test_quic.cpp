@@ -4,6 +4,9 @@
 
 #include "transport/quic_client.hpp"
 #include "transport/quic_server.hpp"
+#include "util/exact_io.hpp"
+#include "core/protocol.hpp"
+#include "util/constants.hpp"
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
@@ -14,6 +17,8 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <array>
+#include <cstring>
 #include <gtest/gtest.h>
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -79,6 +84,12 @@ static TempCert make_temp_cert() {
     return {std::string{cert_tmpl}, std::string{key_tmpl}};
 }
 
+static void fill_pattern(uint8_t* buf, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        buf[i] = static_cast<uint8_t>(i & 0xFF);
+    }
+}
+
 // ── Handshake_Completes ───────────────────────────────────────────────────────
 
 TEST(QuicTransport, Handshake_Completes) {
@@ -137,4 +148,133 @@ TEST(QuicTransport, Accept_RejectsMalformedInitial) {
 
     server.join();
     EXPECT_FALSE(server_err.empty());
+}
+
+// ── SendRecv_Echo ─────────────────────────────────────────────────────────────
+
+TEST(QuicTransport, SendRecv_Echo) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    constexpr size_t kLen = 1024;
+    std::array<uint8_t, kLen> send_buf{};
+    std::array<uint8_t, kLen> recv_buf{};
+    fill_pattern(send_buf.data(), kLen);
+
+    std::string server_err;
+
+    // server: accept → recv_exact → send_exact (echo)
+    std::jthread server([listen_fd, &cert, &server_err]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            std::array<uint8_t, kLen> tmp{};
+            recv_exact(*t, tmp.data(), kLen);
+            send_exact(*t, tmp.data(), kLen);
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    send_exact(*client, send_buf.data(), kLen);
+    recv_exact(*client, recv_buf.data(), kLen);
+
+    server.join();
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(std::memcmp(send_buf.data(), recv_buf.data(), kLen), 0);
+}
+
+// ── ProtocolRoundTrip ─────────────────────────────────────────────────────────
+
+TEST(QuicTransport, ProtocolRoundTrip) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    std::string server_err;
+    std::string server_token;
+
+    // server: accept → recv HANDSHAKE → reply COMPLETE
+    std::jthread server([listen_fd, &cert, &server_err, &server_token]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            Message received = recv_msg(*t);
+            if (received.type != MsgType::HANDSHAKE) {
+                server_err = "server: expected HANDSHAKE";
+                return;
+            }
+            server_token = parse_handshake(received).token;
+            send_msg(*t, make_complete());
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    send_msg(*client, make_handshake(HandshakePayload{"Kf3xQ9mZ"}));
+    Message reply = recv_msg(*client);
+
+    server.join();
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(server_token, "Kf3xQ9mZ");
+    EXPECT_EQ(reply.type, MsgType::COMPLETE);
+}
+
+// ── ProtocolSequence ──────────────────────────────────────────────────────────
+// four messages back to back — catches framing that only works one at a time
+
+TEST(QuicTransport, ProtocolSequence) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    constexpr uint32_t kChunkCount = 3;
+    std::array<uint8_t, HASH_SIZE> hash0{}, hash1{}, hash2{};
+    hash0.fill(0xAA); hash1.fill(0xBB); hash2.fill(0xCC);
+
+    std::string server_err;
+    FileMeta    server_meta{};
+    uint32_t    server_req_index = 0;
+
+    // server: FILE_META → CHUNK_REQ, then CHUNK_HDR → COMPLETE
+    std::jthread server([listen_fd, &cert, &server_err,
+                         &server_meta, &server_req_index]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            server_meta = parse_filemeta(recv_msg(*t));
+            send_msg(*t, make_chunk_req(ChunkReq{1}));
+            server_req_index = parse_chunk_hdr(recv_msg(*t)).chunk_index;
+            send_msg(*t, make_complete());
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    FileMeta meta{
+        .file_name    = "testfile.iso",
+        .file_size    = 3ULL * 1024 * 1024 * 1024,
+        .chunk_size   = static_cast<uint32_t>(CHUNK_SIZE),
+        .chunk_count  = kChunkCount,
+        .chunk_hashes = {hash0, hash1, hash2},
+    };
+
+    auto client = quic_connect("127.0.0.1", port);
+    send_msg(*client, make_filemeta(FileMeta{meta}));
+
+    ChunkReq req = parse_chunk_req(recv_msg(*client));
+    send_msg(*client, make_chunk_hdr(ChunkHdr{.chunk_index = req.chunk_index}));
+    Message done = recv_msg(*client);
+
+    server.join();
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(server_meta.file_name,   meta.file_name);
+    EXPECT_EQ(server_meta.file_size,   meta.file_size);
+    EXPECT_EQ(server_meta.chunk_count, kChunkCount);
+    ASSERT_EQ(server_meta.chunk_hashes.size(), kChunkCount);
+    EXPECT_EQ(server_meta.chunk_hashes[0], hash0);
+    EXPECT_EQ(server_meta.chunk_hashes[2], hash2);
+    EXPECT_EQ(req.chunk_index,     1U);
+    EXPECT_EQ(server_req_index,    1U);
+    EXPECT_EQ(done.type,           MsgType::COMPLETE);
 }
