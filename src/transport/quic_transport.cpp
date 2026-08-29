@@ -76,11 +76,12 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
         ngtcp2_vec datav{ const_cast<uint8_t*>(ptr), remain };
         ngtcp2_ssize wdatalen = 0;
         uint8_t pkt[QUIC_MAX_PKTLEN];
-        ngtcp2_path path{};
+        ngtcp2_path_storage ps;
+        ngtcp2_path_storage_zero(&ps);
         ngtcp2_pkt_info pi{};
 
         const ngtcp2_ssize nwrite =
-            ngtcp2_conn_writev_stream(conn_, &path, &pi,
+            ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
                                       pkt, sizeof(pkt),
                                       &wdatalen,
                                       NGTCP2_WRITE_STREAM_FLAG_NONE,
@@ -110,8 +111,8 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
         iov.iov_len = static_cast<size_t>(nwrite);
 
         struct msghdr msg{};
-        msg.msg_name = path.remote.addr;
-        msg.msg_namelen = path.remote.addrlen;
+        msg.msg_name = nullptr;
+        msg.msg_namelen = 0;
         msg.msg_iov = &iov;
         msg.msg_iovlen = 1;
 
@@ -170,12 +171,13 @@ int QuicTransport::drain_packets() {
     uint8_t buf[QUIC_MAX_PKTLEN];
 
     for (size_t i = 0; i < QUIC_MAX_BURST; i++) {
-        ngtcp2_path path{};
+        ngtcp2_path_storage ps;
+        ngtcp2_path_storage_zero(&ps);
         ngtcp2_pkt_info pi{};
 
         // stream_id -1 + null datav: ACK/CRYPTO/PING only
         const ngtcp2_ssize nwrite =
-            ngtcp2_conn_writev_stream(conn_, &path, &pi,
+            ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
                                       buf, sizeof(buf),
                                       nullptr,
                                       NGTCP2_WRITE_STREAM_FLAG_NONE,
@@ -190,8 +192,8 @@ int QuicTransport::drain_packets() {
         iov.iov_len = static_cast<size_t>(nwrite);
 
         struct msghdr msg{};
-        msg.msg_name = path.remote.addr;
-        msg.msg_namelen = path.remote.addrlen;
+        msg.msg_name = nullptr; // connected socket, kernel pins the peer
+        msg.msg_namelen = 0;
         msg.msg_iov = &iov;
         msg.msg_iovlen = 1;
 

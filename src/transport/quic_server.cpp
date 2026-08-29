@@ -44,11 +44,16 @@ static void make_cid(ngtcp2_cid* cid, size_t len) {
 
 // ngtcp2 reports discarded packets and handshake faults only through this sink
 static void log_printf(void*, const char* fmt, ...) {
+    char buf[1024];
     va_list ap;
     va_start(ap, fmt);
-    std::vfprintf(stderr, fmt, ap);
+    const int n = std::vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
     va_end(ap);
-    std::fputc('\n', stderr);
+    if (n > 0) {
+        const size_t len = std::min(static_cast<size_t>(n), sizeof(buf) - 2);
+        buf[len] = '\n';
+        std::fwrite(buf, 1, len + 1, stderr);
+    }
 }
 
 } // namespace
@@ -202,8 +207,7 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
     // dcid = the client's scid (where we send), scid = fresh, ours
     ngtcp2_cid dcid{};
     ngtcp2_cid scid{};
-    std::memcpy(dcid.data, vc.scid, vc.scidlen);
-    dcid.datalen = vc.scidlen;
+    ngtcp2_cid_init(&dcid, vc.scid, vc.scidlen);
     make_cid(&scid, NGTCP2_MAX_CIDLEN);
 
     // local half from transport's cached getsockname, not a fresh sockaddr
@@ -226,8 +230,7 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
     params.initial_max_streams_bidi = 1; // credit the client's open_bidi_stream needs
 
     // client checks this against the dcid it invented for us
-    std::memcpy(params.original_dcid.data, vc.dcid, vc.dcidlen);
-    params.original_dcid.datalen = vc.dcidlen;
+    ngtcp2_cid_init(&params.original_dcid, vc.dcid, vc.dcidlen);
     params.original_dcid_present = 1;
 
     // recv_client_initial replaces client_initial; no recv_retry, servers send them

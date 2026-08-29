@@ -41,11 +41,16 @@ static void make_cid(ngtcp2_cid* cid, size_t len) {
 
 // ngtcp2 reports discarded packets and handshake faults only through this sink
 static void log_printf(void*, const char* fmt, ...) {
+    char buf[1024];
     va_list ap;
     va_start(ap, fmt);
-    std::vfprintf(stderr, fmt, ap);
+    const int n = std::vsnprintf(buf, sizeof(buf) - 1, fmt, ap);
     va_end(ap);
-    std::fputc('\n', stderr);
+    if (n > 0) {
+        const size_t len = std::min(static_cast<size_t>(n), sizeof(buf) - 2);
+        buf[len] = '\n';
+        std::fwrite(buf, 1, len + 1, stderr);
+    }
 }
 
 }

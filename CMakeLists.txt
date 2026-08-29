@@ -106,9 +106,11 @@ add_executable(embr_test
         tests/test_resume.cpp
         tests/test_tracker.cpp
         tests/test_hash_parallel.cpp
+        tests/test_quic.cpp
 )
 target_link_libraries(embr_test PRIVATE core tracker GTest::gtest_main Threads::Threads)
 include(GoogleTest)
 gtest_discover_tests(embr_test
         DISCOVERY_MODE PRE_TEST
+        PROPERTIES TIMEOUT 30
 )
