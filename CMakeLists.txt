@@ -47,6 +47,7 @@ add_library(transport
         src/util/io_uring_ctx.cpp
         src/transport/quic_client.cpp
         src/transport/quic_transport.cpp
+        src/transport/quic_server.cpp
 )
 target_include_directories(transport PUBLIC src)
 target_include_directories(transport PUBLIC ${URING_INCLUDE_DIRS})
