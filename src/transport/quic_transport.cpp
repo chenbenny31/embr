@@ -57,6 +57,7 @@ void QuicTransport::attach_conn(ngtcp2_conn* conn) {
 }
 
 QuicTransport::~QuicTransport() {
+    if (conn_ && !closed_) { close_connection(0); } // graceful NO_ERROR
     if (conn_) { ngtcp2_conn_del(conn_); }
     if (ssl_) { wolfSSL_free(ssl_); }
     if (ssl_ctx_) { wolfSSL_CTX_free(ssl_ctx_); }
@@ -65,6 +66,7 @@ QuicTransport::~QuicTransport() {
 
 // --- control plane ---
 ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
+    if (closed_) { return -1; }
     if (stream_id_ < 0) {
         throw std::runtime_error("QuicTransport::send: no open stream");
     }
@@ -133,19 +135,21 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
 
 ssize_t QuicTransport::recv(uint8_t* buf, size_t len) {
     // no stream_id_ guard: server is still -1 here, must pump to fire on_stream_open
-    while (recv_buf_.empty() && !stream_fin_received_) {
-        if (pump_once() != 0) { return -1; }
+    while (recv_buf_.empty() && !stream_fin_received_ && !closed_) {
+        if (pump_once() != 0) { break; } // teardown paths set closed_
     }
 
-    if (recv_buf_.empty()) {
-        return 0; // FIN and drained, EOF matches TCP recv()==0
+    // drain before classifying: buffered data outlives the conn
+    if (!recv_buf_.empty()) {
+        const size_t n = std::min(len, recv_buf_.size());
+        std::memcpy(buf, recv_buf_.data(), n);
+        recv_buf_.erase(recv_buf_.begin(),
+                        recv_buf_.begin() + static_cast<ptrdiff_t>(n));
+        return static_cast<ssize_t>(n);
     }
 
-    const size_t n = std::min(len, recv_buf_.size());
-    std::memcpy(buf, recv_buf_.data(), n);
-    recv_buf_.erase(recv_buf_.begin(),
-                    recv_buf_.begin() + static_cast<ptrdiff_t>(n));
-    return static_cast<ssize_t>(n);
+    if (stream_fin_received_) { return 0; } // clean EOF, matches TCP recv()==0
+    return -1;
 }
 
 // --- data plane ---
@@ -168,6 +172,7 @@ int QuicTransport::feed_data(const uint8_t* data,
 }
 
 int QuicTransport::drain_packets() {
+    if (closed_) { return 0; } // pump's own return carries the signal
     uint8_t buf[QUIC_MAX_PKTLEN];
 
     for (size_t i = 0; i < QUIC_MAX_BURST; i++) {
@@ -205,8 +210,54 @@ int QuicTransport::drain_packets() {
     return 0;
 }
 
+void QuicTransport::close_connection(int liberr) {
+    if (!conn_ || closed_ ||
+        ngtcp2_conn_in_closing_period(conn_) ||
+        ngtcp2_conn_in_draining_period(conn_)) {
+        closed_ = true;
+        return;
+    }
+
+    ngtcp2_ccerr err;
+    if (liberr == 0) {
+        ngtcp2_ccerr_default(&err); // app-init: NO_ERROR
+    } else if (liberr == NGTCP2_ERR_CRYPTO) {
+        ngtcp2_ccerr_set_tls_alert(&err, ngtcp2_conn_get_tls_alert(conn_), nullptr, 0);
+    } else {
+        ngtcp2_ccerr_set_liberr(&err, liberr, nullptr, 0);
+    }
+
+    // path is an out-param just like writev_stream: need backing storage
+    ngtcp2_path_storage ps;
+    ngtcp2_path_storage_zero(&ps);
+    ngtcp2_pkt_info pi{};
+    uint8_t buf[QUIC_MAX_PKTLEN];
+
+    const ngtcp2_ssize nwrite =
+        ngtcp2_conn_write_connection_close(conn_, &ps.path, &pi,
+                                           buf, sizeof(buf),
+                                           &err, now_ns());
+    if (nwrite > 0) {
+        struct iovec iov{};
+        iov.iov_base = buf;
+        iov.iov_len = static_cast<size_t>(nwrite);
+
+        struct msghdr msg{};
+        msg.msg_name = nullptr; // connected socket, kernel pins the peer
+        msg.msg_namelen = 0;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+
+        (void)::sendmsg(udp_fd_, &msg, 0); // best-effort, dtor can't report
+    }
+
+    closed_ = true;
+}
+
 // one recvmsg -> feed_data -> drain_packets cycle
 int QuicTransport::pump_once() {
+    if (closed_) { return -1; }
+
     const ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(conn_);
     const ngtcp2_tstamp now = now_ns();
 
@@ -256,7 +307,13 @@ int QuicTransport::pump_once() {
             path.remote.addrlen = msg.msg_namelen;
 
             ngtcp2_pkt_info pi{};
-            if (feed_data(buf, static_cast<size_t>(nread), &path, &pi) != 0) {
+            const int rv = feed_data(buf, static_cast<size_t>(nread), &path, &pi);
+            if (rv == NGTCP2_ERR_DRAINING || rv == NGTCP2_ERR_DROP_CONN) {
+                closed_ = true; // peer closed or drop: silence is the protocol
+                return -1;
+            }
+            if (rv != 0) {
+                close_connection(rv);
                 return -1;
             }
         }
@@ -264,7 +321,15 @@ int QuicTransport::pump_once() {
 
     // a due timer and an arriving packet are not mutually exclusive
     if (ngtcp2_conn_get_expiry(conn_) <= now_ns()) {
-        if (ngtcp2_conn_handle_expiry(conn_, now_ns()) != 0) { return -1; }
+        const int erv = ngtcp2_conn_handle_expiry(conn_, now_ns());
+        if (erv == NGTCP2_ERR_IDLE_CLOSE) {
+            closed_ = true; // peer presumed gone already, no need to send closing
+            return -1;
+        }
+        if (erv != 0) {
+            close_connection(erv);
+            return -1;
+        }
     }
 
     return drain_packets();

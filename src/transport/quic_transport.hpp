@@ -22,7 +22,7 @@
 #include <string>
 #include <vector>
 
-inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram we send include header
+inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram local sends include header
 inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
 inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycle
 
@@ -36,6 +36,9 @@ public:
     // --- control plane ---
     ssize_t send(const uint8_t* buf, size_t len) override;
     ssize_t recv(uint8_t* buf, size_t len) override;
+
+    // QUIC-specific half-close: empty STREAM+FIN from the local endpoint
+    int send_fin();
 
     // --- data plane ---
     void send_file(int file_fd, uint64_t offset, size_t len) override;
@@ -59,6 +62,8 @@ private:
 
     int64_t stream_id_{-1}; // single bidi stream, shared by control + data plane
     bool stream_fin_received_{false}; // peer FIN, recv() returns 0 once drained
+    bool fin_sent_{false}; // local FIN, send_file() is idempotent
+    bool closed_{false}; // close sent or silent teardown, set for every transition
     std::vector<uint8_t> recv_buf_;
 
     sockaddr_storage local_addr_{};
@@ -71,6 +76,8 @@ private:
                   const ngtcp2_pkt_info* pi);
 
     int drain_packets();
+
+    void close_connection(int liberr); // fire-once, liberr==0 means app NO_ERROR
 
     int pump_once(); // one recvmsg -> feed_data -> drain_packets cycle
 
