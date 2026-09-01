@@ -4,6 +4,7 @@
 
 #include "transport/quic_client.hpp"
 #include "transport/quic_server.hpp"
+#include "transport/quic_transport.hpp"
 #include "util/exact_io.hpp"
 #include "core/protocol.hpp"
 #include "util/constants.hpp"
@@ -277,4 +278,67 @@ TEST(QuicTransport, ProtocolSequence) {
     EXPECT_EQ(req.chunk_index,     1U);
     EXPECT_EQ(server_req_index,    1U);
     EXPECT_EQ(done.type,           MsgType::COMPLETE);
+}
+
+// ── SendFin_PeerRecvReturnsZero ───────────────────────────────────────────────
+
+TEST(QuicTransport, SendFin_PeerRecvReturnsZero) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    constexpr size_t kLen = 64;
+    std::array<uint8_t, kLen> send_buf{};
+    fill_pattern(send_buf.data(), kLen);
+
+    std::string server_err;
+    ssize_t     eof_result = -99;
+
+    // server: drain the payload, then the next recv() must see peer FIN
+    std::jthread server([listen_fd, &cert, &server_err, &eof_result]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            std::array<uint8_t, kLen> tmp{};
+            recv_exact(*t, tmp.data(), kLen);
+            eof_result = t->recv(tmp.data(), tmp.size());
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    send_exact(*client, send_buf.data(), kLen);
+    ASSERT_EQ(static_cast<QuicTransport*>(client.get())->send_fin(), 0);
+
+    server.join();
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(eof_result, 0); // clean EOF, not -1
+}
+
+// ── Close_PeerRecvReturnsMinusOne ─────────────────────────────────────────────
+
+TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    std::string server_err;
+    ssize_t     abnormal_result = -99;
+
+    // server: no data ever arrives, only the client's CONNECTION_CLOSE
+    std::jthread server([listen_fd, &cert, &server_err, &abnormal_result]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            uint8_t buf[64];
+            abnormal_result = t->recv(buf, sizeof(buf));
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    { auto client = quic_connect("127.0.0.1", port); } // destructs: NO_ERROR close
+
+    server.join();
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(abnormal_result, -1); // closed without FIN
 }

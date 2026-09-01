@@ -152,6 +152,65 @@ ssize_t QuicTransport::recv(uint8_t* buf, size_t len) {
     return -1;
 }
 
+int QuicTransport::send_fin() {
+    if (stream_id_ < 0) { return -1; }
+    if (fin_sent_) { return 0; } // FIN is a state
+
+    for (;;) {
+        if (closed_) { return -1; }
+
+        ngtcp2_path_storage ps;
+        ngtcp2_path_storage_zero(&ps);
+        ngtcp2_pkt_info pi{};
+        uint8_t pkt[QUIC_MAX_PKTLEN];
+        ngtcp2_ssize wdatalen = -1;
+
+        // empty data + FIN flag serializes a 0-length STREAM+fin and sets wdatalen 0
+        const ngtcp2_ssize nwrite =
+            ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
+                                      pkt, sizeof(pkt),
+                                      &wdatalen,
+                                      NGTCP2_WRITE_STREAM_FLAG_FIN,
+                                      stream_id_,
+                                      nullptr, 0,
+                                      now_ns());
+
+        if (nwrite < 0) {
+            if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
+                if (pump_once() != 0) { return -1; }
+                continue;
+            }
+            close_connection(static_cast<int>(nwrite));
+            return -1;
+        }
+
+        if (nwrite == 0) { // cwnd or pacing, let ACKs in and retry
+            if (pump_once() != 0) { return -1; }
+            continue;
+        }
+
+        struct iovec iov{};
+        iov.iov_base = pkt;
+        iov.iov_len = static_cast<size_t>(nwrite);
+
+        struct msghdr msg{};
+        msg.msg_name = nullptr; // connected socket, kernel pins the peer
+        msg.msg_namelen = 0;
+        msg.msg_iov = &iov;
+        msg.msg_iovlen = 1;
+
+        if (::sendmsg(udp_fd_, &msg, 0) < 0 &&
+            errno != EAGAIN && errno != EWOULDBLOCK) {
+            return -1;
+        }
+
+        if (wdatalen >= 0) {
+            fin_sent_ = true;
+            return 0;
+        }
+    }
+}
+
 // --- data plane ---
 void QuicTransport::send_file(int file_fd, uint64_t offset, size_t len) {
     (void)file_fd; (void)offset; (void)len;
