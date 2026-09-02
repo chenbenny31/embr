@@ -30,7 +30,7 @@ inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycl
 // construct only via factories: quic_connect, quic_accept
 //
 // send_file: mmap datav + ngtcp2 datav->dest assembly (1 copy) + in-place AEAD on dest
-// recv_file: ngtcp2 stream re-assembly + SHA-256 verify
+// recv_file: ngtcp2 stream re-assembly
 class QuicTransport final : public Transport {
 public:
     // --- control plane ---

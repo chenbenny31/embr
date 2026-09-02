@@ -353,7 +353,10 @@ int QuicTransport::pump_once() {
 
         const ssize_t nread = ::recvmsg(udp_fd_, &msg, MSG_DONTWAIT);
         if (nread < 0) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK) { return -1; }
+            if (errno != EAGAIN && errno != EWOULDBLOCK &&
+                errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH) {
+                return -1;
+            }
         } else if (msg.msg_flags & MSG_TRUNC) {
             return -1; // truncated packet
         } else {

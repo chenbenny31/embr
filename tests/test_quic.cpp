@@ -15,6 +15,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
+#include <future>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -324,10 +325,20 @@ TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
     std::string server_err;
     ssize_t     abnormal_result = -99;
 
+    std::promise<void> accepted;
+    auto accepted_ready = accepted.get_future();
+
     // server: no data ever arrives, only the client's CONNECTION_CLOSE
-    std::jthread server([listen_fd, &cert, &server_err, &abnormal_result]() {
+    std::jthread server([listen_fd, &cert, &server_err, &abnormal_result, &accepted]() {
+        std::unique_ptr<Transport> t;
         try {
-            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+        accepted.set_value(); // exactly once, succ or fail
+        if (!t) { return; }
+        try {
             uint8_t buf[64];
             abnormal_result = t->recv(buf, sizeof(buf));
         } catch (const std::exception& e) {
@@ -335,7 +346,12 @@ TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
         }
     });
 
-    { auto client = quic_connect("127.0.0.1", port); } // destructs: NO_ERROR close
+
+    {
+        auto client = quic_connect("127.0.0.1", port);
+        // client completes ASAP it processes the server's Fin, could precede over client's Fin
+        accepted_ready.wait();
+    } // destructs: NO_ERROR close
 
     server.join();
 

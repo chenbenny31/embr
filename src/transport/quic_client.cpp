@@ -71,6 +71,11 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port) 
         throw std::runtime_error("quic_connect: invalid address: " + host);
     }
 
+    // rmem_default is (~157 datagrams at 1350 B) against 10-packet bursts and an AEAD-bound recv
+    const int sock_buf = 4 * 1024 * 1024; // rmem_max/wmem_max, no sysctl
+    ::setsockopt(udp_fd, SOL_SOCKET, SO_RCVBUF, &sock_buf, sizeof(sock_buf));
+    ::setsockopt(udp_fd, SOL_SOCKET, SO_SNDBUF, &sock_buf, sizeof(sock_buf));
+
     // connect on UDP: sets default peer, let recvmsg filter by source
     // also assigns the local addr the path depends on
     if (::connect(udp_fd,
@@ -158,9 +163,10 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port) 
 
     ngtcp2_transport_params params{};
     ngtcp2_transport_params_default(&params);
-    params.initial_max_stream_data_bidi_local = 256 * 1024;
-    params.initial_max_stream_data_bidi_remote = 256 * 1024;
-    params.initial_max_data = 1 * 1024 * 1024;
+    params.max_idle_timeout = 30 * NGTCP2_SECONDS;
+    params.initial_max_stream_data_bidi_local = 4 * 1024 * 1024;
+    params.initial_max_stream_data_bidi_remote = 4 * 1024 * 1024;
+    params.initial_max_data = 8 * 1024 * 1024;
     params.initial_max_streams_bidi = 1;
 
     // every ngtcp2_crypto_* entry is mandatory; omitting one fails the handshake silently
