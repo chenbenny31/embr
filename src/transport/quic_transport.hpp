@@ -10,6 +10,7 @@
 #pragma once
 
 #include "transport.hpp"
+#include "core/protocol.hpp"
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <ngtcp2/ngtcp2_crypto_wolfssl.h>
@@ -21,6 +22,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include <deque>
 
 inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram local sends include header
 inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
@@ -39,6 +41,8 @@ public:
 
     // QUIC-specific half-close: empty STREAM+FIN from the local endpoint
     int send_fin();
+
+    size_t unacked_bytes() const;
 
     // --- data plane ---
     void send_file(int file_fd, uint64_t offset, size_t len) override;
@@ -65,6 +69,30 @@ private:
     bool fin_sent_{false}; // local FIN, send_file() is idempotent
     bool closed_{false}; // close sent or silent teardown, set for every transition
     std::vector<uint8_t> recv_buf_;
+
+    // egress seam: one assembly dest + one commit per datagram
+    enum class SendResult { ok, blocked, failed };
+
+    uint8_t packet_buf_[QUIC_MAX_PKTLEN];
+    uint8_t* begin_packet();
+    SendResult send_packet(size_t n);
+    void flush_packets();
+
+    // ngtcp2 re-encodes lost STREAM frames from the caller's ptr
+    // block must outlive send() until acked
+    struct Unacked {
+        uint64_t end_offset;
+        Buffer buf;
+    };
+    std::deque<Unacked> unacked_;
+    uint64_t stream_offset_{0};
+
+    static int on_acked_stream_data_offset(ngtcp2_conn* conn,
+                                           int64_t stream_id,
+                                           uint64_t offset,
+                                           uint64_t datalen,
+                                           void* user_data,
+                                           void* stream_user_data);
 
     sockaddr_storage local_addr_{};
     socklen_t local_len_{0};

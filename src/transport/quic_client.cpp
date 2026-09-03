@@ -188,6 +188,7 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port) 
     callbacks.recv_stream_data = QuicTransport::on_recv_stream_data;
     callbacks.rand = QuicTransport::on_rand;
     callbacks.get_new_connection_id = QuicTransport::get_new_connection_id;
+    callbacks.acked_stream_data_offset = QuicTransport::on_acked_stream_data_offset;
 
     ngtcp2_conn* conn = nullptr;
     int rv = ngtcp2_conn_client_new(&conn, &dcid, &scid,

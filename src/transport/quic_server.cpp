@@ -255,6 +255,7 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
     callbacks.recv_stream_data = QuicTransport::on_recv_stream_data;
     callbacks.rand = QuicTransport::on_rand;
     callbacks.get_new_connection_id = QuicTransport::get_new_connection_id;
+    callbacks.acked_stream_data_offset = QuicTransport::on_acked_stream_data_offset;
 
     ngtcp2_conn* conn = nullptr;
     rv = ngtcp2_conn_server_new(&conn, &dcid, &scid,

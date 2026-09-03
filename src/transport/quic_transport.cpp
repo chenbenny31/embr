@@ -66,70 +66,69 @@ QuicTransport::~QuicTransport() {
 
 // --- control plane ---
 ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
-    if (closed_) { return -1; }
+    if (closed_) {
+        errno = ENOTCONN;
+        return -1;
+    }
     if (stream_id_ < 0) {
         throw std::runtime_error("QuicTransport::send: no open stream");
     }
+    if (len == 0) { return 0; }
 
-    const uint8_t* ptr = buf;
-    size_t remain = len;
+    // send_msg hands a stack header and a payload dies at return
+    Buffer owned(len);
+    std::memcpy(owned.get(), buf, len);
+    unacked_.push_back(Unacked{stream_offset_ + len, std::move(owned)});
+    const uint8_t* base = unacked_.back().buf.get();
 
-    while (remain > 0) {
-        ngtcp2_vec datav{ const_cast<uint8_t*>(ptr), remain };
+    size_t accepted = 0;
+    while (accepted < len) {
+        ngtcp2_vec datav{ const_cast<uint8_t*>(base + accepted), len - accepted };
         ngtcp2_ssize wdatalen = 0;
-        uint8_t pkt[QUIC_MAX_PKTLEN];
         ngtcp2_path_storage ps;
         ngtcp2_path_storage_zero(&ps);
         ngtcp2_pkt_info pi{};
 
         const ngtcp2_ssize nwrite =
             ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
-                                      pkt, sizeof(pkt),
+                                      begin_packet(), QUIC_MAX_PKTLEN,
                                       &wdatalen,
                                       NGTCP2_WRITE_STREAM_FLAG_NONE,
                                       stream_id_,
-                                      &datav, 1,
-                                      now_ns());
-
+                                      &datav, 1, now_ns());
         if (nwrite < 0) {
             if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
                 // pump for MAX_STREAM_DATA
-                if (pump_once() != 0) { return -1; }
+                if (pump_once() != 0) { errno = ECONNABORTED; return -1; }
                 continue;
             }
-            throw std::runtime_error(
-                std::string("QuicTransport::send: failed to write to stream ") +
-                ngtcp2_strerror(static_cast<int>(nwrite)));
+            close_connection(static_cast<int>(nwrite));
+            errno = EIO;
+            return -1;
         }
 
         if (nwrite == 0) {
             // cwnd exhausted, not STREAM_DATA_BLOCKED
-            if (pump_once() != 0) { return -1; }
+            if (pump_once() != 0) { errno = ECONNABORTED; return -1; }
             continue;
         }
 
-        struct iovec iov{};
-        iov.iov_base = pkt;
-        iov.iov_len = static_cast<size_t>(nwrite);
-
-        struct msghdr msg{};
-        msg.msg_name = nullptr;
-        msg.msg_namelen = 0;
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-
-        if (::sendmsg(udp_fd_, &msg, 0) < 0) {
-            throw std::runtime_error(
-                std::string("QuicTransport::send: sendmsg failed: ") +
-                std::strerror(errno));
+        // ngtcp2 has recorded the frame: advance before the commit can fail
+        if (wdatalen > 0) { // -1 when other frames filled the packet
+            accepted += static_cast<size_t>(wdatalen);
+            stream_offset_ += static_cast<uint64_t>(wdatalen);
         }
 
-        if (wdatalen > 0) {
-            ptr += static_cast<size_t>(wdatalen);
-            remain -= static_cast<size_t>(wdatalen);
+        const SendResult sr = send_packet(static_cast<size_t>(nwrite));
+        if (sr == SendResult::failed) { return -1; } // sendmsg left errno
+        // a dropped datagram is loss NOT an error
+        if (sr == SendResult::blocked && pump_once() != 0) {
+            errno = ECONNABORTED;
+            return -1;
         }
     }
 
+    flush_packets();
     return static_cast<ssize_t>(len);
 }
 
@@ -162,13 +161,12 @@ int QuicTransport::send_fin() {
         ngtcp2_path_storage ps;
         ngtcp2_path_storage_zero(&ps);
         ngtcp2_pkt_info pi{};
-        uint8_t pkt[QUIC_MAX_PKTLEN];
         ngtcp2_ssize wdatalen = -1;
 
         // empty data + FIN flag serializes a 0-length STREAM+fin and sets wdatalen 0
         const ngtcp2_ssize nwrite =
             ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
-                                      pkt, sizeof(pkt),
+                                      begin_packet(), QUIC_MAX_PKTLEN,
                                       &wdatalen,
                                       NGTCP2_WRITE_STREAM_FLAG_FIN,
                                       stream_id_,
@@ -189,23 +187,13 @@ int QuicTransport::send_fin() {
             continue;
         }
 
-        struct iovec iov{};
-        iov.iov_base = pkt;
-        iov.iov_len = static_cast<size_t>(nwrite);
-
-        struct msghdr msg{};
-        msg.msg_name = nullptr; // connected socket, kernel pins the peer
-        msg.msg_namelen = 0;
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-
-        if (::sendmsg(udp_fd_, &msg, 0) < 0 &&
-            errno != EAGAIN && errno != EWOULDBLOCK) {
-            return -1;
+        if (send_packet(static_cast<size_t>(nwrite)) == SendResult::failed) {
+            return -1; // blocked is tolerated, FIN retransmits
         }
 
         if (wdatalen >= 0) {
             fin_sent_ = true;
+            flush_packets();
             return 0;
         }
     }
@@ -232,7 +220,6 @@ int QuicTransport::feed_data(const uint8_t* data,
 
 int QuicTransport::drain_packets() {
     if (closed_) { return 0; } // pump's own return carries the signal
-    uint8_t buf[QUIC_MAX_PKTLEN];
 
     for (size_t i = 0; i < QUIC_MAX_BURST; i++) {
         ngtcp2_path_storage ps;
@@ -242,7 +229,7 @@ int QuicTransport::drain_packets() {
         // stream_id -1 + null datav: ACK/CRYPTO/PING only
         const ngtcp2_ssize nwrite =
             ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
-                                      buf, sizeof(buf),
+                                      begin_packet(), QUIC_MAX_PKTLEN,
                                       nullptr,
                                       NGTCP2_WRITE_STREAM_FLAG_NONE,
                                       -1,
@@ -251,21 +238,11 @@ int QuicTransport::drain_packets() {
         if (nwrite == 0) { break; }
         if (nwrite < 0) { return static_cast<int>(nwrite); }
 
-        struct iovec iov{};
-        iov.iov_base = buf;
-        iov.iov_len = static_cast<size_t>(nwrite);
-
-        struct msghdr msg{};
-        msg.msg_name = nullptr; // connected socket, kernel pins the peer
-        msg.msg_namelen = 0;
-        msg.msg_iov = &iov;
-        msg.msg_iovlen = 1;
-
-        if (::sendmsg(udp_fd_, &msg, 0) < 0) {
-            if (errno == EAGAIN || errno == EWOULDBLOCK) { break; }
-            return -1;
-        }
+        const SendResult sr = send_packet(static_cast<size_t>(nwrite));
+        if (sr == SendResult::blocked) { break; }
+        if (sr == SendResult::failed) { return -1; }
     }
+    flush_packets();
     return 0;
 }
 
@@ -290,15 +267,15 @@ void QuicTransport::close_connection(int liberr) {
     ngtcp2_path_storage ps;
     ngtcp2_path_storage_zero(&ps);
     ngtcp2_pkt_info pi{};
-    uint8_t buf[QUIC_MAX_PKTLEN];
+    uint8_t* pkt = begin_packet();
 
     const ngtcp2_ssize nwrite =
         ngtcp2_conn_write_connection_close(conn_, &ps.path, &pi,
-                                           buf, sizeof(buf),
+                                           pkt, QUIC_MAX_PKTLEN,
                                            &err, now_ns());
     if (nwrite > 0) {
         struct iovec iov{};
-        iov.iov_base = buf;
+        iov.iov_base = pkt;
         iov.iov_len = static_cast<size_t>(nwrite);
 
         struct msghdr msg{};
@@ -307,7 +284,8 @@ void QuicTransport::close_connection(int liberr) {
         msg.msg_iov = &iov;
         msg.msg_iovlen = 1;
 
-        (void)::sendmsg(udp_fd_, &msg, 0); // best-effort, dtor can't report
+        // not send_packet(): the dtor cannot wait on a ring completion
+        (void)::sendmsg(udp_fd_, &msg, 0);
     }
 
     closed_ = true;
@@ -454,4 +432,53 @@ int QuicTransport::get_new_connection_id(ngtcp2_conn* conn, ngtcp2_cid* cid, uin
     (void)::getrandom(cid->data, cidlen, 0);
     std::memset(token, 0, NGTCP2_STATELESS_RESET_TOKENLEN);
     return 0;
+}
+
+uint8_t* QuicTransport::begin_packet() {
+    return packet_buf_; // pool slot in ring modes
+}
+
+QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
+    struct iovec iov{};
+    iov.iov_base = packet_buf_;
+    iov.iov_len = n;
+
+    struct msghdr msg{};
+    msg.msg_name = nullptr; // connected socket, kernel pins the peer
+    msg.msg_namelen = 0;
+    msg.msg_iov = &iov;
+    msg.msg_iovlen = 1;
+
+    if (::sendmsg(udp_fd_, &msg, 0) < 0) {
+        if (errno == EAGAIN || errno == EWOULDBLOCK) { return SendResult::blocked; }
+        return SendResult::failed; // errno left for the caller's -1 contract
+    }
+    return SendResult::ok;
+}
+
+void QuicTransport::flush_packets() {} // sendmsg submits per datagram, the ring batches here
+
+// pops every block the peer acked, one call can cover several
+// offset is the prev gap-free acked offset, datalen is the new contiguous delta
+int QuicTransport::on_acked_stream_data_offset(ngtcp2_conn* conn,
+                                               int64_t stream_id,
+                                               uint64_t offset,
+                                               uint64_t datalen,
+                                               void* user_data,
+                                               void* stream_user_data) {
+    (void)conn; (void)stream_id; (void)stream_user_data;
+    auto* self = static_cast<QuicTransport*>(user_data);
+    const uint64_t acked_end = offset + datalen;
+
+    while (!self->unacked_.empty() &&
+           self->unacked_.front().end_offset <= acked_end) {
+        self->unacked_.pop_front(); // ~Buffer runs the erased release
+    }
+    return 0;
+}
+
+size_t QuicTransport::unacked_bytes() const {
+    size_t total = 0;
+    for (const auto& u : unacked_) { total += u.buf.size; }
+    return total;
 }
