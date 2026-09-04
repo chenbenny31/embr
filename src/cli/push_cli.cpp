@@ -7,6 +7,7 @@
 #include "core/push.hpp"
 #include "tracker/tracker_client.hpp"
 #include "transport/tcp_server.hpp"
+#include "transport/quic_server.hpp"
 #include "util/socket_fd.hpp"
 #include "util/config_tracker.hpp"
 #include <arpa/inet.h>
@@ -26,7 +27,10 @@ void print_push_usage() {
               << "\n"
               << "  --port PORT     listen port (default: 10007)\n"
               << "  --tracker URL   tracker URL; overrides EMBR_TRACKER env var\n"
-              << "  --ip IP         override sender IP under NAT\n";
+              << "  --ip IP         override sender IP under NAT\n"
+              << "  --transport T   tcp (default) or quic\n"
+              << "  --cert PATH     QUIC server cert (default: cert.pem)\n"
+              << "  --key PATH      QUIC server key (default: key.pem)\n";
 }
 
 // Derive 16 hex char token from file (deterministic), first 8 bytes from SHA256 hashes
@@ -57,6 +61,9 @@ int run_push_cli(int argc, char* argv[]) {
     uint16_t port = EMBR_PORT;
     std::string tracker_url;
     std::string sender_ip;
+    std::string transport = "tcp";
+    std::string cert_path = "cert.pem";
+    std::string key_path = "key.pem";
 
     for (int i = 2; i < argc; ++i) {
         const std::string flag = argv[i];
@@ -69,12 +76,24 @@ int run_push_cli(int argc, char* argv[]) {
         } else if (flag == "--help") {
             print_push_usage();
             return 0;
+        } else if (flag == "--transport" && i + 1 < argc) {
+            transport = argv[++i];
+        } else if (flag == "--cert" && i + 1 < argc) {
+            cert_path = argv[++i];
+        } else if (flag == "--key" && i + 1 < argc) {
+            key_path = argv[++i];
         } else {
             std::cerr << "embr push: unknown flag: " << flag << "\n";
             print_push_usage();
             return 1;
         }
     }
+
+    if (transport != "tcp" && transport != "quic") {
+        std::cerr << "embr push: --transport must be tcp or quic\n";
+        return 1;
+    }
+    const bool use_quic = (transport == "quic");
 
     tracker_url = resolve_tracker_url(tracker_url);
     if (!tracker_url.empty()) {
@@ -91,12 +110,9 @@ int run_push_cli(int argc, char* argv[]) {
 
         const std::string token = derive_token(file_meta.chunk_hashes);
 
-        SocketFd listen_fd = tcp_listen(port);
-        if (listen_fd.get() < 0) {
-            throw std::runtime_error("embr push: failed to listen on port " +
-                                      std::to_string(port) + " - " + std::strerror(errno));
-        }
-        std::cout << "[push] listening on port " << port << "\n";
+        SocketFd listen_fd = use_quic ? SocketFd{quic_listen(port)} : SocketFd{tcp_listen(port)};
+        std::cout << "[push] listening on port " << port
+                  << " (" << transport << ")\n";
 
         // register with tracker after listen_fd is bound: port open before pull connection
         if (!tracker_url.empty()) {
@@ -107,7 +123,8 @@ int run_push_cli(int argc, char* argv[]) {
             }
         }
 
-        auto conn = tcp_accept(listen_fd.get());
+        auto conn = use_quic ? quic_accept(listen_fd.get(), cert_path, key_path)
+                             : tcp_accept(listen_fd.get());
         std::cout << "[push] connection established\n";
 
         run_push(*conn, std::move(file_fd), std::move(file_meta));

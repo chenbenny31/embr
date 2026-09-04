@@ -3,13 +3,17 @@
 //
 
 #include "pull_cli.hpp"
+
 #include "core/pull.hpp"
 #include "tracker/tracker_client.hpp"
+#include "transport/quic_client.hpp"
 #include "transport/tcp_client.hpp"
-#include "util/constants.hpp"
 #include "util/config_tracker.hpp"
+#include "util/constants.hpp"
+
 #include <arpa/inet.h>
 #include <unistd.h>
+
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
@@ -26,7 +30,8 @@ void print_pull_usage() {
               << "  <token-or-ip>   16 hex char token or IPv4 address\n"
               << "  --port PORT     sender port for direct IP mode (default 10007)\n"
               << "  --tracker URL   tracker URL; overrides EMBR_TRACKER env var\n"
-              << "  --out PATH      output file path (default filename from sender)\n";
+              << "  --out PATH      output file path (default filename from sender)\n"
+              << "  --transport T   tcp (default) or quic\n";
 }
 
 bool is_ipv4(const std::string& arg) {
@@ -53,6 +58,7 @@ int run_pull_cli(int argc, char* argv[]) {
     uint16_t port = EMBR_PORT;
     std::string tracker_url;
     std::string out_path;
+    std::string transport = "tcp";
 
     for (int i = 2; i < argc; i++) {
         const std::string flag = argv[i];
@@ -65,11 +71,18 @@ int run_pull_cli(int argc, char* argv[]) {
         } else if (flag == "--help") {
             print_pull_usage();
             return 0;
+        } else if (flag == "--transport" && i + 1 < argc) {
+            transport = argv[++i];
         } else {
             std::cerr << "embr pull: unknown flag: " << flag << "\n";
             print_pull_usage();
             return 1;
         }
+    }
+
+    if (transport != "tcp" && transport != "quic") {
+        std::cerr << "embr pull: --transport must be tcp or quic\n";
+        return 1;
     }
 
     tracker_url = resolve_tracker_url(tracker_url);
@@ -104,7 +117,8 @@ int run_pull_cli(int argc, char* argv[]) {
             return 1;
         }
 
-        auto conn = tcp_connect(sender_ip, sender_port);
+        auto conn = (transport == "quic") ? quic_connect(sender_ip, sender_port)
+                                          : tcp_connect(sender_ip, sender_port);
         std::cout << "[pull] connect to " << sender_ip
                   << ":" << sender_port << "\n";
         run_pull(*conn, out_path);
