@@ -19,6 +19,7 @@
 #include <string>
 #include <cstdarg>
 #include <cstdio>
+#include <cstdlib>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <ngtcp2/ngtcp2_crypto_wolfssl.h>
@@ -159,7 +160,7 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port) 
     ngtcp2_settings settings{};
     ngtcp2_settings_default(&settings);
     settings.initial_ts = timestamp_ns();
-    settings.log_printf = log_printf;
+    settings.log_printf = std::getenv("EMBR_QUIC_LOG") ? log_printf : nullptr;
 
     ngtcp2_transport_params params{};
     ngtcp2_transport_params_default(&params);

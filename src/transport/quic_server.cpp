@@ -3,14 +3,13 @@
 //
 
 #include "quic_server.hpp"
-
+#include "quic_transport.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/random.h>
 #include <sys/socket.h>
 #include <unistd.h>
-
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>
@@ -20,8 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <cstdio>
-
-#include "quic_transport.hpp"
+#include <cstdlib>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <ngtcp2/ngtcp2_crypto_wolfssl.h>
@@ -224,7 +222,7 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
     ngtcp2_settings settings{};
     ngtcp2_settings_default(&settings);
     settings.initial_ts = timestamp_ns();
-    settings.log_printf = log_printf;
+    settings.log_printf = std::getenv("EMBR_QUIC_LOG") ? log_printf : nullptr;
 
     ngtcp2_transport_params params{};
     ngtcp2_transport_params_default(&params);

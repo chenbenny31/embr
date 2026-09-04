@@ -32,7 +32,7 @@ inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycl
 // construct only via factories: quic_connect, quic_accept
 //
 // send_file: mmap datav + ngtcp2 datav->dest assembly (1 copy) + in-place AEAD on dest
-// recv_file: ngtcp2 stream re-assembly
+// recv_file: ngtcp2 stream re-assembly -> mmap dest (1 copy)
 class QuicTransport final : public Transport {
 public:
     // --- control plane ---
@@ -70,6 +70,11 @@ private:
     bool closed_{false}; // close sent or silent teardown, set for every transition
     std::vector<uint8_t> recv_buf_;
 
+    // recv_file dest: on_recv_stream_data lands bytes here
+    uint8_t* recv_dest_{nullptr};
+    size_t recv_dest_len_{0};
+    size_t recv_dest_got_{0};
+
     // egress seam: one assembly dest + one commit per datagram
     enum class SendResult { ok, blocked, failed };
 
@@ -77,6 +82,9 @@ private:
     uint8_t* begin_packet();
     SendResult send_packet(size_t n);
     void flush_packets();
+
+    // drive ones retained block until ngtcp2 accepts every byte
+    ssize_t write_stream(const uint8_t* base, size_t len);
 
     // ngtcp2 re-encodes lost STREAM frames from the caller's ptr
     // block must outlive send() until acked

@@ -8,6 +8,7 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/time.h>
+#include <sys/mman.h>
 #include <ctime>
 #include <unistd.h>
 #include <ngtcp2/ngtcp2.h>
@@ -79,57 +80,8 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
     Buffer owned(len);
     std::memcpy(owned.get(), buf, len);
     unacked_.push_back(Unacked{stream_offset_ + len, std::move(owned)});
-    const uint8_t* base = unacked_.back().buf.get();
 
-    size_t accepted = 0;
-    while (accepted < len) {
-        ngtcp2_vec datav{ const_cast<uint8_t*>(base + accepted), len - accepted };
-        ngtcp2_ssize wdatalen = 0;
-        ngtcp2_path_storage ps;
-        ngtcp2_path_storage_zero(&ps);
-        ngtcp2_pkt_info pi{};
-
-        const ngtcp2_ssize nwrite =
-            ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
-                                      begin_packet(), QUIC_MAX_PKTLEN,
-                                      &wdatalen,
-                                      NGTCP2_WRITE_STREAM_FLAG_NONE,
-                                      stream_id_,
-                                      &datav, 1, now_ns());
-        if (nwrite < 0) {
-            if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
-                // pump for MAX_STREAM_DATA
-                if (pump_once() != 0) { errno = ECONNABORTED; return -1; }
-                continue;
-            }
-            close_connection(static_cast<int>(nwrite));
-            errno = EIO;
-            return -1;
-        }
-
-        if (nwrite == 0) {
-            // cwnd exhausted, not STREAM_DATA_BLOCKED
-            if (pump_once() != 0) { errno = ECONNABORTED; return -1; }
-            continue;
-        }
-
-        // ngtcp2 has recorded the frame: advance before the commit can fail
-        if (wdatalen > 0) { // -1 when other frames filled the packet
-            accepted += static_cast<size_t>(wdatalen);
-            stream_offset_ += static_cast<uint64_t>(wdatalen);
-        }
-
-        const SendResult sr = send_packet(static_cast<size_t>(nwrite));
-        if (sr == SendResult::failed) { return -1; } // sendmsg left errno
-        // a dropped datagram is loss NOT an error
-        if (sr == SendResult::blocked && pump_once() != 0) {
-            errno = ECONNABORTED;
-            return -1;
-        }
-    }
-
-    flush_packets();
-    return static_cast<ssize_t>(len);
+    return write_stream(unacked_.back().buf.get(), len);
 }
 
 ssize_t QuicTransport::recv(uint8_t* buf, size_t len) {
@@ -201,13 +153,75 @@ int QuicTransport::send_fin() {
 
 // --- data plane ---
 void QuicTransport::send_file(int file_fd, uint64_t offset, size_t len) {
-    (void)file_fd; (void)offset; (void)len;
-    throw std::runtime_error("QuicTransport::send_file: not implemented");
+    if (len == 0) { return; }
+    if (closed_) { throw std::runtime_error("QuicTransport::send_file: connection closed"); }
+    if (stream_id_ < 0) { throw std::runtime_error("QuicTransport::send_file: no open stream"); }
+
+    // mmap offset must be page-aligned, delta locates the payload in mapping
+    const uint64_t page = static_cast<uint64_t>(::sysconf(_SC_PAGESIZE));
+    const uint64_t base_off = offset & ~(page - 1);
+    const size_t delta = static_cast<size_t>(offset - base_off);
+    const size_t map_len = len + delta;
+
+    void* map = ::mmap(nullptr, map_len, PROT_READ, MAP_PRIVATE,
+                       file_fd, static_cast<off_t>(base_off));
+    if (map == MAP_FAILED) {
+        throw std::runtime_error(
+            std::string("QuicTransport::send_file: mmap failed: ") + std::strerror(errno));
+    }
+    auto* map_base = static_cast<uint8_t*>(map);
+
+    // same deque, same erase release: heap in send(), munmap here
+    Buffer chunk(map_base + delta, len,
+        [map_base, map_len](uint8_t*) { ::munmap(map_base, map_len); });
+    unacked_.push_back(Unacked{stream_offset_ + len, std::move(chunk)});
+
+    if (write_stream(unacked_.back().buf.get(), len) < 0) {
+        throw std::runtime_error(
+            std::string("QuicTransport::send_file: send failed: ") + std::strerror(errno));
+    }
 }
 
 void QuicTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
-    (void)file_fd; (void)offset; (void)len;
-    throw std::runtime_error("QuicTransport::recv_file: not implemented");
+    if (len == 0) { return; }
+
+    const uint64_t page = static_cast<uint64_t>(::sysconf(_SC_PAGESIZE));
+    const uint64_t base_off = offset & ~(page - 1);
+    const size_t delta = static_cast<size_t>(offset - base_off);
+    const size_t map_len = len + delta;
+
+    void* map = ::mmap(nullptr, map_len, PROT_READ | PROT_WRITE, MAP_SHARED,
+                       file_fd, static_cast<off_t>(base_off));
+    if (map == MAP_FAILED) {
+        throw std::runtime_error(
+            std::string("QuicTransport::recv_file: mmap failed: ") + std::strerror(errno));
+    }
+    auto* map_base = static_cast<uint8_t*>(map);
+
+    // erased release also clears the callback ptr: it must not outlive the mapping
+    Buffer dest(map_base, map_len,
+        [this, map_len](uint8_t* p) { recv_dest_ = nullptr; ::munmap(p, map_len); });
+
+    // bytes buffered before this call precede the file bytes in stream order
+    size_t got = 0;
+    if (!recv_buf_.empty()) {
+        got = std::min(len, recv_buf_.size());
+        std::memcpy(map_base + delta, recv_buf_.data(), got);
+        recv_buf_.erase(recv_buf_.begin(), recv_buf_.begin() + static_cast<ptrdiff_t>(got));
+    }
+
+    recv_dest_ = map_base + delta;
+    recv_dest_len_ = len;
+    recv_dest_got_ = got;
+
+    while (recv_dest_got_ < len) {
+        if (stream_fin_received_ || closed_) {
+            throw std::runtime_error("QuicTransport::recv_file: connection closed");
+        }
+        if (pump_once() != 0) {
+            throw std::runtime_error("QuicTransport::recv_file: pump failed");
+        }
+    }
 }
 
 // --- I/O helpers ---
@@ -244,6 +258,57 @@ int QuicTransport::drain_packets() {
     }
     flush_packets();
     return 0;
+}
+
+ssize_t QuicTransport::write_stream(const uint8_t* base, size_t len) {
+    size_t accepted = 0;
+    while (accepted < len) {
+        ngtcp2_vec datav{ const_cast<uint8_t*>(base + accepted), len - accepted };
+        ngtcp2_ssize wdatalen = 0;
+        ngtcp2_path_storage ps;
+        ngtcp2_path_storage_zero(&ps);
+        ngtcp2_pkt_info pi{};
+
+        const ngtcp2_ssize nwrite =
+            ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
+                                      begin_packet(), QUIC_MAX_PKTLEN,
+                                      &wdatalen,
+                                      NGTCP2_WRITE_STREAM_FLAG_NONE,
+                                      stream_id_,
+                                      &datav, 1, now_ns());
+        if (nwrite < 0) {
+            if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
+                // pump for MAX_STREAM_DATA
+                if (pump_once() != 0) { errno = ECONNABORTED; return -1; }
+                continue;
+            }
+            close_connection(static_cast<int>(nwrite));
+            errno = EIO;
+            return -1;
+        }
+
+        if (nwrite == 0) {
+            // cwnd exhausted, not STREAM_DATA_BLOCKED
+            if (pump_once() != 0) { ; return -1; }
+            continue;
+        }
+
+        // -1 when other frames filled the packet
+        if (wdatalen > 0) {
+            accepted += static_cast<ssize_t>(wdatalen);
+            stream_offset_ += static_cast<uint64_t>(wdatalen);
+        }
+
+        const SendResult sr = send_packet(static_cast<size_t>(nwrite));
+        if (sr == SendResult::failed) { return -1; } // sendmsg left errno
+        // a dropped datagram is loss NOT an error
+        if (sr == SendResult::blocked && pump_once() != 0) {
+            errno = ECONNABORTED;
+            return -1;
+        }
+    }
+    flush_packets();
+    return static_cast<ssize_t>(len);
 }
 
 void QuicTransport::close_connection(int liberr) {
@@ -406,7 +471,17 @@ int QuicTransport::on_recv_stream_data(ngtcp2_conn* conn, uint32_t flags, int64_
                                        void* user_data, void* stream_user_data) {
     (void)offset; (void) stream_user_data;
     auto* self = static_cast<QuicTransport*>(user_data);
-    self->recv_buf_.insert(self->recv_buf_.end(), data, data + datalen);
+
+    // recv_file waiting and nothing queued ahead: straight into the mapping
+    size_t taken = 0;
+    if (self->recv_dest_ && self->recv_buf_.empty()) {
+        taken = std::min(datalen, self->recv_dest_len_ - self->recv_dest_got_);
+        std::memcpy(self->recv_dest_ + self->recv_dest_got_, data, taken);
+        self->recv_dest_got_ += taken;
+    }
+    if (taken < datalen) {
+        self->recv_buf_.insert(self->recv_buf_.end(), data + taken, data + datalen);
+    }
 
     if (flags & NGTCP2_STREAM_DATA_FLAG_FIN) {
         self->stream_fin_received_ = true;

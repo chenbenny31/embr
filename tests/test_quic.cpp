@@ -86,6 +86,30 @@ static TempCert make_temp_cert() {
     return {std::string{cert_tmpl}, std::string{key_tmpl}};
 }
 
+struct TempFile {
+    int         fd;
+    std::string path;
+
+    TempFile(int fd, std::string path) : fd(fd), path(std::move(path)) {}
+
+    ~TempFile() {
+        if (fd >= 0) { ::close(fd); }
+        if (!path.empty()) { ::unlink(path.c_str()); }
+    }
+    // move-only
+    TempFile(const TempFile&) = delete;
+    TempFile& operator=(const TempFile&) = delete;
+    TempFile(TempFile&& other) noexcept
+        : fd(other.fd), path(std::move(other.path)) { other.fd = -1; }
+};
+
+static TempFile make_tempfile() {
+    char tmpl[] = "/tmp/embr_test_XXXXXX";
+    int fd = ::mkstemp(tmpl);
+    if (fd < 0) { throw std::runtime_error("mkstemp() failed"); }
+    return {fd, std::string{tmpl}};
+}
+
 static void fill_pattern(uint8_t* buf, size_t len) {
     for (size_t i = 0; i < len; i++) {
         buf[i] = static_cast<uint8_t>(i & 0xFF);
@@ -357,4 +381,105 @@ TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
 
     EXPECT_TRUE(server_err.empty()) << server_err;
     EXPECT_EQ(abnormal_result, -1); // closed without FIN
+}
+
+// ── SendFile_RecvFile_Aligned ─────────────────────────────────────────────────
+
+TEST(QuicTransport, SendFile_RecvFile_Aligned) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    constexpr size_t kLen = 64 * 1024;
+
+    auto src = make_tempfile();
+    std::vector<uint8_t> pattern(kLen);
+    fill_pattern(pattern.data(), kLen);
+    ::write(src.fd, pattern.data(), kLen);
+
+    auto dst = make_tempfile();
+    ::ftruncate(dst.fd, static_cast<off_t>(kLen));
+
+    std::string server_err;
+
+    // server: accept -> recv_file -> 1-byte ack, so the client can retire its blocks
+    std::jthread server([listen_fd, &cert, dst_fd = dst.fd, &server_err]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            t->recv_file(dst_fd, 0, kLen);
+            const uint8_t ack = 1;
+            send_exact(*t, &ack, 1);
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    client->send_file(src.fd, 0, kLen / 2);
+    client->send_file(src.fd, kLen / 2, kLen / 2); // split send to make deque hold multi-entries
+
+    uint8_t ack = 0;
+    recv_exact(*client, &ack, 1); // returns only once the server has every byte
+
+    server.join();
+    ::close(listen_fd);
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(ack, 1);
+
+    // block 1 retires long before block 2 is sent: proves the ack callback fires
+    auto* qt = dynamic_cast<QuicTransport*>(client.get());
+    ASSERT_NE(qt, nullptr);
+    EXPECT_LT(qt->unacked_bytes(), kLen); // unacked_bytes() can be 0, 32768 or 65536
+
+    std::vector<uint8_t> src_buf(kLen), dst_buf(kLen);
+    ::pread(src.fd, src_buf.data(), kLen, 0);
+    ::pread(dst.fd, dst_buf.data(), kLen, 0);
+    EXPECT_EQ(std::memcmp(src_buf.data(), dst_buf.data(), kLen), 0);
+}
+
+// ── SendFile_RecvFile_UnalignedOffset ─────────────────────────────────────────
+
+TEST(QuicTransport, SendFile_RecvFile_UnalignedOffset) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    constexpr size_t kOff = 1000;   // not page-aligned: exercises the mmap delta
+    constexpr size_t kLen = 65537;  // not a power of two: last-chunk edge
+
+    auto src = make_tempfile();
+    std::vector<uint8_t> pattern(kLen);
+    fill_pattern(pattern.data(), kLen);
+    ::pwrite(src.fd, pattern.data(), kLen, kOff);
+
+    auto dst = make_tempfile();
+    ::ftruncate(dst.fd, static_cast<off_t>(kOff + kLen));
+
+    std::string server_err;
+
+    std::jthread server([listen_fd, &cert, dst_fd = dst.fd, &server_err]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            t->recv_file(dst_fd, kOff, kLen);
+            const uint8_t ack = 1;
+            send_exact(*t, &ack, 1);
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    client->send_file(src.fd, kOff, kLen);
+
+    uint8_t ack = 0;
+    recv_exact(*client, &ack, 1);
+
+    server.join();
+    ::close(listen_fd);
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+
+    std::vector<uint8_t> src_buf(kLen), dst_buf(kLen);
+    ::pread(src.fd, src_buf.data(), kLen, kOff);
+    ::pread(dst.fd, dst_buf.data(), kLen, kOff);
+    EXPECT_EQ(std::memcmp(src_buf.data(), dst_buf.data(), kLen), 0);
 }
