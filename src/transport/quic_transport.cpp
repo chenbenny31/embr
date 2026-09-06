@@ -538,7 +538,11 @@ void QuicTransport::init_egress() {
 
 uint8_t* QuicTransport::begin_packet() {
     init_egress();
-    return zc_ ? zc_->reserve() : packet_buf_;
+    if (zc_) {
+        if (uint8_t* p = zc_->reserve()) { return p; }
+        zc_.reset(); // the ring latched an error -> finish this conn on sendmsg
+    }
+    return packet_buf_;
 }
 
 QuicTransport::SendResult QuicTransport::send_packet(size_t n) {

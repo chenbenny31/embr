@@ -47,11 +47,12 @@ ZcEgress::ZcEgress(int fd, size_t slot_size, unsigned slots)
 }
 
 ZcEgress::~ZcEgress() {
-    if (ring_up_) {
-        drain(now_ns() + 1'000'000'000ULL); // kernel may still read slots; NOTIFs have 1 sec
-        inflight_.clear(); // force release before slab goes
-        io_uring_queue_exit(&ring_);
-    }
+    if (!ring_up_) { return; }
+    const bool quiet = drain(now_ns() + 1'000'000'000ULL); // NOTIFs get one sec
+    inflight_.clear(); // release the owners; no slot is handed out after
+    io_uring_queue_exit(&ring_);
+    // closing the ring is not completion
+    if (!quiet) { (void)new std::vector<uint8_t>(std::move(slab_)); }
 }
 
 void ZcEgress::release(unsigned i) {
@@ -61,7 +62,8 @@ void ZcEgress::release(unsigned i) {
 uint8_t* ZcEgress::reserve() {
     if (reserved_ >= 0) { return slab_.data() + static_cast<size_t>(reserved_) * slot_size_; }
     while (free_.empty()) {
-        if (queued_ > 0) { flush(); }
+        if (err_ != 0) { return nullptr; } // ring latched an error: waiting here cannot end
+        flush();
         if (free_.empty()) { reap(true); }
     }
     reserved_ = static_cast<int>(free_.back());
@@ -103,16 +105,17 @@ bool ZcEgress::commit(size_t n) {
     // slot's owner: destroying the Buffer
     inflight_[i] = Buffer(slot, n, [this, i](uint8_t*) { release(i); });
     reserved_ = -1;
-    ++queued_;
     ++stats_.sends;
     return true;
 }
 
 void ZcEgress::flush() {
-    if (queued_ > 0) {
+    // submit by ring state: failed or partial submit leaves SQEs, the next flush must pick up
+    while (io_uring_sq_ready(&ring_) > 0) {
         const int rv = io_uring_submit(&ring_);
-        if (rv < 0 && err_ == 0) { err_ = -rv; }
-        queued_ = 0;
+        if (rv > 0) { continue; }
+        if (rv < 0 && rv != -EINTR && rv != -EAGAIN && err_ == 0) { err_ = -rv; }
+        break; // transient: retried on the next flush
     }
     reap(false);
 }
@@ -120,7 +123,7 @@ void ZcEgress::flush() {
 void ZcEgress::reap(bool wait) {
     io_uring_cqe* cqe = nullptr;
     if (wait) {
-        if (queued_ > 0) { flush(); }
+        if (io_uring_sq_ready(&ring_) > 0) { flush(); }
         if (io_uring_wait_cqe(&ring_, &cqe) < 0) { return; }
     } else if (io_uring_peek_cqe(&ring_, &cqe) < 0) {
         return;
@@ -137,12 +140,17 @@ void ZcEgress::reap(bool wait) {
             if (res & IORING_NOTIF_USAGE_ZC_COPIED) { ++stats_.copied; }
             inflight_[i] = Buffer{}; // erased release -> free_.push_back(i)
         } else {
-            if (res == -EINVAL || res == -EOPNOTSUPP) { unsupported_ = true; }
-            if (res == -ENOMEM || res == -ENOBUFS || res == -EAGAIN || unsupported_) {
-                // memlock accounting or socket memory resued this datagram (never sent)
-                // QUIC recovers it as a loss; do one copy now
+            const bool refused = res == -ENOMEM || res == -ENOBUFS || res == -EAGAIN
+                              || res == -EINVAL || res == -EOPNOTSUPP;
+            if (res == -EINVAL || res == -EOPNOTSUPP) { unsupported_ = true; } // no SEND_ZC kernel
+            if (refused) {
+                // this datagram was never sent; QUIC does a copy when loss
                 ++stats_.fallback;
-                (void)::send(fd_, inflight_[i].ptr, inflight_[i].size, 0);
+                if (::send(fd_, inflight_[i].ptr, inflight_[i].size, 0) < 0
+                    && errno != EAGAIN && errno != ENOBUFS && errno != ENOMEM) { // transient = loss
+                    ++stats_.errors;
+                    if (err_ == 0) { err_ = errno; }
+                }
             } else if (res < 0) {
                 ++stats_.errors;
                 if (err_ == 0) { err_ = -res; }
@@ -161,7 +169,8 @@ bool ZcEgress::drain(uint64_t dealine_ns) {
     while (inflight() > 0 && now_ns() < dealine_ns) {
         __kernel_timespec ts{ 0, 50'000'000 }; // 50 ms slices to satisfy the deadline
         io_uring_cqe *cqe = nullptr;
-        if (io_uring_wait_cqe_timeout(&ring_, &cqe, &ts) == 0) { reap(false); }
+        (void)io_uring_wait_cqe_timeout(&ring_, &cqe, &ts);
+        flush(); // resubmit then reap
     }
     return inflight() == 0;
 }

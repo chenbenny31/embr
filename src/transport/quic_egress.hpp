@@ -28,6 +28,7 @@ public:
     ZcEgress& operator=(const ZcEgress&) = delete;
 
     // assembly dest for the next datagram; the same slot is returned again until commit() takes it
+    // nullptr once the ring has latched an error: the caller should stop using the egress
     uint8_t* reserve();
     // enqueue the reserved slot as one SEND_ZC of n bytes; false on a latched error
     bool commit(size_t n);
@@ -48,7 +49,7 @@ public:
         uint64_t sends{0};
         uint64_t notifs{0};
         uint64_t copied{0};
-        uint64_t fallback{0}; // datagrams re-sent by copy after a refused SEND_ZC
+        uint64_t fallback{0}; // copies attempted after a refused SEND_ZC; failed copy also counts
         uint64_t errors{0};
     };
     const Stats& stats() const { return stats_;}
@@ -71,7 +72,6 @@ private:
     std::vector<Buffer> inflight_; // declared last -> destroy first
 
     int reserved_{-1};
-    unsigned queued_{0}; // SQEs prepared but not yet submitted
     int err_{0};
     Stats stats_;
 };
