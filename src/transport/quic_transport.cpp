@@ -19,6 +19,7 @@
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
+#include <cstdio>
 #include <cstring>
 #include <stdexcept>
 #include <string>
@@ -63,6 +64,14 @@ QuicTransport::~QuicTransport() {
     if (conn_) { ngtcp2_conn_del(conn_); }
     if (ssl_) { wolfSSL_free(ssl_); }
     if (ssl_ctx_) { wolfSSL_CTX_free(ssl_ctx_); }
+    // EMBR_QUIC_STATS=1: one line per conn; copied==0 is the proof that NIC read pages
+    if (zc_ && std::getenv("EMBR_QUIC_STATS")) {
+        const auto& s = zc_->stats();
+        std::fprintf(stderr,
+            "[quic-egress] sends=%llu notifs=%llu copied=%llu fallback=%llu errors=%llu registered=%d\n",
+            (unsigned long long)s.sends, (unsigned long long)s.notifs, (unsigned long long)s.copied,
+            (unsigned long long)s.fallback, (unsigned long long)s.errors, zc_->registered() ? 1 : 0);
+    }
     zc_.reset(); // drains in-flight SEND_ZC slots before the socket goes
     if (udp_fd_ >= 0) { ::close(udp_fd_); }
 }

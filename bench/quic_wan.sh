@@ -111,6 +111,24 @@ assert_sendzc() { # assert_sendzc local|remote
     log "$where sendzc ok: kernel=$k memlock=${l}KiB"
 }
 
+# fail on the real cause first: every remote preflight below would otherwise report a bogus 0
+assert_ssh() {
+    ssh "${SSH_OPTS[@]}" "${SENDER_USER}@${SENDER_IP}" true 2>/dev/null \
+        || die "cannot ssh ${SENDER_USER}@${SENDER_IP} — check SSH_KEY, key mode 600, and TCP 22 in the sender's security group"
+    log "ssh ok: ${SENDER_USER}@${SENDER_IP}"
+}
+
+# a closed TCP port would only show as RETRY_MAX slow failures mid-bench; probe before the clock starts
+# UDP cannot be probed this way: the first embrquic warmup is the probe for $QUIC_PORT/$QUIC_SM_PORT
+assert_ports() {
+    local port
+    for port in "$TCP_PORT" "$NC_PORT"; do
+        timeout 5 bash -c "</dev/tcp/$SENDER_IP/$port" 2>/dev/null \
+            || die "TCP $port on $SENDER_IP not reachable — sender not started, or port missing from its security group"
+    done
+    log "tcp ports ok: $TCP_PORT $NC_PORT (udp $QUIC_PORT $QUIC_SM_PORT are probed by the first warmup)"
+}
+
 # the client runs SSL_VERIFY_NONE, so a throwaway self-signed cert is all TLS 1.3 needs
 ensure_cert() {
     [[ -f "$CERT" && -f "$KEY" ]] && return 0
@@ -183,10 +201,11 @@ run_sender() {
     log "file $(du -h "$FILE" | cut -f1)  sha256=$(sha256sum "$FILE" | cut -d' ' -f1)"
 
     # the sender's sys time per GiB is the copy-floor number: SEND_ZC vs sendmsg differ only there
-    rm -f "$SENDER_STATS".embrquic "$SENDER_STATS".embrquicsm "$SENDER_STATS".embrtcp
+    rm -f "$SENDER_STATS".embrquic "$SENDER_STATS".embrquicsm "$SENDER_STATS".embrtcp "$SENDER_STATS".embrquic.log
     local T=(/usr/bin/time -f "%e %U %S %x" -a -o) # wall user sys exit; the summary keeps exit==0 only
-    ( while true; do "${T[@]}" "$SENDER_STATS.embrquic" "$EMBR" push "$FILE" --port "$QUIC_PORT" --transport quic \
-          --cert "$CERT" --key "$KEY" >/dev/null 2>&1 || sleep 0.3; done ) &
+    # EMBR_QUIC_STATS=1 makes embr print one [quic-egress] line per connection; copied==0 proves real zero-copy
+    ( while true; do EMBR_QUIC_STATS=1 "${T[@]}" "$SENDER_STATS.embrquic" "$EMBR" push "$FILE" --port "$QUIC_PORT" --transport quic \
+          --cert "$CERT" --key "$KEY" >/dev/null 2>>"$SENDER_STATS.embrquic.log" || sleep 0.3; done ) &
     SENDER_PIDS+=($!)
     ( while true; do EMBR_QUIC_EGRESS=sendmsg "${T[@]}" "$SENDER_STATS.embrquicsm" "$EMBR" push "$FILE" --port "$QUIC_SM_PORT" --transport quic \
           --cert "$CERT" --key "$KEY" >/dev/null 2>&1 || sleep 0.3; done ) &
@@ -231,6 +250,15 @@ sender_summary() {
         printf '%-10s | %-6s | %-8s | %-8s\n' "$row" "$(wc -l <<<"$lines")" \
             "$(awk '{print $2}' <<<"$lines" | median)" "$(awk '{print $3}' <<<"$lines" | median)"
     done
+    local st="$SENDER_STATS.embrquic.log"
+    if grep -q '^\[quic-egress\]' "$st" 2>/dev/null; then
+        # sum over connections: copied/sends is the share the kernel copied anyway; want ~0 on a real NIC
+        awk '/^\[quic-egress\]/ { for (i=2;i<=NF;i++) { split($i,kv,"="); t[kv[1]]+=kv[2] } n++ }
+             END { printf "embrquic egress over %d connections: sends=%d copied=%d (%.1f%%) fallback=%d errors=%d\n",
+                   n, t["sends"], t["copied"], t["sends"]?100*t["copied"]/t["sends"]:0, t["fallback"], t["errors"] }' "$st" >&2
+    else
+        log "no [quic-egress] lines in $st — binary predates EMBR_QUIC_STATS; copied ratio unknown"
+    fi
     log "raw per-push lines in $SENDER_STATS.<row>; read: embrquic sys vs embrquicsm sys = SEND_ZC saving per GiB"
 }
 
@@ -239,6 +267,8 @@ run_receiver() {
     [[ -x "$EMBR" ]] || die "embr binary not found at $EMBR"
     command -v /usr/bin/time >/dev/null || die "GNU time missing: sudo dnf install -y time"
     assert_toolchain
+    assert_ssh
+    assert_ports
     assert_sockbuf local
     assert_sockbuf remote
     assert_sendzc local
