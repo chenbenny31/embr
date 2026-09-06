@@ -15,12 +15,13 @@
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <stdexcept>
 #include <string>
-#include <algorithm>
 
 namespace {
 
@@ -62,6 +63,7 @@ QuicTransport::~QuicTransport() {
     if (conn_) { ngtcp2_conn_del(conn_); }
     if (ssl_) { wolfSSL_free(ssl_); }
     if (ssl_ctx_) { wolfSSL_CTX_free(ssl_ctx_); }
+    zc_.reset(); // drains in-flight SEND_ZC slots before the socket goes
     if (udp_fd_ >= 0) { ::close(udp_fd_); }
 }
 
@@ -289,7 +291,7 @@ ssize_t QuicTransport::write_stream(const uint8_t* base, size_t len) {
 
         if (nwrite == 0) {
             // cwnd exhausted, not STREAM_DATA_BLOCKED
-            if (pump_once() != 0) { ; return -1; }
+            if (pump_once() != 0) { errno = ECONNABORTED; return -1; }
             continue;
         }
 
@@ -319,6 +321,15 @@ void QuicTransport::close_connection(int liberr) {
         return;
     }
 
+    // graceful close must not orphan retained blocks
+    // TCP's kernel lingers after close(); QUIC has to do it here, re-sent a lost tail
+    if (liberr == 0 && !unacked_.empty()) {
+        const ngtcp2_tstamp deadline = now_ns() + QUIC_CLOSE_LINER_NS;
+        while (!unacked_.empty() && !closed_ && now_ns() < deadline) {
+            if (pump_once(deadline) != 0) { break; }
+        }
+        if (closed_) { return; } // peer closed first, or the pump escalated
+    }
     ngtcp2_ccerr err;
     if (liberr == 0) {
         ngtcp2_ccerr_default(&err); // app-init: NO_ERROR
@@ -332,7 +343,7 @@ void QuicTransport::close_connection(int liberr) {
     ngtcp2_path_storage ps;
     ngtcp2_path_storage_zero(&ps);
     ngtcp2_pkt_info pi{};
-    uint8_t* pkt = begin_packet();
+    uint8_t* pkt = packet_buf_; // never a pool slot: send is sync
 
     const ngtcp2_ssize nwrite =
         ngtcp2_conn_write_connection_close(conn_, &ps.path, &pi,
@@ -357,10 +368,10 @@ void QuicTransport::close_connection(int liberr) {
 }
 
 // one recvmsg -> feed_data -> drain_packets cycle
-int QuicTransport::pump_once() {
+int QuicTransport::pump_once(ngtcp2_tstamp until) {
     if (closed_) { return -1; }
 
-    const ngtcp2_tstamp expiry = ngtcp2_conn_get_expiry(conn_);
+    const ngtcp2_tstamp expiry = std::min(ngtcp2_conn_get_expiry(conn_), until);
     const ngtcp2_tstamp now = now_ns();
 
     struct timeval tv{};
@@ -509,11 +520,34 @@ int QuicTransport::get_new_connection_id(ngtcp2_conn* conn, ngtcp2_cid* cid, uin
     return 0;
 }
 
+// EMBR_QUIC_EGRESS=sendmsg forces the per-datagram baseline
+// lazy: both factories connect() the socket before the first packet
+void QuicTransport::init_egress() {
+    if (egress_init_) { return; }
+    egress_init_ = true;
+    const char* mode = std::getenv("EMBR_QUIC_EGRESS");
+    if (mode && std::strcmp(mode, "sendmsg") == 0) { return; }
+    try {
+        zc_ = std::make_unique<ZcEgress>(udp_fd_, QUIC_MAX_PKTLEN, QUIC_ZC_SLOTS);
+        // unregistered SEND_ZC pins 8KiB per in-flight datagram against the same budget, use copy
+        if (!zc_->registered()) { zc_.reset(); }
+    } catch (const std::exception&) {
+        zc_.reset(); // no ring: sendmsg path
+    }
+}
+
 uint8_t* QuicTransport::begin_packet() {
-    return packet_buf_; // pool slot in ring modes
+    init_egress();
+    return zc_ ? zc_->reserve() : packet_buf_;
 }
 
 QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
+    if (zc_) {
+        if (zc_->commit(n)) { return SendResult::ok; }
+        errno = zc_->error() != 0 ? zc_->error() : EIO; // a send CQE latched error
+        return SendResult::failed;
+    }
+
     struct iovec iov{};
     iov.iov_base = packet_buf_;
     iov.iov_len = n;
@@ -531,7 +565,12 @@ QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
     return SendResult::ok;
 }
 
-void QuicTransport::flush_packets() {} // sendmsg submits per datagram, the ring batches here
+void QuicTransport::flush_packets() {
+    if (!zc_) { return; } // sendmsg has sent each datagram
+    zc_->flush(); // one submit per burst
+    // pre-6.2 kernel: every SEND_ZC is EINVAL, stay on sendmsg
+    if (zc_->unsupported()) { zc_.reset(); }
+}
 
 // pops every block the peer acked, one call can cover several
 // offset is the prev gap-free acked offset, datalen is the new contiguous delta

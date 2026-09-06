@@ -5,6 +5,7 @@
 #include "transport/quic_client.hpp"
 #include "transport/quic_server.hpp"
 #include "transport/quic_transport.hpp"
+#include "transport/quic_egress.hpp"
 #include "util/exact_io.hpp"
 #include "core/protocol.hpp"
 #include "util/constants.hpp"
@@ -430,6 +431,56 @@ TEST(QuicTransport, SendFile_RecvFile_Aligned) {
     auto* qt = dynamic_cast<QuicTransport*>(client.get());
     ASSERT_NE(qt, nullptr);
     EXPECT_LT(qt->unacked_bytes(), kLen); // unacked_bytes() can be 0, 32768 or 65536
+
+    std::vector<uint8_t> src_buf(kLen), dst_buf(kLen);
+    ::pread(src.fd, src_buf.data(), kLen, 0);
+    ::pread(dst.fd, dst_buf.data(), kLen, 0);
+    EXPECT_EQ(std::memcmp(src_buf.data(), dst_buf.data(), kLen), 0);
+}
+
+// ── Egress_ZcPathCarriesTransfer ──────────────────────────────────────────────
+// skipped when EMBR_QUIC_EGRESS=sendmsg (the same suite gates both modes)
+TEST(QuicTransport, Egress_ZcPathCarriesTransfer) {
+    const char* mode = std::getenv("EMBR_QUIC_EGRESS");
+    if (mode && std::string(mode) == "sendmsg") { GTEST_SKIP() << "sendmsg mode"; }
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+    constexpr size_t kLen = 256 * 1024;
+
+    auto src = make_tempfile();
+    std::vector<uint8_t> pattern(kLen);
+    fill_pattern(pattern.data(), kLen);
+    ::write(src.fd, pattern.data(), kLen);
+    auto dst = make_tempfile();
+    ::ftruncate(dst.fd, static_cast<off_t>(kLen));
+
+    std::string server_err;
+    std::jthread server([listen_fd, &cert, dst_fd = dst.fd, &server_err]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            t->recv_file(dst_fd, 0, kLen);
+            const uint8_t ack = 1;
+            send_exact(*t, &ack, 1);
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    client->send_file(src.fd, 0, kLen);
+    uint8_t ack = 0;
+    recv_exact(*client, &ack, 1);
+    server.join();
+    ::close(listen_fd);
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    auto* qt = dynamic_cast<QuicTransport*>(client.get());
+    ASSERT_NE(qt, nullptr);
+    ASSERT_NE(qt->zc_egress(), nullptr) << "io_uring unavailable: run with EMBR_QUIC_EGRESS=sendmsg";
+    const auto& st = qt->zc_egress()->stats();
+    EXPECT_GT(st.sends, 0u);
+    EXPECT_EQ(st.errors, 0u);
+    EXPECT_EQ(qt->zc_egress()->error(), 0);
 
     std::vector<uint8_t> src_buf(kLen), dst_buf(kLen);
     ::pread(src.fd, src_buf.data(), kLen, 0);

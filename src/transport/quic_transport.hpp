@@ -11,6 +11,7 @@
 
 #include "transport.hpp"
 #include "core/protocol.hpp"
+#include "quic_egress.hpp"
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <ngtcp2/ngtcp2_crypto_wolfssl.h>
@@ -27,6 +28,9 @@
 inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram local sends include header
 inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
 inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycle
+inline constexpr uint64_t QUIC_CLOSE_LINER_NS = 1'000'000'000ULL; // graceful close bound: 100ms RTT
+// SEND_ZC slots per conn: ~ 105 KiB of memlock; slots recycle on NOTIF (NIC TX done) not on ACK
+inline constexpr unsigned QUIC_ZC_SLOTS = 64;
 
 // QUIC implementation of Transport
 // construct only via factories: quic_connect, quic_accept
@@ -43,6 +47,9 @@ public:
     int send_fin();
 
     size_t unacked_bytes() const;
+
+    // null when EMBR_QUIC_EGRESS=sendmsg or io_uring in unavailable
+    const ZcEgress* zc_egress() const { return zc_.get(); }
 
     // --- data plane ---
     void send_file(int file_fd, uint64_t offset, size_t len) override;
@@ -78,7 +85,10 @@ private:
     // egress seam: one assembly dest + one commit per datagram
     enum class SendResult { ok, blocked, failed };
 
-    uint8_t packet_buf_[QUIC_MAX_PKTLEN];
+    uint8_t packet_buf_[QUIC_MAX_PKTLEN]; // sendmsg mode, sync CLOSE in all modes
+    std::unique_ptr<ZcEgress> zc_; // created at first begin_packet()
+    bool egress_init_{false};
+    void init_egress();
     uint8_t* begin_packet();
     SendResult send_packet(size_t n);
     void flush_packets();
@@ -113,9 +123,10 @@ private:
 
     int drain_packets();
 
-    void close_connection(int liberr); // fire-once, liberr==0 means app NO_ERROR
+    void close_connection(int liberr); // fire-once, liberr==0 (app NO_ERROR), until unacked_ drains
 
-    int pump_once(); // one recvmsg -> feed_data -> drain_packets cycle
+    // one recvmsg -> feed_data -> drain_packets cycle; until caps the wait
+    int pump_once(ngtcp2_tstamp until = UINT64_MAX);
 
     int run_handshake();
 

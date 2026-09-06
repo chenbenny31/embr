@@ -48,6 +48,7 @@ add_library(transport
         src/transport/quic_client.cpp
         src/transport/quic_transport.cpp
         src/transport/quic_server.cpp
+        src/transport/quic_egress.cpp
 )
 target_include_directories(transport PUBLIC src)
 target_include_directories(transport PUBLIC ${URING_INCLUDE_DIRS})
@@ -107,6 +108,7 @@ add_executable(embr_test
         tests/test_tracker.cpp
         tests/test_hash_parallel.cpp
         tests/test_quic.cpp
+        tests/test_egress.cpp
 )
 target_link_libraries(embr_test PRIVATE core tracker GTest::gtest_main Threads::Threads
         PkgConfig::NGTCP2 PkgConfig::NGTCP2_CRYPTO_WS PkgConfig::WOLFSSL)
