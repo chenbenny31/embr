@@ -99,6 +99,10 @@ target_include_directories(cli PUBLIC src)
 add_executable(embr src/main.cpp)
 target_link_libraries(embr PRIVATE cli)
 
+# Bench
+add_executable(erasure_cost bench/erasure_cost.cpp)
+target_link_libraries(erasure_cost PRIVATE core)
+
 # Test
 add_executable(embr_test
         tests/test_protocol.cpp
