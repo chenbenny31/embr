@@ -245,7 +245,8 @@ sender_summary() {
     for row in embrquic embrquicsm embrtcp; do
         local f="$SENDER_STATS.$row"
         [[ -s "$f" ]] || { printf '%-10s | (no data)\n' "$row"; continue; }
-        local lines; lines=$(awk 'NF==4 && $4==0' "$f" | tail -n +$(( WARMUP + 1 )))
+        # a push killed by the exit trap leaves "Command terminated by signal" and a zero line: drop both
+        local lines; lines=$(awk '/terminated by signal/ { skip=1; next } skip { skip=0; next } NF==4 && $4==0' "$f" | tail -n +$(( WARMUP + 1 )))
         [[ -n "$lines" ]] || { printf '%-10s | (warmup only)\n' "$row"; continue; }
         printf '%-10s | %-6s | %-8s | %-8s\n' "$row" "$(wc -l <<<"$lines")" \
             "$(awk '{print $2}' <<<"$lines" | median)" "$(awk '{print $3}' <<<"$lines" | median)"
