@@ -1,24 +1,24 @@
 # embr
-A zero-copy large file transfer engine built with C++20: `sendfile` + `splice` on TCP, a QUIC transport (ngtcp2 + wolfSSL, TLS 1.3) with an io_uring `SEND_ZC` egress, and a pluggable transport layer that the protocol code never sees through.
+A large-file transfer engine built with C++20: `sendfile` + `splice` on TCP, an encrypted QUIC transport (ngtcp2 + wolfSSL, TLS 1.3), and an optional io_uring `SEND_ZC` packet sender. Backends implement file-transfer operations and manage the memory lifetimes they require.
 
 *From Old English ǣmyrġe, "smoldering ash." A shared file is like an ember: still glowing, passed from hand to hand, never fully extinguished.*
 
 ## Why
 
-Existing tools arrange disk I/O and network I/O sequentially — the disk waits for the network, the network waits for the disk. Add redundant memory copies between kernel and userspace, and even 10G links stay half-idle.
+Moving large research datasets motivated embr. The project explores the CPU cost of file transfer and how its implementation changes when transport and encryption requirements change.
 
-embr pipelines disk and network operations in parallel and eliminates intermediate copies, targeting near-line-rate throughput at minimal CPU overhead. The same protocol code drives every transport; what changes underneath is who owns a buffer and when it may be released.
+The TCP file-transfer path uses kernel I/O mechanisms. QUIC retains heap messages and mapped file chunks, and its `SEND_ZC` path also retains packet-pool slots. These resources use the same owning `Buffer` value with different release conditions. Further overlap between receiving chunks and asynchronous file writes is planned; the measurements below describe the implemented paths.
 
 ## Two Transfer Modes
 
-**Trusted network (LAN / datacenter)** — TCP with zero-copy I/O:
-- `sendfile()` on push (0 copies), `splice()` on pull (0 copies)
+**Where plaintext transfer is acceptable** — TCP with kernel file-transfer I/O:
+- `sendfile()` on push and `splice()` on pull avoid application payload-buffer copies on the file-transfer path; integrity checking still reads the data
 - `TCP_NODELAY` on control messages, `SO_SNDBUF`/`SO_RCVBUF` OS-autotuned
 
-**Public network (encrypted)** — QUIC over ngtcp2 + wolfSSL:
+**Encrypted QUIC prototype** — ngtcp2 + wolfSSL:
 - TLS 1.3 handshake, 30 s idle timeout, ICMP soft errors tolerated
-- Chunks are `mmap`'d and retained until the peer acknowledges them; ngtcp2 re-sends lost data from the retained mapping, no copy
-- Datagrams leave through an io_uring `SEND_ZC` egress: a registered per-connection slab, each packet slot retained until the NIC's completion notification
+- Chunks are `mmap`'d and retained for acknowledgement and retransmission; QUIC assembles and encrypts separate outgoing packets
+- Datagrams leave through an io_uring `SEND_ZC` egress: a registered per-connection slab, each packet slot retained until the kernel permits its memory to be reused
 - Falls back to `sendmsg` when the slab cannot be registered or the kernel lacks `SEND_ZC` (`EMBR_QUIC_EGRESS=sendmsg` forces it)
 - Not yet: server-certificate verification (client accepts any cert), NAT traversal, tracker over QUIC
 
@@ -62,11 +62,11 @@ QUIC send path                                   who releases, and when
   chunk = mmap(file range)                        Buffer{ptr, len, [base, map_len]{ munmap }}
   unacked_.push_back(move(chunk))                  retained until ngtcp2 reports the peer's ACK
   ngtcp2 assembles packets in place → slot         Buffer{slot, n, [this, i]{ release(i) }}
-  inflight_[i] = move(packet); SEND_ZC submit      retained until the kernel's NOTIF completion
+  inflight_[i] = move(packet); SEND_ZC submit      retained until the kernel permits memory reuse
   ACK callback:  unacked_.pop_front()  → munmap
   NOTIF CQE:     inflight_[i] = Buffer{} → slot back to the free list
 ```
-`push.cpp` / `pull.cpp` call `send_file` / `recv_file` and never see a `Buffer`. The same value type carries both owners; the retention structure differs, the release contract does not.
+File-transfer calls pass a file descriptor, offset and length through `send_file` / `recv_file`; the backend selects the payload representation. Heap control-message Buffers and mapped file Buffers share `unacked_`; packet-slot Buffers use a separate `inflight_` table. A SEND_ZC send completion with `F_MORE` requires waiting for `NOTIF`; without `F_MORE`, that send completion is final. `Buffer` stores cleanup responsibility, while the backend decides when to retire it.
 
 **v0.6 — token + tracker**
 ```
@@ -107,9 +107,9 @@ Push answers requests and holds no session state — stateless across connection
 
 ## Benchmark
 
-See [bench/bench.md](bench/bench.md) for methodology, raw per-run data and reproduction commands. Every number below is from one campaign on 2026-09-06: two `c5n.large` instances, Amazon Linux 2023 kernel 6.18, us-east-1 → us-east-2, 1 GiB random file, page cache dropped on both ends before each transfer, 2 warmups then 10 timed rounds, every transfer SHA-256 verified. Release build.
+See [bench/bench.md](bench/bench.md) for methodology, consolidated raw data and reproduction commands. The WAN table is from the 2026-09-06 v0.8 campaign: two `c5n.large` instances, Amazon Linux 2023 kernel 6.18.44, us-east-1 → us-east-2, a 1 GiB file, file caches dropped on both ends, two warmups and ten timed rounds, with output SHA-256 verification. The syscall counts are from an older v0.7 run. The corrected desktop ownership benchmark is a separate measurement described below.
 
-### Zero-copy mechanism (strace syscall count, 1 GB)
+### TCP mechanism (v0.7 strace syscall count, 1 GiB)
 
 | process | dominant syscalls | total syscalls |
 |---------|-------------------|----------------|
@@ -120,34 +120,48 @@ See [bench/bench.md](bench/bench.md) for methodology, raw per-run data and repro
 
 \* ncat artifact, not protocol work.
 
-**Bytes through userspace on the TCP transfer path: embr = 0. ncat = 1 GB.** sendfile/splice move pages entirely in-kernel; ncat copies every byte through an 8 KB userspace buffer. Integrity hashing reads the mapped data separately on both ends. The trace confirms the path; timings come from untraced runs.
+**The TCP file-transfer path avoids application payload buffers.** `sendfile` and `splice` transfer file data through the kernel; ncat uses a userspace buffer. Integrity hashing reads the data separately. These historical syscall counts illustrate the I/O path; they are not a measurement of every memory copy or of `Buffer` overhead. Timings come from untraced runs.
 
 ### WAN cross-region (1 GiB, AWS c5n.large us-east-1 → us-east-2, n=10, medians)
 
 | tool | throughput | wall | receiver user / sys | sender user / sys |
 |------|-----------|------|---------------------|-------------------|
-| embr TCP (sendfile / splice) | 2.00 Gbps | 4.29 s | 2.64 s / 0.72 s | 0.00 s / 0.32 s |
-| nc | 2.22 Gbps | 3.87 s | 0.27 s / 1.06 s | — |
-| scp† | 1.12 Gbps | 7.73 s | 0.96 s / 1.94 s | — |
-| embr QUIC, `SEND_ZC` egress | 0.91 Gbps | 9.41 s | 5.74 s / 3.47 s | 2.77 s / 2.97 s |
+| embr TCP (sendfile / splice) | 2.005 Gbps | 4.29 s | 2.64 s / 0.72 s | 0.00 s / 0.32 s |
+| nc | 2.225 Gbps | 3.87 s | 0.27 s / 1.06 s | — |
+| scp† | 1.115 Gbps | 7.73 s | 0.96 s / 1.94 s | — |
+| embr QUIC, `SEND_ZC` egress | 0.910 Gbps | 9.41 s | 5.74 s / 3.47 s | 2.77 s / 2.97 s |
 | embr QUIC, `sendmsg` egress | 0.905 Gbps | 9.51 s | 5.81 s / 3.59 s | 2.94 s / 2.56 s |
 
-†scp is SSH-encrypted — the reference for the QUIC rows, not an I/O comparison for the TCP row.
+†scp is an encrypted reference with different protocol and processing work. The first two successful transfers in each row were warmups; interrupted or failed sender processes are excluded. CPU columns are independently calculated medians, not components of a median total.
 
-**TCP path.** embr TCP and nc overlap within run-to-run spread (embr 1.81–2.19 Gbps, nc 2.00–2.74); nc's median is 10% higher, embr verifies every chunk. Receiver kernel time is 32% lower for embr (0.72 s vs 1.06 s), and the sender's kernel time per GiB is 0.32 s — `sendfile` hands file-cache pages to the socket and the sender process barely enters the kernel. Receiver user time (2.64 s) is SHA-256 verification, work nc does not do.
+**TCP path.** Throughput ranges overlap (embr 1.81–2.19 Gbps, nc 2.00–2.74), while nc's median is about 11% higher. Receiver kernel CPU is about 33% lower for embr using the unrounded medians (0.715 s vs 1.060 s); receiver user CPU is higher (2.64 s vs 0.27 s). embr performs per-chunk verification during the timed transfer. These workloads differ, and the totals do not isolate copy or hashing cost.
 
-**QUIC path.** 0.91 Gbps on a path that carries 2 Gbps: the receiver is CPU-bound on one core, 9.2 s of CPU per GiB — 2.6 s SHA-256 (the TCP row pays the same), about 3 s decryption plus per-packet QUIC processing, and 3.5 s of kernel time from roughly two system calls per 1350-byte datagram. Per-packet cost, not copying, is the bottleneck. The v0.9 receiver work (batched `recvmmsg`, hashing off the connection thread) brings a loopback pull from 2.70 s to 1.95 s on a scratch build and is not yet in the tree.
+**QUIC path.** The two sending modes have similar throughput in this experiment. For SEND_ZC, median receiver CPU (user + sys computed for each run) is 9.23 s per GiB against 9.41 s elapsed, consistent with a CPU-limited receiver. These process-level timings do not separate hashing, decryption, packet handling and memory-copy costs. Receive batching and overlapping receive with file writes are future work.
 
-**`SEND_ZC` result.** The egress counters report **0 of 11,243,123 datagrams copied by the kernel** across the campaign — real zero-copy on the ENA NIC. It did not reduce sender CPU: kernel time rose 0.4 s per GiB and user time fell 0.2 s. At 1350 bytes per datagram the completion bookkeeping costs more than the copy it removes; the copy was about 1% of per-packet work. Stated as measured. The lever that makes zero-copy pay at this granularity is segmentation offload (one submit per 64 KB), planned for v0.9.
+**`SEND_ZC` result.** The archived terminal summary reports **0 copied among 11,243,123 sends**, with no fallbacks or errors, over 12 connections including warmups. Individual egress logs were not preserved, so this aggregate cannot be independently recomputed from the retained files. Median sender total CPU, computed per successful timed push, is 5.755 s with SEND_ZC and 5.565 s with sendmsg. SEND_ZC did not reduce sender CPU in this campaign. Completion processing and packet size are candidates for further study; segmentation offload has no demonstrated benefit in these data.
 
-**Cost of the ownership abstraction.** `bench/erasure_cost.cpp`: a `Buffer` lifetime with its type-erased release costs 11.5 ns on a laptop and 19.5 ns on the c5n sender, versus 0.7 / 1.2 ns for a function pointer with a context, with zero heap allocations. On the per-datagram path that is 10–17 ms per GiB, under 0.4% of any transfer above.
+### Desktop ownership benchmark
+
+The corrected [erasure_cost.cpp](bench/erasure_cost.cpp) compares the existing `Buffer` with a move-only function-pointer owner carrying inline pool/slot state. Both construct, move into a table, expose the retained owner to a compiler barrier, retire it and return its slot. Lifetime checks precede timing.
+
+| Representation | Median ns/lifetime | Min–max ns/lifetime | Object size |
+|---|---:|---:|---:|
+| `Buffer` / `std::function` | 15.552 | 15.366–17.313 | 56 B |
+| `RawBuf` / function pointer | 1.649 | 1.635–1.660 | 40 B |
+
+AMD Ryzen 9 9900X desktop, Fedora Linux kernel 7.1.13, GCC 16.2.1 / libstdc++ 20260819, `-O3 -DNDEBUG`; ten alternating-order rounds of 20 million lifetimes per owner, after one million warmup lifetimes each. Both rows reported zero intercepted ordinary scalar `operator new` calls. The paired-difference median is 13.900 ns/lifetime. These are complete owner-loop measurements, including barrier and cleanup work; they do not establish isolated type-erasure cost or a production-overhead percentage. The earlier desktop/c5n cost estimates are superseded; the corrected benchmark has only been measured on this desktop. [Raw output and reproduction](bench/bench.md#desktop-ownership-cost).
 
 ## Build
+
+Install the dependencies below, then run from the repository root. The current CMake configuration requires the QUIC libraries even for TCP-only use.
+
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build
-ctest --test-dir build
+./build/embr_test
 ```
+
+Run the test executable directly: [CMakeLists.txt](CMakeLists.txt) does not currently enable top-level CTest discovery. `ctest --test-dir build` therefore does not run this suite. See [CMake's enable_testing requirement](https://cmake.org/cmake/help/latest/command/enable_testing.html).
 
 ## Install Dependencies
 
@@ -183,8 +197,8 @@ embr/
 │   │   ├── chunk_manager.hpp/.cpp      # runtime bitmap of completed chunks
 │   │   ├── partial_file.hpp/.cpp       # .embr.partial serialize/deserialize
 │   │   ├── hash.hpp/.cpp               # SHA256 + parallel pre-hash + .embr.hash cache
-│   │   ├── push.hpp/.cpp               # sender logic       — unchanged since v0.5
-│   │   └── pull.hpp/.cpp               # receiver logic, resume — unchanged since v0.5
+│   │   ├── push.hpp/.cpp               # sender logic, metadata precomputation
+│   │   └── pull.hpp/.cpp               # receiver logic, resume
 │   ├── tracker/
 │   │   ├── token_store.hpp/.cpp        # in-memory token→(ip,port) map + TTL
 │   │   ├── tracker_handlers.hpp/.cpp   # HTTP handler logic
@@ -212,7 +226,7 @@ embr/
 │   ├── setup_quic_deps.sh              # wolfSSL + ngtcp2 with the required flags, sysctl, SEND_ZC preflight
 │   ├── tcp_loopback.sh / tcp_wan.sh    # TCP path benchmarks
 │   ├── quic_loopback.sh / quic_wan.sh  # QUIC path benchmarks, SEND_ZC vs sendmsg rows, egress counters
-│   └── erasure_cost.cpp                # microbench: cost of the type-erased Buffer release
+│   └── erasure_cost.cpp                # whole-owner lifecycle checks and desktop microbenchmark
 ├── tests/
 │   ├── test_protocol.cpp, test_tcp.cpp, test_udp.cpp, test_resume.cpp, test_tracker.cpp
 │   ├── test_hash_parallel.cpp          # parallel vs serial SHA-256 correctness
@@ -221,7 +235,9 @@ embr/
 └── CMakeLists.txt
 ```
 
-Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle is owned by the CLI layer. `run_push` / `run_pull` are byte-identical from v0.5 through v0.8: the splice receiver (v0.6), the QUIC transport (v0.8) and the `SEND_ZC` egress (v0.8) landed without touching `push.cpp` or `pull.cpp`. One design that did not fit — an io_uring UDP path that needed a second `Transport&` for its data plane — was withdrawn rather than accommodated.
+Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle is owned by the CLI layer. The `run_push` / `run_pull` function bodies are byte-identical at v0.5, v0.6, v0.7 and v0.8 (`9342d1e`). The splice receiver (v0.6), QUIC transport (v0.8) and `SEND_ZC` egress (v0.8) each landed without touching `push.cpp` or `pull.cpp`.
+
+Separate changes to `push.cpp` added hash caching and parallel metadata precomputation. The earlier io_uring UDP experiment needed a second `Transport&` for its data plane and was withdrawn from the CLI. [Recorded source comparisons](POSTER-REVISION.md).
 
 `Buffer` (in `protocol.hpp`) is the other boundary: a move-only value with a pointer, a size, and a type-erased release. Its definition is unchanged since v0.3 while three owners were added underneath it — heap control messages via `unique_ptr`, mmap chunks released on the peer's acknowledgement, and `SEND_ZC` packet slots released on the kernel's notification.
 
@@ -245,12 +261,20 @@ The same messages run over TCP and over one bidirectional QUIC stream; the QUIC 
 
 ## Resume
 
-Interrupted transfers continue from the last verified chunk. Progress is persisted in `.{filename}.embr.partial` alongside the output file:
+Pull saves completed-chunk flags in `.{filename}.embr.partial` alongside the output file. When it accepts that saved progress, it requests only chunks still marked incomplete:
+
 ```
-[file_hash: 32 bytes][bitmap: ceil(chunk_count/8) bytes, LSB = chunk 0]
+[first_chunk_sha256: 32 bytes][bitmap: ceil(chunk_count/8) bytes, LSB = chunk 0]
 ```
 
-On restart, pull loads the bitmap, requests only missing chunks, verifies SHA256 per chunk before marking done. Partial file removed only when `all_done()`. Delete `.{filename}.embr.partial` manually to force a fresh transfer.
+Newly received chunks are checked against their SHA-256 hashes before being marked done. The partial record is removed when `all_done()` is true. Delete `.{filename}.embr.partial` manually to force a fresh transfer.
+
+Current resume limitations:
+
+- [run_pull](src/core/pull.cpp) stores `file_meta.chunk_hashes[0]`, which identifies only the first chunk. Saved completed chunks are not rehashed on restart. Reusing an output path for another file sharing the first chunk and chunk count can accept stale progress.
+- [PartialFile::load](src/core/partial_file.cpp) requires the output size to equal `chunk_count * CHUNK_SIZE`. With 1 MiB chunks, a file containing a partial last chunk restarts instead of resuming.
+
+These are implementation limitations; the current format does not validate whole-file identity or detect changes to previously completed chunks.
 
 ## Tracker
 
@@ -262,7 +286,7 @@ GET  /resolve/:token    → 200 {sender_ip, sender_port} or 404
 POST /unregister/:token → 204
 ```
 
-Tracker stores no file data — pure `token → (ip, port)` indirection. File integrity guaranteed end-to-end by SHA256 chunk hashes in `FILE_META`. Tokens expire after 10 minutes (configurable with `--ttl`).
+Tracker stores no file data — pure `token → (ip, port)` indirection. Newly received chunks are checked against the SHA-256 values supplied in `FILE_META`; those hashes do not authenticate the sender. Saved progress has the [resume limitations](#resume) above. Tokens expire after 10 minutes (configurable with `--ttl`).
 
 ## Roadmap
 
@@ -292,18 +316,18 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. File in
 - [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in both egress modes; ASan/UBSan clean on the suite and a 1 GiB transfer
 - [x] Memlock footprint measured — ~105 KiB per QUIC connection; fits the default 8 MiB
 - [x] `bench/setup_quic_deps.sh`, `bench/quic_loopback.sh`, `bench/quic_wan.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights
-- [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.91 Gbps receiver-bound, 0 of 11.2 M datagrams copied
-- [x] `bench/erasure_cost.cpp` — type-erased release costs 11.5 ns (laptop) / 19.5 ns (c5n) per buffer, 0 allocations
+- [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.910 Gbps; archived terminal summary reports no copied sends (individual egress logs unavailable)
+- [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
 - [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions
 - [ ] Server-certificate verification (client runs `SSL_VERIFY_NONE`)
-- [ ] Receiver batching and sender GSO (validated on a scratch build, held for v0.9)
+- [ ] Receive batching, asynchronous file-write overlap and sender segmentation offload; validate performance before making benefit claims
 
 **v0.7 — TCP path hardening**
 
 - [x] Pluggable `Transport` interface — control plane `send`/`recv`, data plane `send_file`/`recv_file`
 - [x] `TcpTransport` + `tcp_connect` / `tcp_listen` / `tcp_accept` / `tcp_from_fd` factories
-- [x] `TcpTransport::send_file` — `sendfile()` syscall, 0 copies push
-- [x] `TcpTransport::recv_file` — `splice()` socket→pipe→file, 0 copies pull; pipe lazy-init, reused across chunks
+- [x] `TcpTransport::send_file` — `sendfile()` push avoids application payload-buffer copies
+- [x] `TcpTransport::recv_file` — `splice()` socket→pipe→file avoids application payload-buffer copies; pipe lazy-init, reused across chunks
 - [x] `UdpTransport` — io_uring registered buffers, READ_FIXED + sendmsg, RECV + WRITE_FIXED direct-to-disk (experimental)
 - [x] TCP socket tuning — `TCP_NODELAY` always on; `SO_SNDBUF`/`SO_RCVBUF` OS-autotuned (not pinned)
 - [x] `SIGPIPE` ignored process-wide; `sendfile()` / `splice()` EINTR retry
