@@ -1,5 +1,12 @@
-# embr
+# embr — CppCon 2026 Poster Project
+
 A large-file transfer engine built with C++20: `sendfile` + `splice` on TCP, an encrypted QUIC transport (ngtcp2 + wolfSSL, TLS 1.3), and an optional io_uring `SEND_ZC` packet sender. Backends implement file-transfer operations and manage the memory lifetimes they require.
+
+**Poster: Designing for Replaceability: Type-Erased Buffer Ownership in a C++20 Transfer Engine.**
+
+[View / download the poster (PDF)](embr-poster.pdf) · [Full-resolution image (PNG)](embr-poster.png)
+
+[![CppCon 2026 poster: Designing for Replaceability — type-erased Buffer ownership, resource lifetimes, and transfer measurements](embr-poster.png)](embr-poster.pdf)
 
 *From Old English ǣmyrġe, "smoldering ash." A shared file is like an ember: still glowing, passed from hand to hand, never fully extinguished.*
 
@@ -237,7 +244,7 @@ embr/
 
 Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle is owned by the CLI layer. The `run_push` / `run_pull` function bodies are byte-identical at v0.5, v0.6, v0.7 and v0.8 (`9342d1e`). The splice receiver (v0.6), QUIC transport (v0.8) and `SEND_ZC` egress (v0.8) each landed without touching `push.cpp` or `pull.cpp`.
 
-Separate changes to `push.cpp` added hash caching and parallel metadata precomputation. The earlier io_uring UDP experiment needed a second `Transport&` for its data plane and was withdrawn from the CLI. [Recorded source comparisons](POSTER-REVISION.md).
+Separate changes to `push.cpp` added hash caching and parallel metadata precomputation. The earlier io_uring UDP experiment needed a second `Transport&` for its data plane and was withdrawn from the CLI.
 
 `Buffer` (in `protocol.hpp`) is the other boundary: a move-only value with a pointer, a size, and a type-erased release. Its definition is unchanged since v0.3 while three owners were added underneath it — heap control messages via `unique_ptr`, mmap chunks released on the peer's acknowledgement, and `SEND_ZC` packet slots released on the kernel's notification.
 
