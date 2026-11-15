@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# setup_quic_deps.sh — build wolfSSL + ngtcp2 the way embr's QUIC path needs them
-# Run from anywhere: bash bench/setup_quic_deps.sh            (deps + sysctl)
-#                    BUILD_EMBR=1 bash bench/setup_quic_deps.sh (then release-build embr in ./build)
+# install.sh — system packages, wolfSSL + ngtcp2 built the way embr's QUIC path needs them,
+#              UDP socket limits, and a self-signed QUIC cert in ~/.config/embr
+# Run from the repo root: bash install.sh               (deps + sysctl + cert)
+#                         BUILD_EMBR=1 bash install.sh  (then release-build embr in ./build)
 #
 # Reproduces the exact configure lines recorded in the reference build's config.log.
 # The flags that are NOT optional, and why:
@@ -39,7 +40,7 @@ EMBR_BUILD_DIR="${EMBR_BUILD_DIR:-./build}"
 SOCKBUF_MAX="${SOCKBUF_MAX:-16777216}"        # 16 MiB; embr requests 4 MiB
 SYSCTL_FILE="${SYSCTL_FILE:-/etc/sysctl.d/90-embr-quic.conf}"
 
-log() { echo "[setup_quic_deps $(date +%H:%M:%S)] $*" >&2; }
+log() { echo "[install $(date +%H:%M:%S)] $*" >&2; }
 die() { log "FATAL: $*"; exit 1; }
 
 install_system_deps() {
@@ -156,9 +157,21 @@ verify() {
     printf '  libngtcp2_crypto_wolfssl: %s\n' "$(pkg-config --modversion libngtcp2_crypto_wolfssl)"
     printf '  net.core.rmem_max/wmem_max: %s / %s (want >= 4194304)\n' \
         "$(sysctl -n net.core.rmem_max)" "$(sysctl -n net.core.wmem_max)"
-    printf '  liburing:                 %s (SEND_ZC egress; need >= 2.3 for send_zc_fixed)\n' "$(pkg-config --modversion liburing 2>/dev/null || echo missing)"
+    printf '  liburing:                 %s (SEND_ZC egress; need >= 2.4 for SEND_ZC usage reporting)\n' "$(pkg-config --modversion liburing 2>/dev/null || echo missing)"
     printf '  kernel:                   %s (want >= 6.2 for SEND_ZC REPORT_USAGE)\n' "$(uname -r)"
     printf '  memlock (ulimit -l):      %s KiB (SEND_ZC slab ~105 KiB per QUIC connection; want >= 1024)\n' "$(ulimit -l)"
+}
+
+# embr push --transport quic reads its default pair from here (same dir as the trusted tracker)
+ensure_cert() {
+    local dir="$HOME/.config/embr"
+    local cert="$dir/cert.pem" key="$dir/key.pem"
+    if [[ -f "$cert" && -f "$key" ]]; then log "QUIC cert already present: $cert"; return 0; fi
+    mkdir -p "$dir"
+    openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=embr \
+        -keyout "$key" -out "$cert" 2>/dev/null || die "openssl req failed"
+    chmod 600 "$key"
+    log "created self-signed QUIC cert: $cert"
 }
 
 build_embr() {
@@ -177,6 +190,7 @@ main() {
     build_wolfssl
     build_ngtcp2
     verify
+    ensure_cert
     [[ "$BUILD_EMBR" == "1" ]] && build_embr
     log "done. Sender host security group: inbound UDP 10008/10009 (QUIC zc/sendmsg) + TCP 10007/9999/22."
 }

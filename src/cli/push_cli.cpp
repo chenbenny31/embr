@@ -29,8 +29,8 @@ void print_push_usage() {
               << "  --tracker URL   tracker URL; overrides EMBR_TRACKER env var\n"
               << "  --ip IP         override sender IP under NAT\n"
               << "  --transport T   tcp (default) or quic\n"
-              << "  --cert PATH     QUIC server cert (default: cert.pem)\n"
-              << "  --key PATH      QUIC server key (default: key.pem)\n";
+              << "  --cert PATH     QUIC server cert (default: ~/.config/embr/cert.pem)\n"
+              << "  --key PATH      QUIC server key (default: ~/.config/embr/key.pem)\n";
 }
 
 // Derive 16 hex char token from file (deterministic), first 8 bytes from SHA256 hashes
@@ -49,6 +49,27 @@ std::string derive_token(const std::vector<std::array<uint8_t, HASH_SIZE>>& chun
     return oss.str();
 }
 
+// default QUIC cert/key live beside the trusted-tracker file; install.sh creates them
+std::string default_cred_path(const char* name) {
+    const std::filesystem::path dir = get_config_path().parent_path();
+    return dir.empty() ? std::string(name) : (dir / name).string();
+}
+
+// checked before hashing or listening: a missing cert must not surface at the first packet
+bool quic_creds_readable(const std::string& cert_path, const std::string& key_path) {
+    if (::access(cert_path.c_str(), R_OK) == 0 && ::access(key_path.c_str(), R_OK) == 0) {
+        return true;
+    }
+    const std::string dir = std::filesystem::path(cert_path).parent_path().string();
+    std::cerr << "[error] QUIC needs a cert/key pair, not readable: "
+              << cert_path << " / " << key_path << "\n"
+              << "        create a self-signed pair:\n        "
+              << (dir.empty() ? "" : "mkdir -p " + dir + " && ")
+              << "openssl req -x509 -newkey rsa:2048 -nodes -days 3650 -subj /CN=embr"
+              << " -keyout " << key_path << " -out " << cert_path << "\n";
+    return false;
+}
+
 }
 
 int run_push_cli(int argc, char* argv[]) {
@@ -62,8 +83,8 @@ int run_push_cli(int argc, char* argv[]) {
     std::string tracker_url;
     std::string sender_ip;
     std::string transport = "tcp";
-    std::string cert_path = "cert.pem";
-    std::string key_path = "key.pem";
+    std::string cert_path = default_cred_path("cert.pem");
+    std::string key_path = default_cred_path("key.pem");
 
     for (int i = 2; i < argc; ++i) {
         const std::string flag = argv[i];
@@ -94,6 +115,7 @@ int run_push_cli(int argc, char* argv[]) {
         return 1;
     }
     const bool use_quic = (transport == "quic");
+    if (use_quic && !quic_creds_readable(cert_path, key_path)) { return 1; }
 
     tracker_url = resolve_tracker_url(tracker_url);
     if (!tracker_url.empty()) {
@@ -123,7 +145,8 @@ int run_push_cli(int argc, char* argv[]) {
             }
         }
 
-        auto conn = use_quic ? quic_accept(listen_fd.get(), cert_path, key_path)
+        // quic_accept owns the socket from here, on success and on every error path
+        auto conn = use_quic ? quic_accept(listen_fd.release(), cert_path, key_path)
                              : tcp_accept(listen_fd.get());
         std::cout << "[push] connection established\n";
 

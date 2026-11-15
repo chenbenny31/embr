@@ -17,7 +17,7 @@ find_package(Threads REQUIRED)
 
 set(PKG_CONFIG_USE_CMAKE_PREFIX_PATH TRUE)
 
-pkg_check_modules(URING REQUIRED liburing)
+pkg_check_modules(URING REQUIRED liburing>=2.4)
 pkg_check_modules(NGTCP2 REQUIRED IMPORTED_TARGET libngtcp2)
 pkg_check_modules(NGTCP2_CRYPTO_WS REQUIRED IMPORTED_TARGET libngtcp2_crypto_wolfssl)
 pkg_check_modules(WOLFSSL REQUIRED IMPORTED_TARGET wolfssl)

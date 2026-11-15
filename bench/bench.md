@@ -374,7 +374,7 @@ for each harness; the directory name alone does not establish the build type.
 **Dependencies and Release build (both WAN hosts, or the loopback host):**
 
 ```bash
-BUILD_EMBR=1 EMBR_BUILD_DIR=./build bash bench/setup_quic_deps.sh
+BUILD_EMBR=1 EMBR_BUILD_DIR=./build bash install.sh
 ```
 
 The setup script installs dependencies, updates UDP socket limits, checks

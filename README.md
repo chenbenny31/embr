@@ -36,8 +36,9 @@ The TCP file-transfer path uses kernel I/O mechanisms. QUIC retains heap message
 embr push <file> [--port PORT]
 embr pull <ip>   [--port PORT] [--out PATH]
 
-# QUIC — same commands, one flag; push needs a cert/key pair (self-signed is fine)
-embr push <file> --transport quic --cert cert.pem --key key.pem
+# QUIC — same commands, one flag; push reads a self-signed cert/key pair from ~/.config/embr/
+# (created by install.sh; --cert PATH --key PATH override)
+embr push <file> --transport quic
 embr pull <ip>   --transport quic --out PATH
 
 # Tracker mode — push registers a token, pull resolves it
@@ -158,9 +159,39 @@ The corrected [erasure_cost.cpp](bench/erasure_cost.cpp) compares the existing `
 
 AMD Ryzen 9 9900X desktop, Fedora Linux kernel 7.1.13, GCC 16.2.1 / libstdc++ 20260819, `-O3 -DNDEBUG`; ten alternating-order rounds of 20 million lifetimes per owner, after one million warmup lifetimes each. Both rows reported zero intercepted ordinary scalar `operator new` calls. The paired-difference median is 13.900 ns/lifetime. These are complete owner-loop measurements, including barrier and cleanup work; they do not establish isolated type-erasure cost or a production-overhead percentage. The earlier desktop/c5n cost estimates are superseded; the corrected benchmark has only been measured on this desktop. [Raw output and reproduction](bench/bench.md#desktop-ownership-cost).
 
+## Install Dependencies
+
+One step, from the repository root:
+
+```bash
+bash install.sh
+```
+
+The script installs the system packages, builds wolfSSL and ngtcp2 into `~/.local/{wolfssl,ngtcp2}`, raises `net.core.{r,w}mem_max`, and creates a self-signed QUIC cert/key pair in `~/.config/embr/` if none exists. It uses `sudo` for the packages and the sysctl. Verified from a fresh clone on Fedora 43, Ubuntu 24.04 and Amazon Linux 2023.
+
+System packages, for a manual setup:
+
+**Fedora / RHEL / Rocky / Amazon Linux 2023:**
+```bash
+sudo dnf install cmake ninja-build gcc-c++ openssl openssl-devel liburing-devel
+```
+
+**Ubuntu 24.04+ / Debian 13+:**
+```bash
+sudo apt install cmake ninja-build g++ openssl libssl-dev liburing-dev
+```
+
+**liburing:** 2.4 or newer, for the `SEND_ZC` usage-reporting flags. Ubuntu 22.04 and Debian 12 ship older versions; CMake stops at configure time there.
+
+**QUIC (wolfSSL + ngtcp2):** built from source into `~/.local/{wolfssl,ngtcp2}` by `install.sh`. wolfSSL must be configured with `--enable-aesgcm-stream`; without it every packet takes a hidden heap copy inside the EVP layer. The script enforces this.
+
+**Kernel:** Linux 6.2+ for the io_uring `SEND_ZC` egress (`IORING_SEND_ZC_REPORT_USAGE`); older kernels fall back to `sendmsg` automatically. 6.0+ for the io_uring UDP path's `RECV`/`WRITE_FIXED`.
+
+**memlock:** the QUIC egress registers about 105 KiB per connection (64 packet slots plus the ring); the default 8 MiB `ulimit -l` is sufficient, and if registration fails embr falls back rather than pinning per datagram. The experimental io_uring UDP path registers about 4 MiB per transport, so two of them exceed the default limit and fall back to unregistered buffers.
+
 ## Build
 
-Install the dependencies below, then run from the repository root. The current CMake configuration requires the QUIC libraries even for TCP-only use.
+Install the dependencies above, then run from the repository root. The current CMake configuration requires the QUIC libraries even for TCP-only use.
 
 ```bash
 cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
@@ -170,23 +201,7 @@ cmake --build build
 
 Run the test executable directly: [CMakeLists.txt](CMakeLists.txt) does not currently enable top-level CTest discovery. `ctest --test-dir build` therefore does not run this suite. See [CMake's enable_testing requirement](https://cmake.org/cmake/help/latest/command/enable_testing.html).
 
-## Install Dependencies
-
-**Fedora / RHEL / Rocky:**
-```bash
-sudo dnf install cmake ninja-build gcc-c++ openssl-devel liburing-devel
-```
-
-**Ubuntu / Debian:**
-```bash
-sudo apt install cmake ninja-build g++ libssl-dev liburing-dev
-```
-
-**QUIC (wolfSSL + ngtcp2):** built from source into `~/.local/{wolfssl,ngtcp2}` by `bench/setup_quic_deps.sh`, which also raises `net.core.{r,w}mem_max`. wolfSSL must be configured with `--enable-aesgcm-stream`; without it every packet takes a hidden heap copy inside the EVP layer. The script enforces this.
-
-**Kernel:** Linux 6.2+ for the io_uring `SEND_ZC` egress (`IORING_SEND_ZC_REPORT_USAGE`); older kernels fall back to `sendmsg` automatically. 6.0+ for the io_uring UDP path's `RECV`/`WRITE_FIXED`.
-
-**memlock:** the QUIC egress registers about 105 KiB per connection (64 packet slots plus the ring); the io_uring UDP path registers its chunk pool. The default 8 MiB `ulimit -l` is sufficient; if registration fails, embr falls back rather than pinning per datagram.
+The `UdpTransportTest` cases print `[io_uring] memlock limit exceeded, falling back to unregistered buffers` under the default limit. That is the UDP fallback described above; the tests pass and the QUIC egress is not involved.
 
 ## Architecture
 ```
@@ -230,7 +245,6 @@ embr/
 │       └── constants.hpp               # CHUNK_SIZE, HASH_SIZE, EMBR_PORT, TRACKER_PORT
 ├── bench/
 │   ├── bench.md                        # methodology, raw per-run data
-│   ├── setup_quic_deps.sh              # wolfSSL + ngtcp2 with the required flags, sysctl, SEND_ZC preflight
 │   ├── tcp_loopback.sh / tcp_wan.sh    # TCP path benchmarks
 │   ├── quic_loopback.sh / quic_wan.sh  # QUIC path benchmarks, SEND_ZC vs sendmsg rows, egress counters
 │   └── erasure_cost.cpp                # whole-owner lifecycle checks and desktop microbenchmark
@@ -239,6 +253,7 @@ embr/
 │   ├── test_hash_parallel.cpp          # parallel vs serial SHA-256 correctness
 │   ├── test_quic.cpp                   # handshake, echo, send_file/recv_file, ACK retention, egress path
 │   └── test_egress.cpp                 # ZcEgress slot lifecycle, drain, destructor
+├── install.sh                          # packages, wolfSSL + ngtcp2 with the required flags, sysctl, QUIC cert
 └── CMakeLists.txt
 ```
 
@@ -322,7 +337,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters
 - [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in both egress modes; ASan/UBSan clean on the suite and a 1 GiB transfer
 - [x] Memlock footprint measured — ~105 KiB per QUIC connection; fits the default 8 MiB
-- [x] `bench/setup_quic_deps.sh`, `bench/quic_loopback.sh`, `bench/quic_wan.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights
+- [x] `install.sh`, `bench/quic_loopback.sh`, `bench/quic_wan.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights
 - [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.910 Gbps; archived terminal summary reports no copied sends (individual egress logs unavailable)
 - [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
 - [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions

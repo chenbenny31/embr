@@ -13,7 +13,7 @@
 #                         only the transport and its buffer owner differ
 #   scp                 — the encrypted reference; the fair wall-clock peer for QUIC
 #   nc                  — plaintext floor; the fair peer for embr TCP
-# Both hosts need wolfSSL + ngtcp2 + liburing (bench/setup_quic_deps.sh), a kernel >= 6.2
+# Both hosts need wolfSSL + ngtcp2 + liburing (install.sh), a kernel >= 6.2
 # and RLIMIT_MEMLOCK >= 1 MiB (assert_sendzc checks both ends). The sender needs inbound
 # UDP QUIC_PORT and QUIC_SM_PORT open in its security group, alongside the TCP ports.
 
@@ -67,7 +67,7 @@ minmax() { sort -n | awk 'NR==1{mn=$1}{mx=$1}
 # without --enable-aesgcm-stream wolfSSL memcpys every packet through
 # ctx->authBuffer; the copy-floor row this bench exists to measure would be false
 assert_toolchain() {
-    [[ -f "$WOLFSSL_OPTS" ]] || die "wolfSSL options.h not found at $WOLFSSL_OPTS — run bench/setup_quic_deps.sh"
+    [[ -f "$WOLFSSL_OPTS" ]] || die "wolfSSL options.h not found at $WOLFSSL_OPTS — run install.sh"
     grep -q WOLFSSL_AESGCM_STREAM "$WOLFSSL_OPTS" \
         || die "wolfSSL built without --enable-aesgcm-stream — QUIC numbers would be meaningless"
     [[ "$BUILD" == *debug* || "$BUILD" == *asan* ]] \
@@ -88,7 +88,7 @@ assert_sockbuf() { # assert_sockbuf local|remote
         r=$(sysctl -n net.core.rmem_max); w=$(sysctl -n net.core.wmem_max)
     fi
     (( r >= SOCKBUF_MIN && w >= SOCKBUF_MIN )) \
-        || die "$where net.core.rmem_max/wmem_max = $r/$w < $SOCKBUF_MIN — run bench/setup_quic_deps.sh there (or: sudo sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216)"
+        || die "$where net.core.rmem_max/wmem_max = $r/$w < $SOCKBUF_MIN — run install.sh there (or: sudo sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216)"
     log "$where sockbuf ok: rmem_max=$r wmem_max=$w"
 }
 
