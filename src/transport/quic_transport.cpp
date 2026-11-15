@@ -4,6 +4,7 @@
 
 #include "quic_transport.hpp"
 #include <arpa/inet.h>
+#include <fcntl.h>
 #include <sys/random.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -152,6 +153,15 @@ void QuicTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
     const uint64_t base_off = offset & ~(page - 1);
     const size_t delta = static_cast<size_t>(offset - base_off);
     const size_t map_len = len + delta;
+
+    // bytes land through a shared mapping: reserve the blocks first, a full disk is an error not SIGBUS
+    const int reserve_rc = ::posix_fallocate(file_fd, static_cast<off_t>(offset),
+                                             static_cast<off_t>(len));
+    if (reserve_rc != 0) {
+        throw std::runtime_error(
+            std::string("QuicTransport::recv_file: cannot reserve disk space: ") +
+            std::strerror(reserve_rc));
+    }
 
     void* map = ::mmap(nullptr, map_len, PROT_READ | PROT_WRITE, MAP_SHARED,
                        file_fd, static_cast<off_t>(base_off));
