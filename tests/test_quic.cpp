@@ -279,7 +279,7 @@ TEST(QuicTransport, ProtocolSequence) {
 
     FileMeta meta{
         .file_name    = "testfile.iso",
-        .file_size    = 3ULL * 1024 * 1024 * 1024,
+        .file_size    = 3ULL * CHUNK_SIZE,
         .chunk_size   = static_cast<uint32_t>(CHUNK_SIZE),
         .chunk_count  = kChunkCount,
         .chunk_hashes = {hash0, hash1, hash2},

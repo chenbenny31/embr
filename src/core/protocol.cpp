@@ -189,6 +189,21 @@ FileMeta parse_filemeta(const Message& msg) {
     file_meta.chunk_count = reader.get_u32();
     // bounds check before allocation - guard malicious or corrupt chunk_count e.g. 0XFFFFFFFF
     reader.ensure(static_cast<size_t>(file_meta.chunk_count) * HASH_SIZE);
+
+    // receiver opens file_name in its own directory: a bare name, never a path
+    const std::string& name = file_meta.file_name;
+    if (name.empty() || name == "." || name == ".." ||
+        name.find('/') != std::string::npos || name.find('\0') != std::string::npos) {
+        throw std::runtime_error("parse_filemeta: file_name is not a bare file name");
+    }
+    // receiver derives offsets from its own CHUNK_SIZE: the three size fields must agree
+    const uint64_t expect_chunks = file_meta.file_size / CHUNK_SIZE
+                                 + (file_meta.file_size % CHUNK_SIZE != 0 ? 1 : 0);
+    if (file_meta.chunk_size != CHUNK_SIZE || file_meta.chunk_count == 0 ||
+        file_meta.chunk_count != expect_chunks) {
+        throw std::runtime_error("parse_filemeta: inconsistent file_size/chunk_size/chunk_count");
+    }
+
     file_meta.chunk_hashes.resize(file_meta.chunk_count);
     for (auto& hash : file_meta.chunk_hashes) {
         hash = reader.get_bytes<HASH_SIZE>();

@@ -45,7 +45,7 @@ TEST(Protocol, FileMetaRoundTrip) {
     hash0.fill(0xAA); hash1.fill(0xBB); hash2.fill(0xCC);
     FileMeta original{
         .file_name     = "testfile.iso",
-        .file_size    = 3ULL * 1024 * 1024 * 1024,
+        .file_size    = 2ULL * CHUNK_SIZE + 123, // 3 chunks, last one partial
         .chunk_size   = static_cast<uint32_t>(CHUNK_SIZE),
         .chunk_count  = kChunkCount,
         .chunk_hashes = {hash0, hash1, hash2},
@@ -64,26 +64,78 @@ TEST(Protocol, FileMetaRoundTrip) {
     EXPECT_EQ(parsed.chunk_hashes[2], hash2);
 }
 
-TEST(Protocol, FileMetaEmptyFilename) {
-    MockTransport t;
+// ── FILE_META validation: what a hostile sender may not say ──────────────────
+
+static FileMeta valid_meta() {
     std::array<uint8_t, 32> hash{};
     hash.fill(0x01);
-    FileMeta meta{
-        .file_name     = "",
-        .file_size    = 1024,
-        .chunk_size   = 16,
-        .chunk_count  = 1,
-        .chunk_hashes = {hash},
+    return FileMeta{
+        .file_name    = "ok.bin",
+        .file_size    = CHUNK_SIZE + 1,
+        .chunk_size   = static_cast<uint32_t>(CHUNK_SIZE),
+        .chunk_count  = 2,
+        .chunk_hashes = {hash, hash},
     };
-    send_msg(t, make_filemeta(FileMeta{meta}));
-    FileMeta parsed = parse_filemeta(recv_msg(t));
+}
 
-    EXPECT_EQ(parsed.file_name,    "");
-    EXPECT_EQ(parsed.file_size,   1024ULL);
-    EXPECT_EQ(parsed.chunk_size,  16U);
-    EXPECT_EQ(parsed.chunk_count, 1U);
-    ASSERT_EQ(parsed.chunk_hashes.size(), 1U);
-    EXPECT_EQ(parsed.chunk_hashes[0], hash);
+static bool parse_rejects(FileMeta meta) {
+    MockTransport t;
+    send_msg(t, make_filemeta(std::move(meta)));
+    try {
+        parse_filemeta(recv_msg(t));
+    } catch (const std::runtime_error&) {
+        return true;
+    }
+    return false;
+}
+
+TEST(Protocol, ParseFileMetaAcceptsValid) {
+    EXPECT_FALSE(parse_rejects(valid_meta()));
+    FileMeta dotfile = valid_meta();
+    dotfile.file_name = ".env"; // a bare name; overwrite policy is the receiver's, not the parser's
+    EXPECT_FALSE(parse_rejects(std::move(dotfile)));
+}
+
+TEST(Protocol, ParseFileMetaRejectsPathLikeNames) {
+    const std::string bad_names[] = {
+        "", ".", "..", "../x", "/etc/passwd", "dir/file", "trailing/", std::string("a\0b", 3),
+    };
+    for (const auto& name : bad_names) {
+        FileMeta meta = valid_meta();
+        meta.file_name = name;
+        EXPECT_TRUE(parse_rejects(std::move(meta))) << "accepted name of size " << name.size()
+                                                    << ": '" << name << "'";
+    }
+}
+
+TEST(Protocol, ParseFileMetaRejectsZeroChunks) {
+    FileMeta meta = valid_meta();
+    meta.file_size = 0;
+    meta.chunk_count = 0;
+    meta.chunk_hashes.clear();
+    EXPECT_TRUE(parse_rejects(std::move(meta)));
+}
+
+TEST(Protocol, ParseFileMetaRejectsInconsistentSizes) {
+    std::array<uint8_t, 32> hash{};
+
+    FileMeta other_chunk_size = valid_meta();
+    other_chunk_size.chunk_size = 512;
+    EXPECT_TRUE(parse_rejects(std::move(other_chunk_size)));
+
+    FileMeta too_few = valid_meta(); // 1 MiB + 1 needs 2 chunks
+    too_few.chunk_count = 1;
+    too_few.chunk_hashes = {hash};
+    EXPECT_TRUE(parse_rejects(std::move(too_few)));
+
+    FileMeta too_many = valid_meta();
+    too_many.chunk_count = 3;
+    too_many.chunk_hashes = {hash, hash, hash};
+    EXPECT_TRUE(parse_rejects(std::move(too_many)));
+
+    FileMeta huge_size = valid_meta(); // would make file_size - offset wrap in the receiver
+    huge_size.file_size = UINT64_MAX;
+    EXPECT_TRUE(parse_rejects(std::move(huge_size)));
 }
 
 TEST(Protocol, FileMetaHashCountMismatchThrows) {
