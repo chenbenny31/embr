@@ -43,6 +43,7 @@ public:
     }
     bool registered() { return registered_; }
     bool unsupported() const { return unsupported_; } // kernel reject SEND_ZC
+    bool refused() const { return refused_; } // a send completed with ECONNREFUSED at some point
     int error() const { return err_; } // first negative send result as errno; 0 if none
 
     struct Stats {
@@ -65,6 +66,7 @@ private:
     bool ring_up_{false};
     bool registered_{false};
     bool unsupported_{false};
+    bool refused_{false};
 
     // destruction order: inflight_ hold Buffers (their release touches free_)
     std::vector<uint8_t> slab_;

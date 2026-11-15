@@ -23,7 +23,7 @@ The TCP file-transfer path uses kernel I/O mechanisms. QUIC retains heap message
 - `TCP_NODELAY` on control messages, `SO_SNDBUF`/`SO_RCVBUF` OS-autotuned
 
 **Encrypted QUIC prototype** — ngtcp2 + wolfSSL:
-- TLS 1.3 handshake, 30 s idle timeout, ICMP soft errors tolerated
+- TLS 1.3 handshake with a 10 s limit, 30 s idle timeout, ICMP errors counted as packet loss
 - Chunks are `mmap`'d and retained for acknowledgement and retransmission; QUIC assembles and encrypts separate outgoing packets
 - Datagrams leave through an io_uring `SEND_ZC` egress: a registered per-connection slab, each packet slot retained until the kernel permits its memory to be reused
 - Falls back to `sendmsg` when the slab cannot be registered or the kernel lacks `SEND_ZC` (`EMBR_QUIC_EGRESS=sendmsg` forces it)
@@ -164,6 +164,22 @@ The corrected [erasure_cost.cpp](bench/erasure_cost.cpp) compares the existing `
 
 AMD Ryzen 9 9900X desktop, Fedora Linux kernel 7.1.13, GCC 16.2.1 / libstdc++ 20260819, `-O3 -DNDEBUG`; ten alternating-order rounds of 20 million lifetimes per owner, after one million warmup lifetimes each. Both rows reported zero intercepted ordinary scalar `operator new` calls. The paired-difference median is 13.900 ns/lifetime. These are complete owner-loop measurements, including barrier and cleanup work; they do not establish isolated type-erasure cost or a production-overhead percentage. The earlier desktop/c5n cost estimates are superseded; the corrected benchmark has only been measured on this desktop. [Raw output and reproduction](bench/bench.md#desktop-ownership-cost).
 
+## Found Under Packet Loss
+
+Transfers were run through a private network namespace that drops a fixed share of UDP packets in each direction (nftables, 10% and 30%). That exposed four problems which loopback and the low-loss WAN campaign never showed. All four are fixed; the figures are 20 MB QUIC transfers on the desktop.
+
+**Lost first packet.** The TLS hello carries a post-quantum key share and no longer fits one packet, so a client opens with two. When the first was lost, ngtcp2 told the server to drop the half-made connection; embr treated that as fatal and the push process exited. `quic_accept` now discards any packet a connection cannot start from and keeps listening, and the client's retransmission one second later connects. At 10% loss, 6 of 24 connections failed before and 0 of 36 after.
+
+**"Connection refused" on one path only.** After a peer closes its socket, the kernel reports ICMP port-unreachable on the next socket call. embr tolerated that on receive and failed on send, so the result depended on which call came first: 11 failures in 2,400 runs of a client that connects and leaves. Both paths now count it as a lost packet (0 in 4,800), and a handshake that gets no answer ends after 10 s with a message that says whether the host refused the connection.
+
+**Sends queued but not submitted.** With the io_uring sender a packet is only queued until the ring is submitted. The send loop went to wait for acknowledgements with packets still queued, so each round moved only when a retransmit timer fired. Without loss this is invisible (2.6 s per GiB either way). At 10% loss a transfer took 13–17 s against 1.4–1.9 s for `sendmsg`; submitting before every wait brings it to 1.4–2.3 s.
+
+**Stall at the minimum window.** That delay held the congestion window at its two-packet minimum. When both packets were retransmission probes and both were lost, ngtcp2 up to 1.25, acting as server, sent no further probe and cancelled its timer while still counting them in flight. Both ends then sat silent until the 30 s idle timeout: about 1 transfer in 300 at 10% loss, and 2 in 96 at 30% loss even with the sender fixed. ngtcp2 1.26.0 sends a PING probe in that case: no stall in 1,504 transfers at 10% loss or in 96 at 30%. `install.sh` pins 1.26.0.
+
+At 30% loss a transfer still completes, slowly (about 130 s), and 2 to 3 handshakes in 100 do not finish inside the 10 s limit.
+
+Loss has to be injected on the receiving side (`numgen random mod 100 < N drop` on the nftables input hook). Dropping on the output hook is not loss: the send call itself fails with `EPERM`.
+
 ## Install Dependencies
 
 One step, from the repository root:
@@ -288,20 +304,21 @@ The same messages run over TCP and over one bidirectional QUIC stream; the QUIC 
 
 ## Resume
 
-Pull saves completed-chunk flags in `.{filename}.embr.partial` alongside the output file. When it accepts that saved progress, it requests only chunks still marked incomplete:
+Pull saves completed-chunk flags in `.{filename}.embr.partial` alongside the output file:
 
 ```
 [first_chunk_sha256: 32 bytes][bitmap: ceil(chunk_count/8) bytes, LSB = chunk 0]
 ```
 
-Newly received chunks are checked against their SHA-256 hashes before being marked done. The partial record is removed when `all_done()` is true. Delete `.{filename}.embr.partial` manually to force a fresh transfer.
+A pull starts in one of three ways:
 
-Current resume limitations:
+- **Resume** — the output file has the announced size and a matching `.embr.partial` sits beside it. The bitmap is a hint: every chunk it marks done is re-read from disk and re-hashed against the sender's hash, and only chunks that verify are kept. That covers a power cut that saved the bitmap but not the data, and a source file edited between runs.
+- **Already complete** — there is no partial record, but the file already has the right size and every chunk hash. Nothing is requested and the file is not written.
+- **Fresh** — anything else. A file name chosen by the sender never replaces an existing file; pass `--out PATH` to choose the destination, which also allows overwriting.
 
-- [run_pull](src/core/pull.cpp) stores `file_meta.chunk_hashes[0]`, which identifies only the first chunk. Saved completed chunks are not rehashed on restart. Reusing an output path for another file sharing the first chunk and chunk count can accept stale progress.
-- [PartialFile::load](src/core/partial_file.cpp) requires the output size to equal `chunk_count * CHUNK_SIZE`. With 1 MiB chunks, a file containing a partial last chunk restarts instead of resuming.
+Newly received chunks are checked against their SHA-256 hashes before being marked done. The record is written to a temporary file and renamed into place, and removed when the transfer completes.
 
-These are implementation limitations; the current format does not validate whole-file identity or detect changes to previously completed chunks.
+embr does not `fsync`. As with `scp`, a power cut shortly after "transfer complete" can lose data that was still in the page cache; an interrupted transfer is covered by the re-hash on resume.
 
 ## Tracker
 
@@ -334,7 +351,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 
 **v0.8 — QUIC transport and SEND_ZC egress**
 
-- [x] `QuicTransport` over ngtcp2 1.22 + wolfSSL 5.9 (`--enable-aesgcm-stream`, `--enable-quic`); `quic_connect` / `quic_listen` / `quic_accept` factories; `--transport quic` on push and pull
+- [x] `QuicTransport` over ngtcp2 1.26 + wolfSSL 5.9 (`--enable-aesgcm-stream`, `--enable-quic`); `quic_connect` / `quic_listen` / `quic_accept` factories; `--transport quic` on push and pull
 - [x] `send_file` maps the chunk and retains it in `unacked_` until the acknowledgement callback; `recv_file` writes into a mapped output region
 - [x] Graceful close lingers up to 1 s so retained chunks are acknowledged; a peer's orderly close makes `recv()` return 0, as with TCP
 - [x] `ZcEgress` — per-connection packet slab registered with io_uring, `IORING_OP_SEND_ZC` with usage reporting, slot owner is a `Buffer` retired on the NOTIF completion; send CQE with `F_MORE` waits, without it the slot is final
@@ -347,6 +364,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
 - [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions
 - [x] Sender-certificate verification — the token carries the certificate's hash; pull checks it after the handshake
+- [x] Loss testing at 10% and 30% — accept survives a lost first packet, ICMP errors are loss on both paths, queued sends are submitted before every wait, ngtcp2 1.26 for the lost-probe stall ([details](#found-under-packet-loss))
 - [ ] Receive batching, asynchronous file-write overlap and sender segmentation offload; validate performance before making benefit claims
 
 **v0.7 — TCP path hardening**
@@ -367,7 +385,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] Token derivation, `TokenStore` with TTL, tracker HTTP server and client, `embr trust`
 - [x] Subcommand dispatch and full argparse per verb, `EMBR_TRACKER` env var
 - [x] `bench/tcp_loopback.sh`, `bench/tcp_wan.sh`; strace zero-copy figure
-- [x] Protocol, transport, resume, tracker and parallel-hash unit tests (82 tests at v0.8)
+- [x] Protocol, transport, resume, tracker and parallel-hash unit tests (99 tests at v0.8)
 
 ## License
 

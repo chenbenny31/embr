@@ -362,6 +362,8 @@ void QuicTransport::close_connection(int liberr) {
 int QuicTransport::pump_once(ngtcp2_tstamp until) {
     if (closed_) { return -1; }
 
+    flush_packets(); // nothing committed may sit unsubmitted while this call waits
+
     const ngtcp2_tstamp expiry = std::min(ngtcp2_conn_get_expiry(conn_), until);
     const ngtcp2_tstamp now = now_ns();
 
@@ -576,6 +578,7 @@ QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
 void QuicTransport::flush_packets() {
     if (!zc_) { return; } // sendmsg has sent each datagram
     zc_->flush(); // one submit per burst
+    if (zc_->refused()) { refused_seen_ = true; } // the ring took the ICMP report instead of recvmsg
     // pre-6.2 kernel: every SEND_ZC is EINVAL, stay on sendmsg
     if (zc_->unsupported()) { zc_.reset(); }
 }

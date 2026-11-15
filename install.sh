@@ -29,7 +29,9 @@
 set -euo pipefail
 
 WOLFSSL_REF="${WOLFSSL_REF:-v5.9.2-stable}"   # reference laptop build: v5.9.2-stable-1862-gfeca5c424 (master)
-NGTCP2_REF="${NGTCP2_REF:-v1.22.0}"
+# >= 1.26.0: earlier releases can leave a server connection silent until the idle timeout
+# when both retransmission probes are lost while the congestion window is at its minimum
+NGTCP2_REF="${NGTCP2_REF:-v1.26.0}"
 SRC="${SRC:-$HOME/src}"
 PREFIX_WOLFSSL="${PREFIX_WOLFSSL:-$HOME/.local/wolfssl}"
 PREFIX_NGTCP2="${PREFIX_NGTCP2:-$HOME/.local/ngtcp2}"
@@ -97,7 +99,10 @@ wolfssl_ok() {
 
 ngtcp2_ok() {
     [[ -f "$PREFIX_NGTCP2/lib/pkgconfig/libngtcp2_crypto_wolfssl.pc" ]] \
-        && ls "$PREFIX_NGTCP2"/lib/libngtcp2.so* >/dev/null 2>&1
+        && ls "$PREFIX_NGTCP2"/lib/libngtcp2.so* >/dev/null 2>&1 || return 1
+    # a pinned release that differs from the installed one means rebuild
+    [[ "$NGTCP2_REF" != v[0-9]* ]] && return 0
+    [[ "v$(PKG_CONFIG_PATH="$PREFIX_NGTCP2/lib/pkgconfig" pkg-config --modversion libngtcp2 2>/dev/null)" == "$NGTCP2_REF" ]]
 }
 
 clone_at() { # clone_at <url> <ref> <dir>
@@ -135,6 +140,7 @@ build_ngtcp2() {
     fi
     clone_at https://github.com/ngtcp2/ngtcp2.git "$NGTCP2_REF" "$SRC/ngtcp2"
     pushd "$SRC/ngtcp2" >/dev/null
+    git clean -fdxq   # objects from another release must not survive a version change
     autoreconf -fi
     # lib-only: skips the example clients, which would otherwise probe for libev/nghttp3
     ./configure PKG_CONFIG_PATH="$PREFIX_WOLFSSL/lib/pkgconfig" \
