@@ -279,7 +279,7 @@ Message types:
   CANCEL     (0x08)  (no payload)
 ```
 
-The same messages run over TCP and over one bidirectional QUIC stream; the QUIC transport half-closes the stream with `send_fin` and lingers up to 1 s on close so retained chunks are acknowledged before `CONNECTION_CLOSE`.
+The same messages run over TCP and over one bidirectional QUIC stream; the QUIC transport lingers up to 1 s on close so retained chunks are acknowledged before `CONNECTION_CLOSE`, and a peer's orderly close reads as end-of-stream, as with TCP.
 
 ## Resume
 
@@ -331,7 +331,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 
 - [x] `QuicTransport` over ngtcp2 1.22 + wolfSSL 5.9 (`--enable-aesgcm-stream`, `--enable-quic`); `quic_connect` / `quic_listen` / `quic_accept` factories; `--transport quic` on push and pull
 - [x] `send_file` maps the chunk and retains it in `unacked_` until the acknowledgement callback; `recv_file` writes into a mapped output region
-- [x] `send_fin` half-close; graceful close lingers up to 1 s so retained chunks are acknowledged
+- [x] Graceful close lingers up to 1 s so retained chunks are acknowledged; a peer's orderly close makes `recv()` return 0, as with TCP
 - [x] `ZcEgress` — per-connection packet slab registered with io_uring, `IORING_OP_SEND_ZC` with usage reporting, slot owner is a `Buffer` retired on the NOTIF completion; send CQE with `F_MORE` waits, without it the slot is final
 - [x] Egress fallbacks — refused datagram copy-sent once; no registration → sendmsg for the connection; pre-6.2 kernel → sendmsg; partial submit resubmitted from ring state; slab leaked, never reused, if the NIC may still hold it at teardown
 - [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters

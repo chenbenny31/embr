@@ -43,9 +43,6 @@ public:
     ssize_t send(const uint8_t* buf, size_t len) override;
     ssize_t recv(uint8_t* buf, size_t len) override;
 
-    // QUIC-specific half-close: empty STREAM+FIN from the local endpoint
-    int send_fin();
-
     size_t unacked_bytes() const;
 
     // null when EMBR_QUIC_EGRESS=sendmsg or io_uring in unavailable
@@ -72,8 +69,7 @@ private:
     ngtcp2_crypto_conn_ref crypto_conn_ref_;
 
     int64_t stream_id_{-1}; // single bidi stream, shared by control + data plane
-    bool stream_fin_received_{false}; // peer FIN, recv() returns 0 once drained
-    bool fin_sent_{false}; // local FIN, send_file() is idempotent
+    bool peer_closed_{false}; // peer's NO_ERROR close: recv() returns 0 once drained, like TCP's FIN
     bool closed_{false}; // close sent or silent teardown, set for every transition
     std::vector<uint8_t> recv_buf_;
 

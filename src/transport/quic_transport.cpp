@@ -97,7 +97,7 @@ ssize_t QuicTransport::send(const uint8_t* buf, size_t len) {
 
 ssize_t QuicTransport::recv(uint8_t* buf, size_t len) {
     // no stream_id_ guard: server is still -1 here, must pump to fire on_stream_open
-    while (recv_buf_.empty() && !stream_fin_received_ && !closed_) {
+    while (recv_buf_.empty() && !closed_) {
         if (pump_once() != 0) { break; } // teardown paths set closed_
     }
 
@@ -110,56 +110,8 @@ ssize_t QuicTransport::recv(uint8_t* buf, size_t len) {
         return static_cast<ssize_t>(n);
     }
 
-    if (stream_fin_received_) { return 0; } // clean EOF, matches TCP recv()==0
+    if (peer_closed_) { return 0; } // orderly close, matches TCP recv()==0
     return -1;
-}
-
-int QuicTransport::send_fin() {
-    if (stream_id_ < 0) { return -1; }
-    if (fin_sent_) { return 0; } // FIN is a state
-
-    for (;;) {
-        if (closed_) { return -1; }
-
-        ngtcp2_path_storage ps;
-        ngtcp2_path_storage_zero(&ps);
-        ngtcp2_pkt_info pi{};
-        ngtcp2_ssize wdatalen = -1;
-
-        // empty data + FIN flag serializes a 0-length STREAM+fin and sets wdatalen 0
-        const ngtcp2_ssize nwrite =
-            ngtcp2_conn_writev_stream(conn_, &ps.path, &pi,
-                                      begin_packet(), QUIC_MAX_PKTLEN,
-                                      &wdatalen,
-                                      NGTCP2_WRITE_STREAM_FLAG_FIN,
-                                      stream_id_,
-                                      nullptr, 0,
-                                      now_ns());
-
-        if (nwrite < 0) {
-            if (nwrite == NGTCP2_ERR_STREAM_DATA_BLOCKED) {
-                if (pump_once() != 0) { return -1; }
-                continue;
-            }
-            close_connection(static_cast<int>(nwrite));
-            return -1;
-        }
-
-        if (nwrite == 0) { // cwnd or pacing, let ACKs in and retry
-            if (pump_once() != 0) { return -1; }
-            continue;
-        }
-
-        if (send_packet(static_cast<size_t>(nwrite)) == SendResult::failed) {
-            return -1; // blocked is tolerated, FIN retransmits
-        }
-
-        if (wdatalen >= 0) {
-            fin_sent_ = true;
-            flush_packets();
-            return 0;
-        }
-    }
 }
 
 // --- data plane ---
@@ -226,7 +178,7 @@ void QuicTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
     recv_dest_got_ = got;
 
     while (recv_dest_got_ < len) {
-        if (stream_fin_received_ || closed_) {
+        if (closed_) {
             throw std::runtime_error("QuicTransport::recv_file: connection closed");
         }
         if (pump_once() != 0) {
@@ -434,6 +386,12 @@ int QuicTransport::pump_once(ngtcp2_tstamp until) {
             ngtcp2_pkt_info pi{};
             const int rv = feed_data(buf, static_cast<size_t>(nread), &path, &pi);
             if (rv == NGTCP2_ERR_DRAINING || rv == NGTCP2_ERR_DROP_CONN) {
+                if (rv == NGTCP2_ERR_DRAINING) {
+                    // CONNECTION_CLOSE carrying NO_ERROR is the peer's orderly close
+                    const ngtcp2_ccerr* cc = ngtcp2_conn_get_ccerr(conn_);
+                    peer_closed_ = cc->type == NGTCP2_CCERR_TYPE_TRANSPORT &&
+                                   cc->error_code == NGTCP2_NO_ERROR;
+                }
                 closed_ = true; // peer closed or drop: silence is the protocol
                 return -1;
             }
@@ -489,7 +447,7 @@ int QuicTransport::on_stream_open(ngtcp2_conn* conn,
 int QuicTransport::on_recv_stream_data(ngtcp2_conn* conn, uint32_t flags, int64_t stream_id,
                                        uint64_t offset, const uint8_t* data, size_t datalen,
                                        void* user_data, void* stream_user_data) {
-    (void)offset; (void) stream_user_data;
+    (void)flags; (void)offset; (void) stream_user_data;
     auto* self = static_cast<QuicTransport*>(user_data);
 
     // recv_file waiting and nothing queued ahead: straight into the mapping
@@ -501,10 +459,6 @@ int QuicTransport::on_recv_stream_data(ngtcp2_conn* conn, uint32_t flags, int64_
     }
     if (taken < datalen) {
         self->recv_buf_.insert(self->recv_buf_.end(), data + taken, data + datalen);
-    }
-
-    if (flags & NGTCP2_STREAM_DATA_FLAG_FIN) {
-        self->stream_fin_received_ = true;
     }
 
     // extend credit at ingest - recv_buf_ is ours

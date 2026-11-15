@@ -306,9 +306,9 @@ TEST(QuicTransport, ProtocolSequence) {
     EXPECT_EQ(done.type,           MsgType::COMPLETE);
 }
 
-// ── SendFin_PeerRecvReturnsZero ───────────────────────────────────────────────
+// ── Close_AfterData_PeerDrainsThenRecvReturnsZero ─────────────────────────────
 
-TEST(QuicTransport, SendFin_PeerRecvReturnsZero) {
+TEST(QuicTransport, Close_AfterData_PeerDrainsThenRecvReturnsZero) {
     auto cert = make_temp_cert();
     auto [listen_fd, port] = make_quic_listener();
 
@@ -319,7 +319,7 @@ TEST(QuicTransport, SendFin_PeerRecvReturnsZero) {
     std::string server_err;
     ssize_t     eof_result = -99;
 
-    // server: drain the payload, then the next recv() must see peer FIN
+    // server: drain the payload, then the next recv() must see the peer's orderly close
     std::jthread server([listen_fd, &cert, &server_err, &eof_result]() {
         try {
             auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
@@ -333,7 +333,7 @@ TEST(QuicTransport, SendFin_PeerRecvReturnsZero) {
 
     auto client = quic_connect("127.0.0.1", port);
     send_exact(*client, send_buf.data(), kLen);
-    ASSERT_EQ(static_cast<QuicTransport*>(client.get())->send_fin(), 0);
+    client.reset(); // NO_ERROR close, sent once the payload is acked
 
     server.join();
 
@@ -341,20 +341,20 @@ TEST(QuicTransport, SendFin_PeerRecvReturnsZero) {
     EXPECT_EQ(eof_result, 0); // clean EOF, not -1
 }
 
-// ── Close_PeerRecvReturnsMinusOne ─────────────────────────────────────────────
+// ── Close_PeerRecvReturnsZero ─────────────────────────────────────────────────
 
-TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
+TEST(QuicTransport, Close_PeerRecvReturnsZero) {
     auto cert = make_temp_cert();
     auto [listen_fd, port] = make_quic_listener();
 
     std::string server_err;
-    ssize_t     abnormal_result = -99;
+    ssize_t     eof_result = -99;
 
     std::promise<void> accepted;
     auto accepted_ready = accepted.get_future();
 
     // server: no data ever arrives, only the client's CONNECTION_CLOSE
-    std::jthread server([listen_fd, &cert, &server_err, &abnormal_result, &accepted]() {
+    std::jthread server([listen_fd, &cert, &server_err, &eof_result, &accepted]() {
         std::unique_ptr<Transport> t;
         try {
             t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
@@ -365,7 +365,7 @@ TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
         if (!t) { return; }
         try {
             uint8_t buf[64];
-            abnormal_result = t->recv(buf, sizeof(buf));
+            eof_result = t->recv(buf, sizeof(buf));
         } catch (const std::exception& e) {
             server_err = e.what();
         }
@@ -381,7 +381,7 @@ TEST(QuicTransport, Close_PeerRecvReturnsMinusOne) {
     server.join();
 
     EXPECT_TRUE(server_err.empty()) << server_err;
-    EXPECT_EQ(abnormal_result, -1); // closed without FIN
+    EXPECT_EQ(eof_result, 0); // orderly close reads as EOF, same as TCP
 }
 
 // ── SendFile_RecvFile_Aligned ─────────────────────────────────────────────────
