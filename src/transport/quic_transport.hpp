@@ -32,6 +32,9 @@ inline constexpr uint64_t QUIC_CLOSE_LINER_NS = 1'000'000'000ULL; // graceful cl
 // SEND_ZC slots per conn: ~ 105 KiB of memlock; slots recycle on NOTIF (NIC TX done) not on ACK
 inline constexpr unsigned QUIC_ZC_SLOTS = 64;
 
+// lowercase hex SHA-256 of a certificate's DER encoding; empty if cert is null
+std::string cert_sha256_hex(WOLFSSL_X509* cert);
+
 // QUIC implementation of Transport
 // construct only via factories: quic_connect, quic_accept
 //
@@ -150,7 +153,8 @@ private:
                                      void* user_data);
 
     friend std::unique_ptr<Transport> quic_connect(const std::string& host,
-                                                  uint16_t port);
+                                                  uint16_t port,
+                                                  const std::string& cert_hash);
     friend std::unique_ptr<Transport> quic_accept(int listen_fd,
                                                   const std::string& cert_path,
                                                   const std::string& key_path);

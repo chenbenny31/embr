@@ -84,6 +84,16 @@ int quic_listen(uint16_t port) {
     return fd;
 }
 
+std::string quic_cert_hash(const std::string& cert_path) {
+    WOLFSSL_X509* cert = wolfSSL_X509_load_certificate_file(cert_path.c_str(), WOLFSSL_FILETYPE_PEM);
+    const std::string hex = cert_sha256_hex(cert);
+    if (cert) { wolfSSL_X509_free(cert); }
+    if (hex.empty()) {
+        throw std::runtime_error("quic_cert_hash: not a readable PEM certificate: " + cert_path);
+    }
+    return hex;
+}
+
 std::unique_ptr<Transport> quic_accept(int listen_fd,
                                        const std::string& cert_path,
                                        const std::string& key_path) {

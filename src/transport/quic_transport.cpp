@@ -16,6 +16,7 @@
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <wolfssl/options.h>
 #include <wolfssl/ssl.h>
+#include <wolfssl/wolfcrypt/sha256.h>
 #include <algorithm>
 #include <cerrno>
 #include <cstdint>
@@ -58,6 +59,19 @@ QuicTransport::QuicTransport(int udp_fd, WOLFSSL* ssl, WOLFSSL_CTX* ssl_ctx)
 void QuicTransport::attach_conn(ngtcp2_conn* conn) {
     conn_ = conn;
     ngtcp2_conn_set_tls_native_handle(conn_, ssl_);
+}
+
+std::string cert_sha256_hex(WOLFSSL_X509* cert) {
+    int der_len = 0;
+    const unsigned char* der = cert ? wolfSSL_X509_get_der(cert, &der_len) : nullptr;
+    unsigned char digest[WC_SHA256_DIGEST_SIZE];
+    if (!der || der_len <= 0 ||
+        wc_Sha256Hash(der, static_cast<word32>(der_len), digest) != 0) { return {}; }
+    static const char* hex = "0123456789abcdef";
+    std::string out;
+    out.reserve(2 * sizeof(digest));
+    for (unsigned char byte : digest) { out += hex[byte >> 4]; out += hex[byte & 0x0f]; }
+    return out;
 }
 
 QuicTransport::~QuicTransport() {

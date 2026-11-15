@@ -9,6 +9,7 @@
 #include "tracker/tracker_server.hpp"
 #include "tracker/tracker_client.hpp"
 #include "util/constants.hpp"
+#include "util/token.hpp"
 #include <httplib.h>
 #include <chrono>
 #include <cstdint>
@@ -190,4 +191,37 @@ TEST(TrackerIntegration, UpsertUpdatesRecord) {
     EXPECT_EQ(sender_port, 9000u);  // last-writer-wins
 
     tracker_unregister(TEST_TRACKER_URL, VALID_TOKEN);
+}
+
+// ── Token: content id, optional certificate cert_hash ──────────────────────
+
+TEST(Token, ParsesContentHashOnly) {
+    const auto token = parse_token("fc1d2e8bb7f4f64b");
+    ASSERT_TRUE(token.has_value());
+    EXPECT_EQ(token->content_hash, "fc1d2e8bb7f4f64b");
+    EXPECT_TRUE(token->cert_hash.empty());
+}
+
+TEST(Token, ParsesContentHashAndCertHash) {
+    const auto token = parse_token("fc1d2e8bb7f4f64b-7da37c097be61c69973ea4e576880420");
+    ASSERT_TRUE(token.has_value());
+    EXPECT_EQ(token->content_hash, "fc1d2e8bb7f4f64b");
+    EXPECT_EQ(token->cert_hash, "7da37c097be61c69973ea4e576880420");
+}
+
+TEST(Token, RejectsMalformed) {
+    for (const char* bad : {"", "10.0.0.5", "fc1d2e8bb7f4f64", "FC1D2E8BB7F4F64B",
+                            "fc1d2e8bb7f4f64b-", "fc1d2e8bb7f4f64b-7da37c09",
+                            "fc1d2e8bb7f4f64b_7da37c097be61c69973ea4e576880420",
+                            "fc1d2e8bb7f4f64b-7da37c097be61c69973ea4e57688042g"}) {
+        EXPECT_FALSE(parse_token(bad).has_value()) << "accepted '" << bad << "'";
+    }
+}
+
+TEST(Token, FormatAddsCertHashOnlyWhenThereIsACertificate) {
+    const std::string digest = "7da37c097be61c69973ea4e57688042039c90ad18d8c629001355918db401faf";
+    EXPECT_EQ(format_token("fc1d2e8bb7f4f64b", digest),
+              "fc1d2e8bb7f4f64b-7da37c097be61c69973ea4e576880420");
+    EXPECT_EQ(format_token("fc1d2e8bb7f4f64b", ""), "fc1d2e8bb7f4f64b");
+    EXPECT_TRUE(parse_token(format_token("fc1d2e8bb7f4f64b", digest)).has_value());
 }

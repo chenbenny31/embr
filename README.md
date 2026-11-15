@@ -27,19 +27,24 @@ The TCP file-transfer path uses kernel I/O mechanisms. QUIC retains heap message
 - Chunks are `mmap`'d and retained for acknowledgement and retransmission; QUIC assembles and encrypts separate outgoing packets
 - Datagrams leave through an io_uring `SEND_ZC` egress: a registered per-connection slab, each packet slot retained until the kernel permits its memory to be reused
 - Falls back to `sendmsg` when the slab cannot be registered or the kernel lacks `SEND_ZC` (`EMBR_QUIC_EGRESS=sendmsg` forces it)
-- Not yet: server-certificate verification (client accepts any cert), NAT traversal, tracker over QUIC
+- The token carries a hash of the sender's certificate; pull verifies it after the handshake, before any request
+- Not yet: NAT traversal, tracker over QUIC
 
 ## Usage
 
 ```bash
-# Direct mode — push listens, pull connects by IP
+# Direct mode — push listens and prints a token; pull is given the token and the sender's address
 embr push <file> [--port PORT]
-embr pull <ip>   [--port PORT] [--out PATH]
+embr pull <token> --ip <address> [--port PORT] [--out PATH]
 
 # QUIC — same commands, one flag; push reads a self-signed cert/key pair from ~/.config/embr/
 # (created by install.sh; --cert PATH --key PATH override)
 embr push <file> --transport quic
-embr pull <ip>   --transport quic --out PATH
+embr pull <token> --ip <address> --transport quic --out PATH
+
+# The token is <content_hash>-<cert_hash>, the same on every transport. Over QUIC, pull checks the
+# sender's certificate against cert_hash before requesting anything; plain TCP ignores it.
+# embr pull <address> still works without a token; over QUIC the sender is then not verified.
 
 # Tracker mode — push registers a token, pull resolves it
 embr push <file> --tracker http://<tracker-host>:10009
@@ -341,7 +346,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.910 Gbps; archived terminal summary reports no copied sends (individual egress logs unavailable)
 - [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
 - [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions
-- [ ] Server-certificate verification (client runs `SSL_VERIFY_NONE`)
+- [x] Sender-certificate verification — the token carries the certificate's hash; pull checks it after the handshake
 - [ ] Receive batching, asynchronous file-write overlap and sender segmentation offload; validate performance before making benefit claims
 
 **v0.7 — TCP path hardening**

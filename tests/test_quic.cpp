@@ -384,6 +384,50 @@ TEST(QuicTransport, Close_PeerRecvReturnsZero) {
     EXPECT_EQ(eof_result, 0); // orderly close reads as EOF, same as TCP
 }
 
+// ── Connect_CertHash ──────────────────────────────────────────────────────────
+
+TEST(QuicTransport, Connect_AcceptsMatchingCertHash) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    std::string server_err;
+    std::jthread server([listen_fd, &cert, &server_err]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            uint8_t buf[8];
+            (void)t->recv(buf, sizeof(buf)); // until the client's orderly close
+        } catch (const std::exception& e) {
+            server_err = e.what();
+        }
+    });
+
+    const std::string cert_hash = quic_cert_hash(cert.cert_path).substr(0, 32);
+    {
+        auto client = quic_connect("127.0.0.1", port, cert_hash);
+        EXPECT_NE(client, nullptr);
+    }
+    server.join();
+    EXPECT_TRUE(server_err.empty()) << server_err;
+}
+
+TEST(QuicTransport, Connect_RejectsOtherCertHash) {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+
+    std::jthread server([listen_fd, &cert]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            uint8_t buf[8];
+            (void)t->recv(buf, sizeof(buf));
+        } catch (const std::exception&) {} // the client walks away: either outcome is fine here
+    });
+
+    std::string wrong = quic_cert_hash(cert.cert_path).substr(0, 32);
+    wrong[0] = (wrong[0] == '0') ? '1' : '0';
+    EXPECT_THROW(quic_connect("127.0.0.1", port, wrong), std::runtime_error);
+    server.join();
+}
+
 // ── SendFile_RecvFile_Aligned ─────────────────────────────────────────────────
 
 TEST(QuicTransport, SendFile_RecvFile_Aligned) {

@@ -9,6 +9,10 @@
 #include <memory>
 #include <string>
 
+// Lowercase hex SHA-256 of the certificate in cert_path: what a token's cert_hash is cut from
+// throws if the file is not a readable PEM certificate
+std::string quic_cert_hash(const std::string& cert_path);
+
 // Blocking UDP socket bound on port, ready for quic_accept
 int quic_listen(uint16_t port);
 

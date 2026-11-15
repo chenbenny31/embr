@@ -56,7 +56,8 @@ static void log_printf(void*, const char* fmt, ...) {
 
 }
 
-std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port) {
+std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port,
+                                        const std::string& cert_hash) {
     // UDP socket
     int udp_fd = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (udp_fd < 0) {
@@ -205,6 +206,17 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port) 
 
     if (qt->run_handshake() != 0) {
         throw std::runtime_error("quic_connect: handshake failed");
+    }
+
+    // nothing has been sent on a stream yet: a sender with the wrong certificate learns nothing
+    if (!cert_hash.empty()) {
+        WOLFSSL_X509* peer = wolfSSL_get_peer_certificate(ssl);
+        const std::string actual = cert_sha256_hex(peer);
+        if (peer) { wolfSSL_X509_free(peer); }
+        if (actual.compare(0, cert_hash.size(), cert_hash) != 0) {
+            throw std::runtime_error("quic_connect: the sender's certificate does not match "
+                                     "the token's cert hash - not the sender this token names");
+        }
     }
 
     // client opens the stream; stream_open never fires for the local side

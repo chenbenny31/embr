@@ -10,6 +10,7 @@
 #include "transport/quic_server.hpp"
 #include "util/socket_fd.hpp"
 #include "util/config_tracker.hpp"
+#include "util/token.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -53,6 +54,16 @@ std::string derive_token(const std::vector<std::array<uint8_t, HASH_SIZE>>& chun
 std::string default_cred_path(const char* name) {
     const std::filesystem::path dir = get_config_path().parent_path();
     return dir.empty() ? std::string(name) : (dir / name).string();
+}
+
+// cert hash for the token; plain TCP never loads the cert, so there a missing one is not an error
+std::string token_cert_hash(const std::string& cert_path, bool required) {
+    try {
+        return quic_cert_hash(cert_path);
+    } catch (const std::exception&) {
+        if (required) { throw; }
+        return {};
+    }
 }
 
 // checked before hashing or listening: a missing cert must not surface at the first packet
@@ -131,15 +142,18 @@ int run_push_cli(int argc, char* argv[]) {
         }
 
         const std::string token = derive_token(file_meta.chunk_hashes);
+        // what pull is given, the same on every transport: content_hash, plus cert_hash when
+        // this sender has a certificate; plain TCP carries cert_hash but cannot check it
+        const std::string shown_token = format_token(token, token_cert_hash(cert_path, use_quic));
 
         SocketFd listen_fd = use_quic ? SocketFd{quic_listen(port)} : SocketFd{tcp_listen(port)};
         std::cout << "[push] listening on port " << port
                   << " (" << transport << ")\n";
+        std::cout << "[push] token: " << shown_token << std::endl; // flushed: a script reads it from a pipe
 
         // register with tracker after listen_fd is bound: port open before pull connection
         if (!tracker_url.empty()) {
             tracker_register(tracker_url, token, port); // v0.6: sender_ip is shadow, only for NAT
-            std::cout << "[push] token: " << token << "\n";
             if (!sender_ip.empty()) {
                 std::cout << "[push] sender ip: " << sender_ip << "\n";
             }
