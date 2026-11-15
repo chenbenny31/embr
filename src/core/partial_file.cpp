@@ -28,7 +28,8 @@ std::string PartialFile::path_for(const std::string& output_path) {
 }
 
 std::optional<ChunkManager> PartialFile::load(const std::string& output_path,
-        const std::array<uint8_t, HASH_SIZE>& file_hash, uint32_t chunk_count) {
+        const std::array<uint8_t, HASH_SIZE>& file_hash, uint32_t chunk_count,
+        uint64_t file_size) {
     const std::string partial_path = path_for(output_path);
     int fd = ::open(partial_path.c_str(), O_RDONLY);
     if (fd < 0) { return std::nullopt; } // no partial file (fresh)
@@ -43,7 +44,7 @@ std::optional<ChunkManager> PartialFile::load(const std::string& output_path,
 
         struct stat file_stat{};
         if (::stat(output_path.c_str(), &file_stat) < 0 ||
-            static_cast<uint64_t>(file_stat.st_size) != static_cast<uint64_t>(chunk_count) * CHUNK_SIZE) {
+            static_cast<uint64_t>(file_stat.st_size) != file_size) { // run_pull sizes it to file_size
             ::close(fd);
             return std::nullopt;
         }
@@ -71,9 +72,10 @@ void PartialFile::save(const std::string& output_path,
         const std::array<uint8_t, HASH_SIZE>& file_hash,
         const ChunkManager& chunk_manager) {
     const std::string partial_path = path_for(output_path);
-    int fd = ::open(partial_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
+    const std::string tmp_path = partial_path + ".tmp"; // renamed in: a crash never leaves a torn bitmap
+    int fd = ::open(tmp_path.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0644);
     if (fd < 0) {
-        throw std::runtime_error("partial_file::save: failed to open for write: " + partial_path);
+        throw std::runtime_error("partial_file::save: failed to open for write: " + tmp_path);
     }
 
     try {
@@ -90,10 +92,16 @@ void PartialFile::save(const std::string& output_path,
         ::close(fd);
     } catch (...) {
         ::close(fd);
+        ::unlink(tmp_path.c_str());
         throw;
+    }
+    if (::rename(tmp_path.c_str(), partial_path.c_str()) < 0) {
+        ::unlink(tmp_path.c_str());
+        throw std::runtime_error("partial_file::save: rename failed: " + partial_path);
     }
 }
 
 void PartialFile::remove(const std::string& output_path) {
     ::unlink(path_for(output_path).c_str());
+    ::unlink((path_for(output_path) + ".tmp").c_str()); // left by a crash mid-save
 }

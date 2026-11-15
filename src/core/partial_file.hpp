@@ -17,11 +17,13 @@ public:
     static std::string path_for(const std::string& output_path);
 
     // Loads a partial file and returns a ChunkManager reflecting prior progress
-    // Returns nullopt if no partial file exists (fresh) or file_hash/chunk_count mismatch
+    // Returns nullopt if no partial file exists (fresh) or file_hash/file_size mismatch
+    // The bitmap is a hint: the caller re-verifies done chunks against the bytes on disk
     static std::optional<ChunkManager> load(
         const std::string& output_path,
         const std::array<uint8_t, HASH_SIZE>& file_hash,
-        uint32_t chunk_count);
+        uint32_t chunk_count,
+        uint64_t file_size);
 
     // Persists current bitmap to .embr.partial alongside output_path
     static void save(
