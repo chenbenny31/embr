@@ -144,37 +144,68 @@ TEST(QuicTransport, Handshake_Completes) {
     EXPECT_NE(server_side, nullptr);
 }
 
-// ── Accept_RejectsMalformedInitial ────────────────────────────────────────────
+// ── Accept_IgnoresPacketsThatCannotStartAConnection ───────────────────────────
 
-TEST(QuicTransport, Accept_RejectsMalformedInitial) {
+TEST(QuicTransport, Accept_IgnoresPacketsThatCannotStartAConnection) {
     auto cert = make_temp_cert();
     auto [listen_fd, port] = make_quic_listener();
+    const timeval give_up{5, 0}; // if no client gets in, fail the test instead of listening forever
+    ::setsockopt(listen_fd, SOL_SOCKET, SO_RCVTIMEO, &give_up, sizeof(give_up));
+
+    constexpr size_t kLen = 8;
+    std::array<uint8_t, kLen> sent{};
+    std::array<uint8_t, kLen> got{};
+    fill_pattern(sent.data(), kLen);
 
     std::string server_err;
-    std::jthread server([listen_fd, &cert, &server_err]() {
+    std::jthread server([listen_fd, &cert, &server_err, &got]() {
         try {
             auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            recv_exact(*t, got.data(), kLen);
         } catch (const std::exception& e) {
             server_err = e.what();
         }
     });
 
-    // zeroed datagram: short-header form, never a valid Initial
     int fd = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     ASSERT_GE(fd, 0);
-
     sockaddr_in dst{};
     dst.sin_family      = AF_INET;
     dst.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     dst.sin_port        = htons(port);
 
+    // 1. zeroed datagram: short-header form, never a valid Initial
     const uint8_t junk[64] = {};
-    ::sendto(fd, junk, sizeof(junk), 0,
+    ::sendto(fd, junk, sizeof(junk), 0, reinterpret_cast<sockaddr*>(&dst), sizeof(dst));
+
+    // 2. a well-formed Initial header over a payload that cannot decrypt: ngtcp2 starts a
+    //    connection, discards the packet and asks for the state to be dropped - the same
+    //    answer it gives when a client's real first packet was lost and its second arrives first
+    std::array<uint8_t, 1200> undecryptable{};
+    undecryptable.fill(0xAA);
+    size_t at = 0;
+    undecryptable[at++] = 0xc3;                                   // long header, Initial
+    undecryptable[at++] = 0; undecryptable[at++] = 0;
+    undecryptable[at++] = 0; undecryptable[at++] = 1;             // version 1
+    undecryptable[at++] = 16; at += 16;                           // dcid
+    undecryptable[at++] = 16; at += 16;                           // scid
+    undecryptable[at++] = 0;                                      // token length
+    const size_t rest = undecryptable.size() - at - 2;
+    undecryptable[at++] = static_cast<uint8_t>(0x40 | (rest >> 8)); // 2-byte varint length
+    undecryptable[at++] = static_cast<uint8_t>(rest & 0xff);
+    ::sendto(fd, undecryptable.data(), undecryptable.size(), 0,
              reinterpret_cast<sockaddr*>(&dst), sizeof(dst));
     ::close(fd);
 
+    // 3. a real client still gets in
+    {
+        auto client = quic_connect("127.0.0.1", port);
+        send_exact(*client, sent.data(), kLen);
+    }
     server.join();
-    EXPECT_FALSE(server_err.empty());
+
+    EXPECT_TRUE(server_err.empty()) << server_err;
+    EXPECT_EQ(got, sent);
 }
 
 // ── SendRecv_Echo ─────────────────────────────────────────────────────────────

@@ -12,6 +12,7 @@
 #include <sys/mman.h>
 #include <ctime>
 #include <unistd.h>
+#include <utility>
 #include <ngtcp2/ngtcp2.h>
 #include <ngtcp2/ngtcp2_crypto.h>
 #include <wolfssl/options.h>
@@ -72,6 +73,11 @@ std::string cert_sha256_hex(WOLFSSL_X509* cert) {
     out.reserve(2 * sizeof(digest));
     for (unsigned char byte : digest) { out += hex[byte >> 4]; out += hex[byte & 0x0f]; }
     return out;
+}
+
+int QuicTransport::abandon() {
+    closed_ = true; // the destructor then sends nothing
+    return std::exchange(udp_fd_, -1);
 }
 
 QuicTransport::~QuicTransport() {
@@ -396,6 +402,7 @@ int QuicTransport::pump_once(ngtcp2_tstamp until) {
                 errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH) {
                 return -1;
             }
+            if (errno == ECONNREFUSED) { refused_seen_ = true; }
         } else if (msg.msg_flags & MSG_TRUNC) {
             return -1; // truncated packet
         } else {
@@ -431,6 +438,11 @@ int QuicTransport::pump_once(ngtcp2_tstamp until) {
         const int erv = ngtcp2_conn_handle_expiry(conn_, now_ns());
         if (erv == NGTCP2_ERR_IDLE_CLOSE) {
             closed_ = true; // peer presumed gone already, no need to send closing
+            return -1;
+        }
+        if (erv == NGTCP2_ERR_HANDSHAKE_TIMEOUT) {
+            handshake_timed_out_ = true;
+            closed_ = true; // nobody finished connecting: nothing to tell them
             return -1;
         }
         if (erv != 0) {
@@ -551,6 +563,11 @@ QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
 
     if (::sendmsg(udp_fd_, &msg, 0) < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) { return SendResult::blocked; }
+        // ICMP report about an earlier datagram: this one counts as lost, same errors recv tolerates
+        if (errno == ECONNREFUSED || errno == ENETUNREACH || errno == EHOSTUNREACH) {
+            if (errno == ECONNREFUSED) { refused_seen_ = true; }
+            return SendResult::blocked;
+        }
         return SendResult::failed; // errno left for the caller's -1 contract
     }
     return SendResult::ok;

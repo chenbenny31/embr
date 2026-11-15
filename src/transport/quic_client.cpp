@@ -161,6 +161,7 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port,
     ngtcp2_settings settings{};
     ngtcp2_settings_default(&settings);
     settings.initial_ts = timestamp_ns();
+    settings.handshake_timeout = QUIC_HANDSHAKE_TIMEOUT_NS;
     settings.log_printf = std::getenv("EMBR_QUIC_LOG") ? log_printf : nullptr;
 
     ngtcp2_transport_params params{};
@@ -205,6 +206,14 @@ std::unique_ptr<Transport> quic_connect(const std::string& host, uint16_t port,
     qt->attach_conn(conn);
 
     if (qt->run_handshake() != 0) {
+        if (qt->handshake_timed_out_) {
+            const std::string where = host + ":" + std::to_string(port);
+            const std::string secs = std::to_string(QUIC_HANDSHAKE_TIMEOUT_NS / 1'000'000'000ULL) + " s";
+            throw std::runtime_error(qt->refused_seen_
+                ? "quic_connect: nothing is listening at " + where +
+                  " (connection refused) - gave up after " + secs
+                : "quic_connect: no answer from " + where + " within " + secs);
+        }
         throw std::runtime_error("quic_connect: handshake failed");
     }
 

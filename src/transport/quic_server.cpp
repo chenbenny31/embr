@@ -94,9 +94,12 @@ std::string quic_cert_hash(const std::string& cert_path) {
     return hex;
 }
 
-std::unique_ptr<Transport> quic_accept(int listen_fd,
-                                       const std::string& cert_path,
-                                       const std::string& key_path) {
+// one attempt on the next datagram: a transport whose connection has taken it as the client's
+// first packet, or nullptr when a connection cannot start from it (the client's first packet was
+// lost, or it is not ours) - listen_fd is then unconnected, blocking and still bound
+std::unique_ptr<Transport> quic_accept_one(int listen_fd,
+                                           const std::string& cert_path,
+                                           const std::string& key_path) {
     // blocking read of the client's Initial: gives the peer addr for connect() and CIDs
     // listen_fd must be blocking on entry
     uint8_t first_pkt[QUIC_MAX_RECV_PKTLEN];
@@ -114,48 +117,26 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
 
     const ssize_t nread = ::recvmsg(listen_fd, &msg, 0);
     if (nread < 0) {
+        // an ICMP report left over from a discarded attempt is not a reason to stop listening
+        if (errno == EINTR || errno == ECONNREFUSED ||
+            errno == ENETUNREACH || errno == EHOSTUNREACH) { return nullptr; }
         ::close(listen_fd);
         throw std::runtime_error(
             std::string("quic_accept: recvmsg() failed: ") + std::strerror(errno));
     }
-    if (msg.msg_flags & MSG_TRUNC) {
-        ::close(listen_fd);
-        throw std::runtime_error("quic_accept: first packet truncated");
-    }
+    if (msg.msg_flags & MSG_TRUNC) { return nullptr; } // oversized stray datagram: keep listening
     const socklen_t peer_len = msg.msg_namelen;
 
     ngtcp2_version_cid vc{};
     int rv = ngtcp2_pkt_decode_version_cid(&vc, first_pkt,
                                            static_cast<size_t>(nread),
                                            NGTCP2_MAX_CIDLEN);
-    if (rv != 0) {
-        ::close(listen_fd);
-        throw std::runtime_error(
-            std::string("quic_accept: decode_version_cid() failed: ") + ngtcp2_strerror(rv));
-    }
+    if (rv != 0) { return nullptr; } // not a QUIC packet: keep listening
 
     // rejects anything that isn't a well-formed Initial before allocating conn
     ngtcp2_pkt_hd hd{};
     rv = ngtcp2_accept(&hd, first_pkt, static_cast<size_t>(nread));
-    if (rv != 0) {
-        ::close(listen_fd);
-        throw std::runtime_error(
-            std::string("quic_accept: not a valid Initial: ") + ngtcp2_strerror(rv));
-    }
-
-    // connect assigns the local addr the path depends on and filters later datagrams to peer
-    if (::connect(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), peer_len) < 0) {
-        ::close(listen_fd);
-        throw std::runtime_error(
-            std::string("quic_accept: connect() failed: ") + std::strerror(errno));
-    }
-
-    // non-blocking, pump_once() can select()
-    if (::fcntl(listen_fd, F_SETFL, O_NONBLOCK) < 0) {
-        ::close(listen_fd);
-        throw std::runtime_error(
-            std::string("quic_accept: fcntl(O_NONBLOCK) failed: ") + std::strerror(errno));
-    }
+    if (rv != 0) { return nullptr; } // not an Initial we can serve: keep listening
 
     // wolfSSL server context
     wolfSSL_Init();
@@ -232,6 +213,7 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
     ngtcp2_settings settings{};
     ngtcp2_settings_default(&settings);
     settings.initial_ts = timestamp_ns();
+    settings.handshake_timeout = QUIC_HANDSHAKE_TIMEOUT_NS;
     settings.log_printf = std::getenv("EMBR_QUIC_LOG") ? log_printf : nullptr;
 
     ngtcp2_transport_params params{};
@@ -280,11 +262,35 @@ std::unique_ptr<Transport> quic_accept(int listen_fd,
     // the Initial arrived before conn existed
     ngtcp2_pkt_info pi{};
     if (qt->feed_data(first_pkt, static_cast<size_t>(nread), &path, &pi) != 0) {
-        throw std::runtime_error("quic_accept: first packet rejected");
+        // ngtcp2 cannot start from this datagram: forget the attempt, the socket is untouched
+        (void)qt->abandon();
+        return nullptr;
     }
 
+    // the socket is this client's from here: connect filters later datagrams to the peer,
+    // non-blocking lets pump_once() select()
+    if (::connect(listen_fd, reinterpret_cast<sockaddr*>(&peer_addr), peer_len) < 0 ||
+        ::fcntl(listen_fd, F_SETFL, O_NONBLOCK) < 0) {
+        throw std::runtime_error(
+            std::string("quic_accept: connect() failed: ") + std::strerror(errno));
+    }
+    return transport;
+}
+
+std::unique_ptr<Transport> quic_accept(int listen_fd,
+                                       const std::string& cert_path,
+                                       const std::string& key_path) {
+    // a datagram that cannot start a connection is dropped and the wait goes on: the client
+    // resends its first flight after one second
+    std::unique_ptr<Transport> transport;
+    while (!transport) { transport = quic_accept_one(listen_fd, cert_path, key_path); }
+    auto* qt = static_cast<QuicTransport*>(transport.get());
+
     if (qt->run_handshake() != 0) {
-        throw std::runtime_error("quic_accept: handshake failed");
+        throw std::runtime_error(qt->handshake_timed_out_
+            ? "quic_accept: the client stopped answering before the handshake finished (" +
+              std::to_string(QUIC_HANDSHAKE_TIMEOUT_NS / 1'000'000'000ULL) + " s)"
+            : std::string("quic_accept: handshake failed"));
     }
 
     // stream_id stays -1: the client opens the stream after its handshake completes

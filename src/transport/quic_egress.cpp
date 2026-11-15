@@ -147,10 +147,13 @@ void ZcEgress::reap(bool wait) {
                 // this datagram was never sent; QUIC does a copy when loss
                 ++stats_.fallback;
                 if (::send(fd_, inflight_[i].ptr, inflight_[i].size, 0) < 0
-                    && errno != EAGAIN && errno != ENOBUFS && errno != ENOMEM) { // transient = loss
+                    && errno != EAGAIN && errno != ENOBUFS && errno != ENOMEM
+                    && errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH) { // transient = loss
                     ++stats_.errors;
                     if (err_ == 0) { err_ = errno; }
                 }
+            } else if (res == -ECONNREFUSED || res == -ENETUNREACH || res == -EHOSTUNREACH) {
+                // ICMP report about an earlier datagram: this one counts as lost, QUIC resends
             } else if (res < 0) {
                 ++stats_.errors;
                 if (err_ == 0) { err_ = -res; }

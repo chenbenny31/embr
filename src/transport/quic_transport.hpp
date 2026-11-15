@@ -29,6 +29,7 @@ inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram local sends inc
 inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
 inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycle
 inline constexpr uint64_t QUIC_CLOSE_LINER_NS = 1'000'000'000ULL; // graceful close bound: 100ms RTT
+inline constexpr uint64_t QUIC_HANDSHAKE_TIMEOUT_NS = 10'000'000'000ULL; // give up connecting after this
 // SEND_ZC slots per conn: ~ 105 KiB of memlock; slots recycle on NOTIF (NIC TX done) not on ACK
 inline constexpr unsigned QUIC_ZC_SLOTS = 64;
 
@@ -64,6 +65,7 @@ public:
 private:
     QuicTransport(int udp_fd, WOLFSSL* ssl, WOLFSSL_CTX* ssl_ctx);
     void attach_conn(ngtcp2_conn* conn); // factory calls after conn_*_new
+    int abandon(); // hand the socket back and go quiet: this connection attempt is discarded
 
     int udp_fd_;
     ngtcp2_conn* conn_{nullptr};
@@ -74,6 +76,8 @@ private:
     int64_t stream_id_{-1}; // single bidi stream, shared by control + data plane
     bool peer_closed_{false}; // peer's NO_ERROR close: recv() returns 0 once drained, like TCP's FIN
     bool closed_{false}; // close sent or silent teardown, set for every transition
+    bool handshake_timed_out_{false}; // why closed_: the factories turn it into the error text
+    bool refused_seen_{false}; // an ICMP port-unreachable came back at some point
     std::vector<uint8_t> recv_buf_;
 
     // recv_file dest: on_recv_stream_data lands bytes here
@@ -158,4 +162,7 @@ private:
     friend std::unique_ptr<Transport> quic_accept(int listen_fd,
                                                   const std::string& cert_path,
                                                   const std::string& key_path);
+    friend std::unique_ptr<Transport> quic_accept_one(int listen_fd,
+                                                      const std::string& cert_path,
+                                                      const std::string& key_path);
 };
