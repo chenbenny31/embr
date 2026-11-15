@@ -32,6 +32,8 @@ public:
     }
 
     int get() const { return fd_; }
+    // hand the fd to a new owner: this wrapper closes nothing afterwards
+    int release() noexcept { return std::exchange(fd_, -1); }
 
 private:
     int fd_;
