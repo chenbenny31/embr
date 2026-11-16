@@ -148,12 +148,14 @@ void ZcEgress::reap(bool wait) {
                 ++stats_.fallback;
                 if (::send(fd_, inflight_[i].ptr, inflight_[i].size, 0) < 0
                     && errno != EAGAIN && errno != ENOBUFS && errno != ENOMEM
-                    && errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH) { // transient = loss
+                    && errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH
+                    && errno != EMSGSIZE) { // transient = loss
                     ++stats_.errors;
                     if (err_ == 0) { err_ = errno; }
                 }
-            } else if (res == -ECONNREFUSED || res == -ENETUNREACH || res == -EHOSTUNREACH) {
-                // ICMP report about an earlier datagram: this one counts as lost, QUIC resends
+            } else if (res == -ECONNREFUSED || res == -ENETUNREACH || res == -EHOSTUNREACH
+                       || res == -EMSGSIZE) {
+                // ICMP report about an earlier datagram, or longer than the link MTU: lost, QUIC resends
                 if (res == -ECONNREFUSED) { refused_ = true; }
             } else if (res < 0) {
                 ++stats_.errors;

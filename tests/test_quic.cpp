@@ -563,6 +563,87 @@ TEST(QuicTransport, Egress_ZcPathCarriesTransfer) {
     EXPECT_EQ(std::memcmp(src_buf.data(), dst_buf.data(), kLen), 0);
 }
 
+// ── Gso ───────────────────────────────────────────────────────────────────────
+// one 1 MiB send_file over a fresh connection, reporting the sender's packet and send counts
+struct GsoRun {
+    bool gso{false};
+    QuicTransport::TxStats tx;
+    bool intact{false};
+    std::string server_err;
+};
+
+static GsoRun run_gso_transfer() {
+    auto cert = make_temp_cert();
+    auto [listen_fd, port] = make_quic_listener();
+    constexpr size_t kLen = 1024 * 1024;
+
+    auto src = make_tempfile();
+    std::vector<uint8_t> pattern(kLen);
+    fill_pattern(pattern.data(), kLen);
+    ::write(src.fd, pattern.data(), kLen);
+    auto dst = make_tempfile();
+    ::ftruncate(dst.fd, static_cast<off_t>(kLen));
+
+    GsoRun run;
+    std::jthread server([listen_fd, &cert, dst_fd = dst.fd, &run]() {
+        try {
+            auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
+            t->recv_file(dst_fd, 0, kLen);
+            const uint8_t ack = 1;
+            send_exact(*t, &ack, 1);
+        } catch (const std::exception& e) {
+            run.server_err = e.what();
+        }
+    });
+
+    auto client = quic_connect("127.0.0.1", port);
+    client->send_file(src.fd, 0, kLen);
+    uint8_t ack = 0;
+    recv_exact(*client, &ack, 1);
+    server.join();
+    ::close(listen_fd);
+
+    const auto* qt = dynamic_cast<QuicTransport*>(client.get());
+    run.gso = qt->gso();
+    run.tx = qt->tx_stats();
+    std::vector<uint8_t> got(kLen);
+    ::pread(dst.fd, got.data(), kLen, 0);
+    run.intact = std::memcmp(pattern.data(), got.data(), kLen) == 0;
+    return run;
+}
+
+// skipped when the suite runs with EMBR_QUIC_GSO=0 or the kernel has no UDP_SEGMENT
+TEST(QuicTransport, Gso_BatchesPacketsIntoFewerSends) {
+    const GsoRun run = run_gso_transfer();
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    if (!run.gso) { GTEST_SKIP() << "GSO off"; }
+    EXPECT_GT(run.tx.datagrams, run.tx.sends);
+}
+
+TEST(QuicTransport, Gso_SwitchedOffSendsOnePacketPerSend) {
+    const char* prev = std::getenv("EMBR_QUIC_GSO");
+    const bool had = prev != nullptr;
+    const std::string saved = had ? prev : "";
+    ::setenv("EMBR_QUIC_GSO", "0", 1);
+    const GsoRun run = run_gso_transfer();
+    if (had) { ::setenv("EMBR_QUIC_GSO", saved.c_str(), 1); } else { ::unsetenv("EMBR_QUIC_GSO"); }
+
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    EXPECT_FALSE(run.gso);
+    EXPECT_EQ(run.tx.datagrams, run.tx.sends);
+}
+
+// ngtcp2 starts at 1200 bytes; the 1350-byte probe must lift data packets to the buffer size
+TEST(QuicTransport, Pmtud_GrowsPacketsToBufferSize) {
+    const GsoRun run = run_gso_transfer();
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    ASSERT_GT(run.tx.datagrams, 0u);
+    EXPECT_GT(run.tx.bytes / run.tx.datagrams, 1280u); // 1200 at most if the size never grew
+}
+
 // ── SendFile_RecvFile_UnalignedOffset ─────────────────────────────────────────
 
 TEST(QuicTransport, SendFile_RecvFile_UnalignedOffset) {

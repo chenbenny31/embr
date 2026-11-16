@@ -26,12 +26,16 @@
 #include <deque>
 
 inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram local sends include header
+inline constexpr uint16_t QUIC_PMTUD_PROBE = QUIC_MAX_PKTLEN; // the one size path MTU discovery tries
 inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
 inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycle
 inline constexpr uint64_t QUIC_CLOSE_LINER_NS = 1'000'000'000ULL; // graceful close bound: 100ms RTT
 inline constexpr uint64_t QUIC_HANDSHAKE_TIMEOUT_NS = 10'000'000'000ULL; // give up connecting after this
 // SEND_ZC slots per conn: ~ 105 KiB of memlock; slots recycle on NOTIF (NIC TX done) not on ACK
 inline constexpr unsigned QUIC_ZC_SLOTS = 64;
+// UDP GSO: up to this many same-size packets leave in one send; a SEND_ZC slot then holds one batch
+inline constexpr unsigned QUIC_GSO_SEGS = 16;
+inline constexpr unsigned QUIC_ZC_GSO_SLOTS = 8; // 8 x 16 x 1350 B = 169 KiB slab per conn
 
 // lowercase hex SHA-256 of a certificate's DER encoding; empty if cert is null
 std::string cert_sha256_hex(WOLFSSL_X509* cert);
@@ -51,6 +55,16 @@ public:
 
     // null when EMBR_QUIC_EGRESS=sendmsg or io_uring in unavailable
     const ZcEgress* zc_egress() const { return zc_.get(); }
+
+    // packets written and send calls made; datagrams > sends means GSO batched them
+    // bytes / datagrams is the packet size the path settled on
+    struct TxStats {
+        uint64_t datagrams{0};
+        uint64_t sends{0};
+        uint64_t bytes{0};
+    };
+    const TxStats& tx_stats() const { return tx_; }
+    bool gso() const { return gso_; } // false: EMBR_QUIC_GSO=0 or the kernel has no UDP_SEGMENT
 
     // --- data plane ---
     void send_file(int file_fd, uint64_t offset, size_t len) override;
@@ -94,7 +108,19 @@ private:
     void init_egress();
     uint8_t* begin_packet();
     SendResult send_packet(size_t n);
-    void flush_packets();
+    bool flush_packets(); // false: the open batch failed to send, errno says why
+
+    // GSO batch: same-size packets laid end to end, handed to the kernel as one send
+    // without GSO a batch is always one packet and every path below is today's
+    bool gso_{false};
+    std::vector<uint8_t> batch_buf_; // sendmsg mode with GSO
+    uint8_t* batch_base_{nullptr};   // a SEND_ZC slot, batch_buf_ or packet_buf_
+    size_t batch_len_{0};
+    size_t batch_seg_{0};            // size of the batch's first packet = its segment size
+    unsigned batch_pkts_{0};
+    size_t sock_seg_{0};             // UDP_SEGMENT the socket holds now, 0 = unset
+    SendResult send_batch();
+    TxStats tx_;
 
     // drive ones retained block until ngtcp2 accepts every byte
     ssize_t write_stream(const uint8_t* base, size_t len);

@@ -13,6 +13,7 @@
 #include <cerrno>
 #include <cstdarg>
 #include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <ctime>
 #include <memory>
@@ -215,6 +216,15 @@ std::unique_ptr<Transport> quic_accept_one(int listen_fd,
     settings.initial_ts = timestamp_ns();
     settings.handshake_timeout = QUIC_HANDSHAKE_TIMEOUT_NS;
     settings.log_printf = std::getenv("EMBR_QUIC_LOG") ? log_printf : nullptr;
+    // ngtcp2 starts at 1200 bytes and grows only by a probe that fits the packet buffer; its own
+    // first probe (1406) does not, so name the size: one 1350-byte probe, 1200 stays if it is lost
+    settings.max_tx_udp_payload_size = QUIC_MAX_PKTLEN;
+    settings.pmtud_probes = &QUIC_PMTUD_PROBE;
+    settings.pmtud_probeslen = 1;
+    // EMBR_QUIC_ACK_THRESH=N: acknowledge every N packets, not every 2; the peer's GSO batches follow it
+    if (const char* thresh = std::getenv("EMBR_QUIC_ACK_THRESH")) {
+        settings.ack_thresh = static_cast<size_t>(std::clamp(std::atoi(thresh), 1, 100));
+    }
 
     ngtcp2_transport_params params{};
     ngtcp2_transport_params_default(&params);

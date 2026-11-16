@@ -4,7 +4,9 @@ The transfer campaign below was reported against the v0.8 tree (`9342d1e`,
 Release build) on 2026-09-05/06. Transfer timing ends without an explicit fsync;
 it measures transfer completion, not durable storage. Section 1 contains older
 v0.7 syscall counts. The [corrected desktop ownership benchmark](#desktop-ownership-cost)
-is a separate run after the benchmark implementation was repaired.
+is a separate run after the benchmark implementation was repaired. The
+[packet-loss runs](#packet-loss-runs) in §8 and the
+[GSO loopback runs](#gso-loopback) in §9 are from November 2026.
 
 All six former `bench/results/` files are preserved verbatim in the
 [raw-data archive](#raw-data-archive), including their original provenance and
@@ -350,18 +352,34 @@ SIGPIPE:             ignored process-wide — sendfile has no MSG_NOSIGNAL
 ### QUIC / SEND_ZC egress
 
 ```
-datagram:            QUIC_MAX_PKTLEN = 1350 bytes (not tuned; conservative under a 1500 MTU)
-egress slab:         QUIC_ZC_SLOTS = 64 slots × 1350 B per connection, registered once;
-                     about 105 KiB locked per connection including the ring
+datagram:            1350 bytes (QUIC_MAX_PKTLEN) where the path carries them, else 1200.
+                     ngtcp2 starts at QUIC's 1200-byte minimum and sends one 1350-byte path-MTU
+                     probe; if the probe is lost the size stays 1200. Sockets set DF
+                     (IP_PMTUDISC_PROBE) and a datagram the path refuses (EMSGSIZE, or a
+                     router's ICMP) counts as lost. Until 2026-11-15 the size never rose:
+                     ngtcp2's default first probe (1406 bytes) did not fit the buffer, so
+                     every earlier run in this file, September's WAN included, sent 1200
+egress slab:         without GSO, QUIC_ZC_SLOTS = 64 slots × 1350 B per connection, registered
+                     once; about 105 KiB locked per connection including the ring.
+                     With GSO, QUIC_ZC_GSO_SLOTS = 8 slots × 16 × 1350 B (169 KiB slab)
+GSO (after v0.8 WAN): same-size packets are laid end to end, up to QUIC_GSO_SEGS = 16, and
+                     leave as one send; the socket's UDP_SEGMENT is set to the packet size.
+                     A batch ends when it is full, when a packet of another size arrives,
+                     or before the sender waits. EMBR_QUIC_GSO=0 sends one packet per send
 completion rule:     send CQE with F_MORE → hold the slot until NOTIF; without F_MORE → final
 fallbacks:           refused datagram (ENOMEM/ENOBUFS/EAGAIN/EINVAL/EOPNOTSUPP) copy-sent once;
                      no registration or kernel < 6.2 → sendmsg for the connection;
                      slab still held at teardown → leaked, never reused
-knobs:               EMBR_QUIC_EGRESS=sendmsg (copying baseline), EMBR_QUIC_STATS=1
-                     (per-connection sends/notifs/copied/fallback/errors at close)
+ACK threshold:       2 packets (ngtcp2's default). EMBR_QUIC_ACK_THRESH=N (1-100) makes an
+                     endpoint acknowledge every N packets; it matters on the receiver (§9)
+knobs:               EMBR_QUIC_EGRESS=sendmsg (copying baseline), EMBR_QUIC_GSO=0,
+                     EMBR_QUIC_STATS=1 (per-connection mode/gso/datagrams/sends/bytes, and for
+                     SEND_ZC notifs/copied/fallback/errors, at close)
 flow control:        4 MiB per stream, 8 MiB per connection, one bidi stream
 receive loop:        select + one recvmsg per datagram (v0.8); recvmmsg batching is v0.9
-certificate:         client does not verify the server (SSL_VERIFY_NONE) in v0.8
+certificate:         the token carries a hash of the sender's certificate and pull checks it
+                     after the handshake; pulling by bare address skips the check
+pacing:              off (ngtcp2_conn_update_pkt_tx_time is never called); sends are ACK-clocked
 ```
 
 ---
@@ -381,29 +399,49 @@ The setup script installs dependencies, updates UDP socket limits, checks
 kernel/memlock prerequisites and builds embr. With dependencies already prepared,
 use the [README Release build commands](../README.md#build).
 
-**WAN, all five rows:**
+All harnesses are modes of one script, `bench/bench.sh`. The September campaign
+ran its predecessors (`quic_wan.sh`, `tcp_loopback.sh`, `quic_loopback.sh`), which
+that script merges; the raw blocks in §10 keep their original command lines.
+`ROWS="..."` picks and orders the rows.
+
+**WAN, all seven rows** (the five of §2 plus the two GSO rows):
 
 ```bash
-# sender (us-east-1) — open inbound TCP 10007, 9999 and UDP 10008, 10009
-ROLE=sender BUILD=./build FILE_SIZE_GB=1 bash bench/quic_wan.sh
+# sender (us-east-1) — open inbound TCP 22, 10007, 9999 and UDP 10008-10011
+FILE_SIZE_GB=1 bash bench/bench.sh wan-sender
 
 # receiver (us-east-2)
-ROLE=receiver BUILD=./build SENDER_IP="<sender-ip>" SSH_KEY=~/.ssh/key.pem bash bench/quic_wan.sh
+SENDER_IP="<sender-ip>" SSH_KEY=~/.ssh/key.pem bash bench/bench.sh wan-receiver
 ```
-`bench/tcp_wan.sh` runs the TCP-only subset with the same harness.
 
 **Loopback:**
 
 ```bash
-BUILD=./build bash bench/tcp_loopback.sh            # embr TCP, nc, scp; cache=drop
-BUILD=./build CACHE_DISCIPLINE=keep \
-  CERT=/path/to/cert.pem KEY=/path/to/key.pem \
-  bash bench/quic_loopback.sh                      # embr TCP, QUIC SEND_ZC, QUIC sendmsg, nc
+ROWS="embrtcp nc scp" bash bench/bench.sh loopback          # §3: cache=drop
+CACHE_DISCIPLINE=keep bash bench/bench.sh loopback          # §4 and §9: embr TCP, the four QUIC rows, nc
 ```
 
-Replace the certificate/key paths with an existing test pair; the QUIC loopback
-script does not generate one. The TCP loopback scp reference requires a working
-localhost SSH login.
+The four QUIC rows are `embrquic` (SEND_ZC) and `embrquicsm` (sendmsg), both with one
+packet per send as in September, and `embrquicgso` / `embrquicsmgso` with GSO batching.
+
+**§9's ACK-threshold rows** set `EMBR_QUIC_ACK_THRESH` for the whole run; on two hosts
+set it on the receiver. The results header records the value.
+
+```bash
+EMBR_QUIC_ACK_THRESH=10 CACHE_DISCIPLINE=keep RUNS=10 \
+    ROWS="embrquic embrquicsm embrquicgso embrquicsmgso" bash bench/bench.sh loopback
+```
+
+Since 2026-11-15 each result line also carries `host_cpu` / `host_irq`, and on the WAN
+receiver `sender_cpu` / `sender_irq`: whole-machine CPU seconds over the transfer. They
+include packet work the kernel does in softirq, which no process's user/sys shows
+(Fedora's kernel keeps softirq time out of process time). The runs archived in this
+file predate these fields.
+
+QUIC rows use the certificate `install.sh` creates in `~/.config/embr/`
+(`CERT=` / `KEY=` override). The loopback scp row requires a working localhost
+SSH login. A row's environment is set on the sender only; the September loopback
+run also set `EMBR_QUIC_EGRESS=sendmsg` on the receiver for the sendmsg row.
 
 Cache-drop helpers suppress failures. For another cold-cache campaign, verify
 that both hosts permit the cache drop; `cache=drop` in a log only records the
@@ -514,8 +552,545 @@ No production-overhead percentage or per-GiB extrapolation is inferred.
 
 ---
 
+<a id="packet-loss-runs"></a>
+## §8 — Packet-loss runs (desktop, network namespace)
+
+Run on 2026-11-14/15 on the Fedora desktop (kernel 7.3.3), on the tree that became
+`3783d38`. Separate from the September campaign; nothing here changes §2–§4.
+
+### Setup
+
+- One private network namespace per run (`unshare --user --map-root-user --net`),
+  traffic over `lo`. No root, no change to the host's network.
+- Loss on the nftables **input** hook: `numgen random mod 100 < N drop`, one rule
+  matching the listen port as destination and one as source, so N% is dropped in
+  each direction. Dropping on the output hook is not loss: the send call itself
+  fails with `EPERM`.
+- Workload: `embr push` / `embr pull --transport quic` of a 20 MB random file,
+  checked with `cmp`; 8 transfers at a time.
+- "Stall" means both ends sat silent until the 30 s idle timeout
+  (`ERR_IDLE_CLOSE` on both sides, 30.4 s after the last progress).
+
+### What the runs found
+
+| problem | loss | before | after |
+|---|---|---|---|
+| lost first packet | 10% | 6 of 24 connections failed | 0 of 36 |
+| "connection refused" on send | none | 11 failures in 2,400 | 0 in 4,800 |
+| sends queued, not submitted | 10% | 13.2–16.6 s per transfer | 1.4–2.3 s |
+| stall at the minimum window | 10% | 2 stalls in about 640 transfers | 0 in 1,504 |
+
+**Lost first packet.** The TLS hello carries a post-quantum key share and no
+longer fits one packet, so a client opens with two. When the first was lost,
+ngtcp2 told the server to drop the half-made connection; embr treated that as
+fatal and the push process exited (`quic_accept: first packet rejected`).
+`quic_accept` now discards any packet a connection cannot start from and keeps
+listening; the client's retransmission one second later connects.
+
+**"Connection refused" on send.** After a peer closes its socket the kernel
+reports ICMP port-unreachable on the next socket call. embr tolerated that on
+receive and failed on send, so the result depended on which call came first.
+Measured without loss, as 8 concurrent × 300 repeats of a client that connects
+and leaves. Both paths now count it as a lost packet.
+
+**Sends queued, not submitted.** With the io_uring sender a packet is only queued
+until the ring is submitted. The send loop went to wait for ACKs with packets
+still queued, so each round moved only when a retransmit timer fired. `sendmsg`
+on the same runs: 1.4–1.9 s. Without loss the change is not measurable
+(1 GiB: 2.64 s io_uring, 2.39 s `sendmsg`, in line with §4).
+
+**Stall at the minimum window.** With the window at its two-packet minimum and
+both packets retransmission probes, losing both left ngtcp2 up to 1.25, acting
+as server, with no probe to send and its timer cancelled while still counting
+them in flight. ngtcp2 1.26.0 sends a PING probe instead. "Before" is the old
+sender on ngtcp2 1.22.0; "after" is the same old sender on 1.26.0, so the
+upgrade alone removes the stall. With the sender fixed, 1.22.0 completed
+600 of 600 (io_uring) and 480 of 480 (`sendmsg`) at 10% loss: the queued-send
+delay is what made the two-probe case likely.
+
+### 30% loss and the handshake limit
+
+Fixed sender, 96 transfers per row (12 batches of 8), 30% dropped each way:
+
+| ngtcp2 | complete | stalls | handshake timeouts | seconds per transfer, min / median / max |
+|---|---|---|---|---|
+| 1.22.0 | 93 of 96 | 2 | 1 | 104.8 / 128.4 / 161.2 |
+| 1.26.0 | 94 of 96 | 0 | 2 | 105.8 / 130.8 / 195.3 |
+
+Every completed transfer matched the source file.
+
+The handshake limit (`QUIC_HANDSHAKE_TIMEOUT_NS`) is 10 s. At 30% loss, 3 of 192
+handshakes (1.6%) did not finish inside it and pull exited after 10.0 s with
+`no answer from 127.0.0.1:PORT within 10 s`. The handshake retransmit timer
+starts near 1 s and doubles, so about four attempts fit in the limit. None of
+the 2,584 transfers at 10% loss hit it.
+
+**Decision (2026-11-15): the limit stays at 10 s.** 30% loss is far outside
+normal use, the failure is prompt and says what happened, and a retry is one
+command; a longer limit would make "nothing is listening" slower to report for
+everyone else.
+
+Failed runs (port, exit code, seconds, ngtcp2 expiry result, error):
+
+```
+ngtcp2 1.22.0
+FAIL 14011 rc=1 145.6  ERR_IDLE_CLOSE (pull and push)   [error] QuicTransport::recv_file: pump failed
+FAIL 14045 rc=1  10.0  ERR_HANDSHAKE_TIMEOUT            [error] quic_connect: no answer from 127.0.0.1:14045 within 10 s
+FAIL 14082 rc=1 121.1  ERR_IDLE_CLOSE (pull and push)   [error] QuicTransport::recv_file: pump failed
+
+ngtcp2 1.26.0
+FAIL 14082 rc=1  10.0  [error] quic_connect: no answer from 127.0.0.1:14082 within 10 s
+FAIL 14114 rc=1  10.0  [error] quic_connect: no answer from 127.0.0.1:14114 within 10 s
+```
+
+### Reproduce one transfer
+
+```bash
+head -c 20000000 /dev/urandom > f.bin
+LOSS=30   # percent dropped in each direction
+unshare --user --map-root-user --net bash -c "
+  ip link set lo up
+  nft add table inet t
+  nft add chain inet t in '{ type filter hook input priority 0; }'
+  nft add rule inet t in udp dport 14001 numgen random mod 100 \< $LOSS drop
+  nft add rule inet t in udp sport 14001 numgen random mod 100 \< $LOSS drop
+  ./build/embr push f.bin --transport quic --port 14001 &
+  sleep 0.5
+  ./build/embr pull 127.0.0.1 --port 14001 --transport quic --out got.bin
+  wait; cmp f.bin got.bin && echo SAME"
+```
+
+`EMBR_QUIC_LOG=1` on either side prints the ngtcp2 trace used above.
+
+---
+
+<a id="gso-loopback"></a>
+## §9 — UDP GSO × egress × ACK threshold (loopback, 1 GiB)
+
+Run on 2026-11-15 on the Fedora desktop (kernel 7.3.3, ngtcp2 1.26.0, Release build,
+cache kept, as §4), with `bench/bench.sh loopback`. This is the loopback half of the
+2×2 the September WAN result asked for: `SEND_ZC` against `sendmsg`, each with one
+packet per send and with GSO batching. The real-NIC half (two hosts) is not run yet.
+
+Loopback copies every `SEND_ZC` send (`copied` = 100% in every row below), so nothing
+here measures zero-copy. It measures what a send costs and how GSO spreads that cost.
+
+### Median summary (n = 10, warmup excluded)
+
+"ACK threshold" is the receiver's `ack_thresh`: it acknowledges after that many
+packets. 2 is ngtcp2's default and what embr ships. "Packets per send" is the sender's
+datagrams ÷ sends from its `[quic-egress]` lines. Sender sys shows median [min max].
+
+| ACK threshold | sender egress | packets per send | throughput | wall | send_user | send_sys | recv_user | recv_sys |
+|---|---|---|---|---|---|---|---|---|
+| 2 | SEND_ZC | 1.0 | 3.33 Gbps | 2.58 s | 0.69 s | 1.04 s [1.02 1.09] | 1.09 s | 1.07 s |
+| 2 | sendmsg | 1.0 | 3.41 Gbps | 2.52 s | 0.70 s | 0.95 s [0.92 1.19] | 1.02 s | 1.08 s |
+| 2 | SEND_ZC + GSO | 2.0 | 3.40 Gbps | 2.53 s | 0.67 s | 0.81 s [0.79 0.87] | 1.01 s | 1.08 s |
+| 2 | sendmsg + GSO | 2.0 | 3.45 Gbps | 2.50 s | 0.68 s | 0.75 s [0.72 0.96] | 1.02 s | 1.06 s |
+| 10 | SEND_ZC | 1.0 | 4.46 Gbps | 1.92 s | 0.38 s | 0.76 s [0.75 0.77] | 1.00 s | 0.68 s |
+| 10 | sendmsg | 1.0 | 4.70 Gbps | 1.83 s | 0.43 s | 0.74 s [0.73 0.77] | 1.00 s | 0.68 s |
+| 10 | SEND_ZC + GSO | 9.7 | 4.81 Gbps | 1.79 s | 0.48 s | 0.34 s [0.32 0.36] | 1.01 s | 0.66 s |
+| 10 | sendmsg + GSO | 9.8 | 4.84 Gbps | 1.77 s | 0.52 s | 0.33 s [0.30 0.37] | 1.00 s | 0.66 s |
+| 32 | SEND_ZC | 1.0 | 4.61 Gbps | 1.87 s | 0.34 s | 0.74 s [0.72 0.75] | 1.01 s | 0.61 s |
+| 32 | sendmsg | 1.0 | 4.98 Gbps | 1.73 s | 0.39 s | 0.70 s [0.67 0.73] | 1.02 s | 0.57 s |
+| 32 | SEND_ZC + GSO | 14.9 | 5.24 Gbps | 1.64 s | 0.41 s | 0.26 s [0.24 0.29] | 1.02 s | 0.58 s |
+| 32 | sendmsg + GSO | 14.9 | 5.29 Gbps | 1.62 s | 0.45 s | 0.26 s [0.24 0.28] | 1.00 s | 0.57 s |
+
+Same run, for scale (the ACK threshold does not apply):
+
+| row | throughput | wall | send_user | send_sys | recv_user | recv_sys |
+|---|---|---|---|---|---|---|
+| embr TCP | 13.85 Gbps | 0.62 s | 0.00 s | 0.02 s | 0.39 s | 0.21 s |
+| nc | 31.24 Gbps | 0.28 s | 0.02 s | 0.16 s | 0.02 s | 0.22 s |
+
+### How to read this
+
+**GSO needs something to batch.** The sender has no pacer; it sends what each
+acknowledgement frees. At the default threshold an ACK arrives every 2 packets and
+frees 2, so a GSO batch is 2 packets, never the 16 the code allows. Even so, sender
+kernel time falls 22% with `SEND_ZC` (1.04 → 0.81 s) and 21% with `sendmsg`
+(0.95 → 0.75 s).
+
+**Fewer ACKs help with or without GSO.** At threshold 10 the receiver sends a fifth of
+the ACKs: its kernel time falls from 1.07 to 0.68 s, the sender's user time from 0.69
+to 0.38 s, and throughput rises from 3.33 to 4.46 Gbps before GSO does anything.
+
+**With real batches GSO halves the sender's kernel time.** At threshold 10 batches are
+9.7 packets and sender kernel time is 0.34 s against 0.76 s (`SEND_ZC`) and 0.33 s
+against 0.74 s (`sendmsg`); at threshold 32, 14.9 packets and 0.26 s against 0.74 s
+and 0.70 s. Throughput at threshold 32 with GSO is 5.2–5.3 Gbps against 3.3–3.5 Gbps
+at the default threshold. Sender user time rises by 0.06–0.10 s with GSO at
+thresholds 10 and 32; the cause was not investigated.
+
+**`SEND_ZC` against `sendmsg`.** Without GSO `SEND_ZC` costs 0.02–0.09 s more sender
+kernel time than `sendmsg`, as in §4: on loopback it pays the copy and the
+notification. With batches of 10 or more the two are level (0.34 / 0.33 s, 0.26 /
+0.26 s): one notification now covers a whole batch. Whether `SEND_ZC` then comes out
+ahead when the NIC really reads user pages is the question for the two-host run.
+
+**Limits.** Loopback only. Thresholds 10 and 32 were set with `EMBR_QUIC_ACK_THRESH`
+(`settings.ack_thresh`) on both ends, on a build that had the switch before the tree
+did; the tree has it now and the default stays 2. A high threshold delays ACKs
+whenever the congestion window is smaller than the threshold, so it is not a free
+default.
+
+### Under 10% loss
+
+Setup of §8: 20 MB transfers, 10% dropped each way, 8 at a time. Median seconds per
+transfer; every transfer in every cell completed and matched the source.
+
+| ACK threshold | SEND_ZC | sendmsg | SEND_ZC + GSO | sendmsg + GSO | transfers per cell |
+|---|---|---|---|---|---|
+| 2 (shipped) | 1.7 s | 1.8 s | 1.5 s | 1.6 s | 48 |
+| 10 | 2.6 s | 2.3 s | 2.7 s | 2.1 s | 24 |
+| 32 | 2.5 s | 2.4 s | 2.3 s | 2.3 s | 24 |
+
+GSO does not hurt under loss. A higher ACK threshold does: transfers take roughly
+30–80% longer. The likely cause, not traced, is that after a loss the window is smaller
+than the threshold, so the receiver waits out its ACK delay.
+
+When packets are lost the batches also meet mixed sizes (a 1194-byte packet followed by
+1200-byte ones, an ACK followed by data): 266 such cases in 48 transfers on an
+instrumented build, none in a loss-free 1 GiB transfer. The sanitizer build ran 32 of
+these lossy transfers with no report.
+
+### Packet size
+
+Every table above was measured with 1200-byte data packets: ngtcp2 starts there, and its
+default first path-MTU probe (1406 bytes) did not fit embr's 1350-byte buffer, so the size
+never rose. Since 2026-11-15 embr names the probe size: one 1350-byte probe after the
+handshake, 1350-byte packets once it is acknowledged, 1200 if it is lost.
+
+Same loopback setup, ACK threshold 2, n = 10, medians. The 1350 rows are this tree with the
+probe; its stats lines report 1343 bytes per datagram and 830,000 datagrams per GiB
+instead of 937,000 (−11%). `host_irq` is whole-machine irq + softirq time per transfer
+(§6), not recorded for the earlier rows.
+
+| packet size | sender egress | throughput | send_user | send_sys | recv_user | recv_sys | host_irq |
+|---|---|---|---|---|---|---|---|
+| 1200 | SEND_ZC | 3.33 Gbps | 0.69 s | 1.04 s | 1.09 s | 1.07 s | — |
+| 1200 | sendmsg | 3.41 Gbps | 0.70 s | 0.95 s | 1.02 s | 1.08 s | — |
+| 1200 | SEND_ZC + GSO | 3.40 Gbps | 0.67 s | 0.81 s | 1.01 s | 1.08 s | — |
+| 1200 | sendmsg + GSO | 3.45 Gbps | 0.68 s | 0.75 s | 1.02 s | 1.06 s | — |
+| 1350 | SEND_ZC | 3.67 Gbps | 0.61 s | 0.93 s | 1.01 s | 0.96 s | 1.17 s |
+| 1350 | sendmsg | 3.79 Gbps | 0.60 s | 0.87 s | 0.93 s | 0.96 s | 1.00 s |
+| 1350 | SEND_ZC + GSO | 3.80 Gbps | 0.58 s | 0.72 s | 0.92 s | 0.97 s | 0.99 s |
+| 1350 | sendmsg + GSO | 3.80 Gbps | 0.59 s | 0.67 s | 0.94 s | 0.95 s | 0.89 s |
+
+Throughput rises 10–12% and CPU falls on both ends. A run of the same code earlier the
+same day gave 7–9%, so read it as about 10%.
+
+**Narrow paths.** 1350 bytes of UDP payload need an IPv4 MTU of 1378. Raising the size
+alone broke narrower paths in testing: a GSO send failed with "Message too long", a
+non-GSO send was silently fragmented by the kernel, and a router's ICMP "fragmentation
+needed" surfaced as a fatal receive error. So the sockets set DF and never fragment
+(`IP_PMTUDISC_PROBE`), and a send or receive that reports `EMSGSIZE` counts as a lost
+packet. 64 MiB transfers in network namespaces, all four egress × GSO modes each, every
+file intact:
+
+| where the small MTU is | MTU at or above 1378 | MTU 1377, 1300, 1280 |
+|---|---|---|
+| the sender's own interface | 1350-byte packets | 1200-byte packets |
+| a router on the path that answers with ICMP | 1350-byte packets | 1200-byte packets |
+| a router on the path, ICMP blocked (MTU 1300 only) | not run | 1200-byte packets |
+
+**Limit.** A path whose MTU drops below 1378 after the packets have grown is not
+detected; ngtcp2 1.26 has no handling for it that we could find. Tested by lowering a
+router hop from 1500 to 1300 one second into a 1 GiB transfer: the pull stalled and failed
+at the 30 s idle timeout with 476 of 1024 chunks, and a second pull resumed from them and
+finished with 1200-byte packets.
+
+### Raw results
+
+ACK threshold 2:
+
+```
+# bench loopback Sun Nov 15 11:47:45 AM PST 2026
+# commit=3783d38-dirty build=/tmp/claude-1000/-home-benny-Code-embr/9f9b0fff-9827-476a-8878-ae1838deff48/scratchpad/build-126-Release cache=keep bytes=1073741824
+# rows: embrtcp embrquic embrquicsm embrquicgso embrquicsmgso nc
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+run2_embrtcp wall=0:00.62 sec=0.62 gbps=13.85 send_user=0.00s send_sys=0.02s recv_user=0.39s recv_sys=0.20s
+run2_embrquic wall=0:02.59 sec=2.59 gbps=3.32 send_user=0.70s send_sys=1.03s recv_user=1.11s recv_sys=1.04s
+run2_embrquicsm wall=0:02.50 sec=2.5 gbps=3.44 send_user=0.69s send_sys=0.92s recv_user=0.99s recv_sys=1.08s
+run2_embrquicgso wall=0:02.55 sec=2.55 gbps=3.37 send_user=0.67s send_sys=0.80s recv_user=1.01s recv_sys=1.10s
+run2_embrquicsmgso wall=0:02.51 sec=2.51 gbps=3.42 send_user=0.67s send_sys=0.76s recv_user=1.04s recv_sys=1.04s
+run2_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.02s send_sys=0.17s recv_user=0.02s recv_sys=0.22s
+run3_embrtcp wall=0:00.61 sec=0.61 gbps=14.08 send_user=0.00s send_sys=0.02s recv_user=0.39s recv_sys=0.20s
+run3_embrquic wall=0:02.64 sec=2.64 gbps=3.25 send_user=0.72s send_sys=1.04s recv_user=1.09s recv_sys=1.10s
+run3_embrquicsm wall=0:02.54 sec=2.54 gbps=3.38 send_user=0.72s send_sys=0.98s recv_user=0.97s recv_sys=1.13s
+run3_embrquicgso wall=0:02.52 sec=2.52 gbps=3.41 send_user=0.65s send_sys=0.82s recv_user=1.01s recv_sys=1.09s
+run3_embrquicsmgso wall=0:02.49 sec=2.49 gbps=3.45 send_user=0.65s send_sys=0.75s recv_user=0.99s recv_sys=1.08s
+run3_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.02s send_sys=0.16s recv_user=0.02s recv_sys=0.22s
+run4_embrtcp wall=0:00.62 sec=0.62 gbps=13.85 send_user=0.00s send_sys=0.02s recv_user=0.38s recv_sys=0.21s
+run4_embrquic wall=0:02.57 sec=2.57 gbps=3.34 send_user=0.68s send_sys=1.04s recv_user=1.05s recv_sys=1.09s
+run4_embrquicsm wall=0:02.57 sec=2.57 gbps=3.34 send_user=0.74s send_sys=0.94s recv_user=1.09s recv_sys=1.05s
+run4_embrquicgso wall=0:02.55 sec=2.55 gbps=3.37 send_user=0.68s send_sys=0.81s recv_user=1.03s recv_sys=1.09s
+run4_embrquicsmgso wall=0:02.77 sec=2.77 gbps=3.10 send_user=0.83s send_sys=0.87s recv_user=1.04s recv_sys=1.27s
+run4_nc wall=0:00.29 sec=0.29 gbps=29.62 send_user=0.01s send_sys=0.16s recv_user=0.02s recv_sys=0.22s
+run5_embrtcp wall=0:00.62 sec=0.62 gbps=13.85 send_user=0.00s send_sys=0.03s recv_user=0.39s recv_sys=0.21s
+run5_embrquic wall=0:02.58 sec=2.58 gbps=3.33 send_user=0.71s send_sys=1.05s recv_user=1.10s recv_sys=1.04s
+run5_embrquicsm wall=0:02.48 sec=2.48 gbps=3.46 send_user=0.68s send_sys=0.95s recv_user=1.03s recv_sys=1.03s
+run5_embrquicgso wall=0:02.54 sec=2.54 gbps=3.38 send_user=0.70s send_sys=0.79s recv_user=1.05s recv_sys=1.06s
+run5_embrquicsmgso wall=0:02.46 sec=2.46 gbps=3.49 send_user=0.67s send_sys=0.72s recv_user=0.98s recv_sys=1.05s
+run5_nc wall=0:00.28 sec=0.28 gbps=30.68 send_user=0.01s send_sys=0.15s recv_user=0.02s recv_sys=0.21s
+run6_embrtcp wall=0:00.61 sec=0.61 gbps=14.08 send_user=0.00s send_sys=0.02s recv_user=0.39s recv_sys=0.19s
+run6_embrquic wall=0:02.61 sec=2.61 gbps=3.29 send_user=0.68s send_sys=1.09s recv_user=1.09s recv_sys=1.08s
+run6_embrquicsm wall=0:02.48 sec=2.48 gbps=3.46 send_user=0.70s send_sys=0.92s recv_user=1.00s recv_sys=1.05s
+run6_embrquicgso wall=0:02.51 sec=2.51 gbps=3.42 send_user=0.66s send_sys=0.82s recv_user=1.01s recv_sys=1.07s
+run6_embrquicsmgso wall=0:02.47 sec=2.47 gbps=3.48 send_user=0.69s send_sys=0.72s recv_user=0.97s recv_sys=1.08s
+run6_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.02s send_sys=0.16s recv_user=0.03s recv_sys=0.21s
+run7_embrtcp wall=0:00.62 sec=0.62 gbps=13.85 send_user=0.00s send_sys=0.02s recv_user=0.39s recv_sys=0.20s
+run7_embrquic wall=0:02.55 sec=2.55 gbps=3.37 send_user=0.69s send_sys=1.02s recv_user=1.09s recv_sys=1.03s
+run7_embrquicsm wall=0:02.47 sec=2.47 gbps=3.48 send_user=0.66s send_sys=0.95s recv_user=0.99s recv_sys=1.04s
+run7_embrquicgso wall=0:02.55 sec=2.55 gbps=3.37 send_user=0.68s send_sys=0.82s recv_user=1.00s recv_sys=1.11s
+run7_embrquicsmgso wall=0:02.52 sec=2.52 gbps=3.41 send_user=0.66s send_sys=0.77s recv_user=1.04s recv_sys=1.04s
+run7_nc wall=0:00.28 sec=0.28 gbps=30.68 send_user=0.02s send_sys=0.15s recv_user=0.02s recv_sys=0.21s
+run8_embrtcp wall=0:00.61 sec=0.61 gbps=14.08 send_user=0.00s send_sys=0.02s recv_user=0.38s recv_sys=0.20s
+run8_embrquic wall=0:02.62 sec=2.62 gbps=3.28 send_user=0.71s send_sys=1.05s recv_user=1.11s recv_sys=1.07s
+run8_embrquicsm wall=0:02.48 sec=2.48 gbps=3.46 send_user=0.70s send_sys=0.92s recv_user=0.97s recv_sys=1.08s
+run8_embrquicgso wall=0:02.52 sec=2.52 gbps=3.41 send_user=0.65s send_sys=0.80s recv_user=1.05s recv_sys=1.05s
+run8_embrquicsmgso wall=0:02.49 sec=2.49 gbps=3.45 send_user=0.70s send_sys=0.72s recv_user=1.04s recv_sys=1.02s
+run8_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.01s send_sys=0.17s recv_user=0.02s recv_sys=0.22s
+run9_embrtcp wall=0:00.63 sec=0.63 gbps=13.63 send_user=0.00s send_sys=0.02s recv_user=0.39s recv_sys=0.21s
+run9_embrquic wall=0:02.55 sec=2.55 gbps=3.37 send_user=0.68s send_sys=1.02s recv_user=1.05s recv_sys=1.07s
+run9_embrquicsm wall=0:02.59 sec=2.59 gbps=3.32 send_user=0.74s send_sys=0.96s recv_user=1.05s recv_sys=1.10s
+run9_embrquicgso wall=0:02.51 sec=2.51 gbps=3.42 send_user=0.67s send_sys=0.79s recv_user=1.01s recv_sys=1.07s
+run9_embrquicsmgso wall=0:02.50 sec=2.5 gbps=3.44 send_user=0.71s send_sys=0.73s recv_user=1.01s recv_sys=1.07s
+run9_nc wall=0:00.28 sec=0.28 gbps=30.68 send_user=0.02s send_sys=0.17s recv_user=0.02s recv_sys=0.23s
+run10_embrtcp wall=0:00.62 sec=0.62 gbps=13.85 send_user=0.00s send_sys=0.02s recv_user=0.38s recv_sys=0.21s
+run10_embrquic wall=0:02.58 sec=2.58 gbps=3.33 send_user=0.71s send_sys=1.02s recv_user=1.11s recv_sys=1.04s
+run10_embrquicsm wall=0:02.55 sec=2.55 gbps=3.37 send_user=0.70s send_sys=0.97s recv_user=1.06s recv_sys=1.07s
+run10_embrquicgso wall=0:02.70 sec=2.7 gbps=3.18 send_user=0.78s send_sys=0.87s recv_user=1.05s recv_sys=1.19s
+run10_embrquicsmgso wall=0:02.49 sec=2.49 gbps=3.45 send_user=0.67s send_sys=0.75s recv_user=1.01s recv_sys=1.05s
+run10_nc wall=0:00.28 sec=0.28 gbps=30.68 send_user=0.02s send_sys=0.14s recv_user=0.03s recv_sys=0.20s
+run11_embrtcp wall=0:00.62 sec=0.62 gbps=13.85 send_user=0.00s send_sys=0.02s recv_user=0.38s recv_sys=0.21s
+run11_embrquic wall=0:02.59 sec=2.59 gbps=3.32 send_user=0.69s send_sys=1.05s recv_user=1.07s recv_sys=1.09s
+run11_embrquicsm wall=0:02.93 sec=2.93 gbps=2.93 send_user=0.79s send_sys=1.19s recv_user=1.13s recv_sys=1.28s
+run11_embrquicgso wall=0:02.51 sec=2.51 gbps=3.42 send_user=0.67s send_sys=0.81s recv_user=1.01s recv_sys=1.07s
+run11_embrquicsmgso wall=0:02.95 sec=2.95 gbps=2.91 send_user=0.91s send_sys=0.96s recv_user=1.12s recv_sys=1.34s
+run11_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.02s send_sys=0.15s recv_user=0.02s recv_sys=0.22s
+
+embrquic egress over 11 connections: datagrams=10311443 sends=10311443 notifs=10311443 copied=10311443 fallback=0 errors=0 (1.0 datagrams per send, copied 100.0%)
+embrquicsm egress over 11 connections: datagrams=10297835 sends=10297835 (1.0 datagrams per send)
+embrquicgso egress over 11 connections: datagrams=10301836 sends=5085606 notifs=5085606 copied=5085606 fallback=0 errors=0 (2.0 datagrams per send, copied 100.0%)
+embrquicsmgso egress over 11 connections: datagrams=10300382 sends=5065807 (2.0 datagrams per send)
+```
+
+ACK threshold 10:
+
+```
+# bench loopback Sun Nov 15 11:54:16 AM PST 2026
+# commit=3783d38-dirty build=/tmp/claude-1000/-home-benny-Code-embr/9f9b0fff-9827-476a-8878-ae1838deff48/scratchpad/gso-tree/build-Release cache=keep bytes=1073741824
+# rows: embrquic embrquicsm embrquicgso embrquicsmgso   ack_thresh=10
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+run2_embrquic wall=0:01.94 sec=1.94 gbps=4.43 send_user=0.39s send_sys=0.76s recv_user=0.98s recv_sys=0.68s
+run2_embrquicsm wall=0:01.81 sec=1.81 gbps=4.75 send_user=0.43s send_sys=0.73s recv_user=1.01s recv_sys=0.68s
+run2_embrquicgso wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.51s send_sys=0.32s recv_user=1.01s recv_sys=0.66s
+run2_embrquicsmgso wall=0:01.77 sec=1.77 gbps=4.85 send_user=0.51s send_sys=0.33s recv_user=0.96s recv_sys=0.69s
+run3_embrquic wall=0:01.91 sec=1.91 gbps=4.50 send_user=0.37s send_sys=0.75s recv_user=1.00s recv_sys=0.65s
+run3_embrquicsm wall=0:01.84 sec=1.84 gbps=4.67 send_user=0.46s send_sys=0.73s recv_user=1.00s recv_sys=0.70s
+run3_embrquicgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.48s send_sys=0.34s recv_user=1.03s recv_sys=0.64s
+run3_embrquicsmgso wall=0:01.77 sec=1.77 gbps=4.85 send_user=0.51s send_sys=0.33s recv_user=1.04s recv_sys=0.62s
+run4_embrquic wall=0:01.93 sec=1.93 gbps=4.45 send_user=0.38s send_sys=0.76s recv_user=0.98s recv_sys=0.70s
+run4_embrquicsm wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.41s send_sys=0.75s recv_user=0.97s recv_sys=0.69s
+run4_embrquicgso wall=0:01.80 sec=1.8 gbps=4.77 send_user=0.50s send_sys=0.34s recv_user=1.01s recv_sys=0.67s
+run4_embrquicsmgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.51s send_sys=0.33s recv_user=1.00s recv_sys=0.66s
+run5_embrquic wall=0:01.95 sec=1.95 gbps=4.41 send_user=0.38s send_sys=0.77s recv_user=0.99s recv_sys=0.70s
+run5_embrquicsm wall=0:01.84 sec=1.84 gbps=4.67 send_user=0.45s send_sys=0.74s recv_user=1.06s recv_sys=0.65s
+run5_embrquicgso wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.48s send_sys=0.34s recv_user=0.97s recv_sys=0.70s
+run5_embrquicsmgso wall=0:01.81 sec=1.81 gbps=4.75 send_user=0.52s send_sys=0.37s recv_user=1.03s recv_sys=0.66s
+run6_embrquic wall=0:01.95 sec=1.95 gbps=4.41 send_user=0.39s send_sys=0.77s recv_user=1.02s recv_sys=0.68s
+run6_embrquicsm wall=0:01.85 sec=1.85 gbps=4.64 send_user=0.44s send_sys=0.77s recv_user=1.00s recv_sys=0.71s
+run6_embrquicgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.49s send_sys=0.34s recv_user=0.95s recv_sys=0.71s
+run6_embrquicsmgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.51s send_sys=0.34s recv_user=1.01s recv_sys=0.66s
+run7_embrquic wall=0:01.92 sec=1.92 gbps=4.47 send_user=0.38s send_sys=0.76s recv_user=1.00s recv_sys=0.68s
+run7_embrquicsm wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.42s send_sys=0.73s recv_user=0.98s recv_sys=0.68s
+run7_embrquicgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.48s send_sys=0.34s recv_user=1.01s recv_sys=0.66s
+run7_embrquicsmgso wall=0:01.77 sec=1.77 gbps=4.85 send_user=0.54s send_sys=0.31s recv_user=0.99s recv_sys=0.66s
+run8_embrquic wall=0:01.93 sec=1.93 gbps=4.45 send_user=0.37s send_sys=0.77s recv_user=1.02s recv_sys=0.65s
+run8_embrquicsm wall=0:01.85 sec=1.85 gbps=4.64 send_user=0.46s send_sys=0.74s recv_user=0.97s recv_sys=0.73s
+run8_embrquicgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.49s send_sys=0.35s recv_user=1.07s recv_sys=0.61s
+run8_embrquicsmgso wall=0:01.77 sec=1.77 gbps=4.85 send_user=0.53s send_sys=0.32s recv_user=1.02s recv_sys=0.64s
+run9_embrquic wall=0:01.92 sec=1.92 gbps=4.47 send_user=0.38s send_sys=0.76s recv_user=0.99s recv_sys=0.67s
+run9_embrquicsm wall=0:01.82 sec=1.82 gbps=4.72 send_user=0.42s send_sys=0.74s recv_user=1.04s recv_sys=0.64s
+run9_embrquicgso wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.47s send_sys=0.36s recv_user=1.02s recv_sys=0.66s
+run9_embrquicsmgso wall=0:01.76 sec=1.76 gbps=4.88 send_user=0.52s send_sys=0.32s recv_user=0.96s recv_sys=0.69s
+run10_embrquic wall=0:01.92 sec=1.92 gbps=4.47 send_user=0.37s send_sys=0.77s recv_user=1.01s recv_sys=0.66s
+run10_embrquicsm wall=0:01.81 sec=1.81 gbps=4.75 send_user=0.41s send_sys=0.75s recv_user=1.01s recv_sys=0.66s
+run10_embrquicgso wall=0:01.78 sec=1.78 gbps=4.83 send_user=0.49s send_sys=0.34s recv_user=1.01s recv_sys=0.66s
+run10_embrquicsmgso wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.54s send_sys=0.30s recv_user=1.02s recv_sys=0.65s
+run11_embrquic wall=0:01.91 sec=1.91 gbps=4.50 send_user=0.39s send_sys=0.75s recv_user=1.01s recv_sys=0.67s
+run11_embrquicsm wall=0:01.84 sec=1.84 gbps=4.67 send_user=0.44s send_sys=0.75s recv_user=1.04s recv_sys=0.66s
+run11_embrquicgso wall=0:01.80 sec=1.8 gbps=4.77 send_user=0.48s send_sys=0.35s recv_user=1.03s recv_sys=0.66s
+run11_embrquicsmgso wall=0:01.80 sec=1.8 gbps=4.77 send_user=0.51s send_sys=0.35s recv_user=0.99s recv_sys=0.69s
+
+embrquic egress over 11 connections: datagrams=10286117 sends=10286117 notifs=10286117 copied=10286117 fallback=0 errors=0 (1.0 datagrams per send, copied 100.0%)
+embrquicsm egress over 11 connections: datagrams=10284357 sends=10284357 (1.0 datagrams per send)
+embrquicgso egress over 11 connections: datagrams=10294304 sends=1060232 notifs=1060232 copied=1060232 fallback=0 errors=0 (9.7 datagrams per send, copied 100.0%)
+embrquicsmgso egress over 11 connections: datagrams=10292903 sends=1055203 (9.8 datagrams per send)
+```
+
+ACK threshold 32:
+
+```
+# bench loopback Sun Nov 15 11:56:21 AM PST 2026
+# commit=3783d38-dirty build=/tmp/claude-1000/-home-benny-Code-embr/9f9b0fff-9827-476a-8878-ae1838deff48/scratchpad/gso-tree/build-Release cache=keep bytes=1073741824
+# rows: embrquic embrquicsm embrquicgso embrquicsmgso   ack_thresh=32
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+run2_embrquic wall=0:01.89 sec=1.89 gbps=4.54 send_user=0.35s send_sys=0.74s recv_user=1.05s recv_sys=0.59s
+run2_embrquicsm wall=0:01.73 sec=1.73 gbps=4.97 send_user=0.37s send_sys=0.72s recv_user=0.98s recv_sys=0.62s
+run2_embrquicgso wall=0:01.66 sec=1.66 gbps=5.17 send_user=0.40s send_sys=0.29s recv_user=1.02s recv_sys=0.58s
+run2_embrquicsmgso wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.45s send_sys=0.27s recv_user=0.98s recv_sys=0.60s
+run3_embrquic wall=0:01.84 sec=1.84 gbps=4.67 send_user=0.32s send_sys=0.74s recv_user=0.98s recv_sys=0.62s
+run3_embrquicsm wall=0:01.73 sec=1.73 gbps=4.97 send_user=0.39s send_sys=0.69s recv_user=1.05s recv_sys=0.56s
+run3_embrquicgso wall=0:01.66 sec=1.66 gbps=5.17 send_user=0.42s send_sys=0.26s recv_user=1.04s recv_sys=0.58s
+run3_embrquicsmgso wall=0:01.66 sec=1.66 gbps=5.17 send_user=0.47s send_sys=0.25s recv_user=1.02s recv_sys=0.59s
+run4_embrquic wall=0:01.93 sec=1.93 gbps=4.45 send_user=0.37s send_sys=0.75s recv_user=1.03s recv_sys=0.65s
+run4_embrquicsm wall=0:01.72 sec=1.72 gbps=4.99 send_user=0.41s send_sys=0.68s recv_user=1.03s recv_sys=0.57s
+run4_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.41s send_sys=0.29s recv_user=1.02s recv_sys=0.57s
+run4_embrquicsmgso wall=0:01.65 sec=1.65 gbps=5.21 send_user=0.44s send_sys=0.27s recv_user=1.05s recv_sys=0.55s
+run5_embrquic wall=0:01.87 sec=1.87 gbps=4.59 send_user=0.36s send_sys=0.72s recv_user=1.01s recv_sys=0.61s
+run5_embrquicsm wall=0:01.71 sec=1.71 gbps=5.02 send_user=0.39s send_sys=0.68s recv_user=1.01s recv_sys=0.57s
+run5_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.41s send_sys=0.26s recv_user=1.04s recv_sys=0.55s
+run5_embrquicsmgso wall=0:01.61 sec=1.61 gbps=5.34 send_user=0.44s send_sys=0.27s recv_user=0.99s recv_sys=0.57s
+run6_embrquic wall=0:01.85 sec=1.85 gbps=4.64 send_user=0.33s send_sys=0.73s recv_user=1.00s recv_sys=0.61s
+run6_embrquicsm wall=0:01.73 sec=1.73 gbps=4.97 send_user=0.35s send_sys=0.73s recv_user=1.01s recv_sys=0.58s
+run6_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.41s send_sys=0.27s recv_user=1.00s recv_sys=0.59s
+run6_embrquicsmgso wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.43s send_sys=0.27s recv_user=1.03s recv_sys=0.54s
+run7_embrquic wall=0:01.92 sec=1.92 gbps=4.47 send_user=0.36s send_sys=0.74s recv_user=1.00s recv_sys=0.66s
+run7_embrquicsm wall=0:01.73 sec=1.73 gbps=4.97 send_user=0.40s send_sys=0.68s recv_user=1.04s recv_sys=0.55s
+run7_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.44s send_sys=0.24s recv_user=1.00s recv_sys=0.59s
+run7_embrquicsmgso wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.46s send_sys=0.24s recv_user=1.00s recv_sys=0.57s
+run8_embrquic wall=0:01.86 sec=1.86 gbps=4.62 send_user=0.33s send_sys=0.74s recv_user=1.02s recv_sys=0.59s
+run8_embrquicsm wall=0:01.70 sec=1.7 gbps=5.05 send_user=0.40s send_sys=0.67s recv_user=1.03s recv_sys=0.56s
+run8_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.41s send_sys=0.26s recv_user=1.01s recv_sys=0.57s
+run8_embrquicsmgso wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.44s send_sys=0.24s recv_user=1.00s recv_sys=0.56s
+run9_embrquic wall=0:01.88 sec=1.88 gbps=4.57 send_user=0.34s send_sys=0.74s recv_user=1.01s recv_sys=0.62s
+run9_embrquicsm wall=0:01.72 sec=1.72 gbps=4.99 send_user=0.38s send_sys=0.71s recv_user=0.97s recv_sys=0.62s
+run9_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.41s send_sys=0.26s recv_user=1.03s recv_sys=0.56s
+run9_embrquicsmgso wall=0:01.61 sec=1.61 gbps=5.34 send_user=0.45s send_sys=0.25s recv_user=1.01s recv_sys=0.55s
+run10_embrquic wall=0:01.86 sec=1.86 gbps=4.62 send_user=0.32s send_sys=0.75s recv_user=0.98s recv_sys=0.63s
+run10_embrquicsm wall=0:01.74 sec=1.74 gbps=4.94 send_user=0.37s send_sys=0.72s recv_user=1.01s recv_sys=0.60s
+run10_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.40s send_sys=0.27s recv_user=1.01s recv_sys=0.58s
+run10_embrquicsmgso wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.45s send_sys=0.25s recv_user=1.00s recv_sys=0.58s
+run11_embrquic wall=0:01.85 sec=1.85 gbps=4.64 send_user=0.31s send_sys=0.75s recv_user=1.01s recv_sys=0.60s
+run11_embrquicsm wall=0:01.71 sec=1.71 gbps=5.02 send_user=0.35s send_sys=0.72s recv_user=1.03s recv_sys=0.56s
+run11_embrquicgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.42s send_sys=0.26s recv_user=0.99s recv_sys=0.60s
+run11_embrquicsmgso wall=0:01.64 sec=1.64 gbps=5.24 send_user=0.42s send_sys=0.28s recv_user=1.01s recv_sys=0.58s
+
+embrquic egress over 11 connections: datagrams=10286635 sends=10286635 notifs=10286635 copied=10286635 fallback=0 errors=0 (1.0 datagrams per send, copied 100.0%)
+embrquicsm egress over 11 connections: datagrams=10285031 sends=10285031 (1.0 datagrams per send)
+embrquicgso egress over 11 connections: datagrams=10292375 sends=690561 notifs=690561 copied=690561 fallback=0 errors=0 (14.9 datagrams per send, copied 100.0%)
+embrquicsmgso egress over 11 connections: datagrams=10292362 sends=690055 (14.9 datagrams per send)
+```
+
+1350-byte packets, ACK threshold 2 (the tree with the path-MTU probe):
+
+```
+# bench loopback Sun Nov 15 07:56:32 PM PST 2026
+# commit=3783d38-dirty build=/tmp/claude-1000/-home-benny-Code-embr/9f9b0fff-9827-476a-8878-ae1838deff48/scratchpad/build-126-Release cache=keep bytes=1073741824
+# rows: embrtcp embrquic embrquicsm embrquicgso embrquicsmgso nc   ack_thresh=2
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.03s recv_user=0.39s recv_sys=0.25s host_cpu=1.10s host_irq=0.07s
+warmup1_embrquic wall=0:02.40 sec=2.4 gbps=3.58 send_user=0.64s send_sys=0.96s recv_user=1.06s recv_sys=0.93s host_cpu=6.91s host_irq=1.28s
+warmup1_embrquicsm wall=0:02.28 sec=2.28 gbps=3.77 send_user=0.63s send_sys=0.87s recv_user=0.91s recv_sys=0.99s host_cpu=6.14s host_irq=1.07s
+warmup1_embrquicgso wall=0:02.28 sec=2.28 gbps=3.77 send_user=0.59s send_sys=0.74s recv_user=0.92s recv_sys=0.98s host_cpu=5.46s host_irq=1.05s
+warmup1_embrquicsmgso wall=0:02.23 sec=2.23 gbps=3.85 send_user=0.58s send_sys=0.68s recv_user=0.90s recv_sys=0.95s host_cpu=4.61s host_irq=0.92s
+warmup1_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.02s send_sys=0.18s recv_user=0.02s recv_sys=0.21s host_cpu=0.65s host_irq=0.06s
+
+run2_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.03s recv_user=0.39s recv_sys=0.25s host_cpu=0.97s host_irq=0.05s
+run2_embrquic wall=0:02.35 sec=2.35 gbps=3.66 send_user=0.63s send_sys=0.92s recv_user=1.01s recv_sys=0.95s host_cpu=5.13s host_irq=1.21s
+run2_embrquicsm wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.64s send_sys=0.84s recv_user=0.89s recv_sys=0.99s host_cpu=5.02s host_irq=1.02s
+run2_embrquicgso wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.58s send_sys=0.73s recv_user=0.92s recv_sys=0.97s host_cpu=4.66s host_irq=1.02s
+run2_embrquicsmgso wall=0:02.24 sec=2.24 gbps=3.83 send_user=0.61s send_sys=0.66s recv_user=0.94s recv_sys=0.92s host_cpu=4.62s host_irq=0.90s
+run2_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.02s send_sys=0.18s recv_user=0.01s recv_sys=0.23s host_cpu=0.62s host_irq=0.05s
+
+run3_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.04s recv_user=0.39s recv_sys=0.25s host_cpu=0.95s host_irq=0.06s
+run3_embrquic wall=0:02.34 sec=2.34 gbps=3.67 send_user=0.62s send_sys=0.93s recv_user=1.01s recv_sys=0.95s host_cpu=5.05s host_irq=1.18s
+run3_embrquicsm wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.60s send_sys=0.86s recv_user=0.93s recv_sys=0.96s host_cpu=4.87s host_irq=1.01s
+run3_embrquicgso wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.55s send_sys=0.76s recv_user=0.94s recv_sys=0.95s host_cpu=4.69s host_irq=1.01s
+run3_embrquicsmgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.61s send_sys=0.66s recv_user=0.91s recv_sys=0.97s host_cpu=4.59s host_irq=0.91s
+run3_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.02s send_sys=0.18s recv_user=0.03s recv_sys=0.21s host_cpu=0.65s host_irq=0.05s
+
+run4_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.04s recv_user=0.39s recv_sys=0.24s host_cpu=1.09s host_irq=0.06s
+run4_embrquic wall=0:02.32 sec=2.32 gbps=3.70 send_user=0.63s send_sys=0.92s recv_user=0.94s recv_sys=1.00s host_cpu=4.99s host_irq=1.18s
+run4_embrquicsm wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.56s send_sys=0.89s recv_user=0.89s recv_sys=0.99s host_cpu=4.64s host_irq=0.98s
+run4_embrquicgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.58s send_sys=0.72s recv_user=0.93s recv_sys=0.95s host_cpu=4.59s host_irq=0.99s
+run4_embrquicsmgso wall=0:02.25 sec=2.25 gbps=3.82 send_user=0.58s send_sys=0.67s recv_user=0.91s recv_sys=0.97s host_cpu=4.40s host_irq=0.89s
+run4_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.02s send_sys=0.17s recv_user=0.01s recv_sys=0.22s host_cpu=0.56s host_irq=0.04s
+
+run5_embrtcp wall=0:00.64 sec=0.64 gbps=13.42 send_user=0.00s send_sys=0.03s recv_user=0.38s recv_sys=0.24s host_cpu=1.26s host_irq=0.05s
+run5_embrquic wall=0:02.31 sec=2.31 gbps=3.72 send_user=0.60s send_sys=0.92s recv_user=0.95s recv_sys=0.99s host_cpu=4.89s host_irq=1.17s
+run5_embrquicsm wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.63s send_sys=0.87s recv_user=0.92s recv_sys=0.96s host_cpu=5.19s host_irq=1.01s
+run5_embrquicgso wall=0:02.30 sec=2.3 gbps=3.73 send_user=0.62s send_sys=0.69s recv_user=0.95s recv_sys=0.98s host_cpu=4.62s host_irq=0.94s
+run5_embrquicsmgso wall=0:02.24 sec=2.24 gbps=3.83 send_user=0.59s send_sys=0.66s recv_user=0.95s recv_sys=0.91s host_cpu=4.78s host_irq=0.90s
+run5_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.01s send_sys=0.18s recv_user=0.02s recv_sys=0.22s host_cpu=0.56s host_irq=0.04s
+
+run6_embrtcp wall=0:00.65 sec=0.65 gbps=13.22 send_user=0.00s send_sys=0.03s recv_user=0.37s recv_sys=0.25s host_cpu=1.14s host_irq=0.05s
+run6_embrquic wall=0:02.39 sec=2.39 gbps=3.59 send_user=0.61s send_sys=0.96s recv_user=1.03s recv_sys=0.98s host_cpu=5.04s host_irq=1.18s
+run6_embrquicsm wall=0:02.24 sec=2.24 gbps=3.83 send_user=0.58s send_sys=0.87s recv_user=0.93s recv_sys=0.93s host_cpu=4.61s host_irq=0.98s
+run6_embrquicgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.58s send_sys=0.71s recv_user=0.90s recv_sys=0.99s host_cpu=4.43s host_irq=0.98s
+run6_embrquicsmgso wall=0:02.25 sec=2.25 gbps=3.82 send_user=0.59s send_sys=0.67s recv_user=0.94s recv_sys=0.94s host_cpu=4.24s host_irq=0.87s
+run6_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.01s send_sys=0.18s recv_user=0.02s recv_sys=0.22s host_cpu=0.57s host_irq=0.04s
+
+run7_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.04s recv_user=0.38s recv_sys=0.26s host_cpu=0.86s host_irq=0.05s
+run7_embrquic wall=0:02.33 sec=2.33 gbps=3.69 send_user=0.63s send_sys=0.91s recv_user=0.97s recv_sys=0.98s host_cpu=4.85s host_irq=1.15s
+run7_embrquicsm wall=0:02.24 sec=2.24 gbps=3.83 send_user=0.62s send_sys=0.86s recv_user=0.90s recv_sys=0.96s host_cpu=4.60s host_irq=1.00s
+run7_embrquicgso wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.57s send_sys=0.72s recv_user=0.95s recv_sys=0.95s host_cpu=4.48s host_irq=0.96s
+run7_embrquicsmgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.59s send_sys=0.67s recv_user=0.95s recv_sys=0.94s host_cpu=4.31s host_irq=0.88s
+run7_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.01s send_sys=0.18s recv_user=0.01s recv_sys=0.23s host_cpu=0.62s host_irq=0.04s
+
+run8_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.04s recv_user=0.39s recv_sys=0.24s host_cpu=0.89s host_irq=0.04s
+run8_embrquic wall=0:02.35 sec=2.35 gbps=3.66 send_user=0.61s send_sys=0.95s recv_user=0.98s recv_sys=0.99s host_cpu=5.03s host_irq=1.16s
+run8_embrquicsm wall=0:02.25 sec=2.25 gbps=3.82 send_user=0.63s send_sys=0.84s recv_user=0.93s recv_sys=0.94s host_cpu=4.57s host_irq=0.99s
+run8_embrquicgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.58s send_sys=0.72s recv_user=0.92s recv_sys=0.97s host_cpu=4.52s host_irq=0.99s
+run8_embrquicsmgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.58s send_sys=0.67s recv_user=0.93s recv_sys=0.95s host_cpu=4.37s host_irq=0.89s
+run8_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.01s send_sys=0.18s recv_user=0.01s recv_sys=0.22s host_cpu=0.55s host_irq=0.04s
+
+run9_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.04s recv_user=0.40s recv_sys=0.24s host_cpu=0.81s host_irq=0.04s
+run9_embrquic wall=0:02.38 sec=2.38 gbps=3.61 send_user=0.60s send_sys=0.98s recv_user=1.05s recv_sys=0.94s host_cpu=5.55s host_irq=1.18s
+run9_embrquicsm wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.60s send_sys=0.88s recv_user=0.95s recv_sys=0.93s host_cpu=4.81s host_irq=1.01s
+run9_embrquicgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.60s send_sys=0.70s recv_user=0.90s recv_sys=0.98s host_cpu=4.53s host_irq=1.00s
+run9_embrquicsmgso wall=0:02.30 sec=2.3 gbps=3.73 send_user=0.63s send_sys=0.65s recv_user=0.96s recv_sys=0.95s host_cpu=4.43s host_irq=0.88s
+run9_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.02s send_sys=0.16s recv_user=0.02s recv_sys=0.21s host_cpu=0.57s host_irq=0.05s
+
+run10_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.04s recv_user=0.40s recv_sys=0.24s host_cpu=0.85s host_irq=0.04s
+run10_embrquic wall=0:02.34 sec=2.34 gbps=3.67 send_user=0.60s send_sys=0.93s recv_user=1.03s recv_sys=0.93s host_cpu=4.95s host_irq=1.17s
+run10_embrquicsm wall=0:02.30 sec=2.3 gbps=3.73 send_user=0.59s send_sys=0.91s recv_user=0.94s recv_sys=0.97s host_cpu=5.06s host_irq=1.01s
+run10_embrquicgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.62s send_sys=0.68s recv_user=0.91s recv_sys=0.97s host_cpu=4.70s host_irq=0.99s
+run10_embrquicsmgso wall=0:02.28 sec=2.28 gbps=3.77 send_user=0.59s send_sys=0.68s recv_user=0.92s recv_sys=0.98s host_cpu=4.52s host_irq=0.89s
+run10_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.02s send_sys=0.17s recv_user=0.02s recv_sys=0.22s host_cpu=0.57s host_irq=0.04s
+
+run11_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.04s recv_user=0.40s recv_sys=0.24s host_cpu=1.03s host_irq=0.05s
+run11_embrquic wall=0:02.36 sec=2.36 gbps=3.64 send_user=0.60s send_sys=0.96s recv_user=1.02s recv_sys=0.95s host_cpu=5.04s host_irq=1.17s
+run11_embrquicsm wall=0:02.27 sec=2.27 gbps=3.78 send_user=0.60s send_sys=0.88s recv_user=0.94s recv_sys=0.96s host_cpu=4.80s host_irq=1.00s
+run11_embrquicgso wall=0:02.25 sec=2.25 gbps=3.82 send_user=0.55s send_sys=0.74s recv_user=0.89s recv_sys=0.99s host_cpu=4.61s host_irq=0.96s
+run11_embrquicsmgso wall=0:02.26 sec=2.26 gbps=3.80 send_user=0.60s send_sys=0.66s recv_user=0.91s recv_sys=0.98s host_cpu=4.46s host_irq=0.87s
+run11_nc wall=0:00.26 sec=0.26 gbps=33.04 send_user=0.01s send_sys=0.16s recv_user=0.02s recv_sys=0.21s host_cpu=0.64s host_irq=0.05s
+
+embrquic egress over 11 connections: datagrams=9128728 sends=9128728 bytes=12260855792 notifs=9128728 copied=9128728 fallback=0 errors=0 (1.0 datagrams per send, copied 100.0%, 1343 bytes per datagram)
+embrquicsm egress over 11 connections: datagrams=9115651 sends=9115651 bytes=12240901658 (1.0 datagrams per send, 1343 bytes per datagram)
+embrquicgso egress over 11 connections: datagrams=9119259 sends=4334547 bytes=12247375815 notifs=4334547 copied=4334547 fallback=0 errors=0 (2.1 datagrams per send, copied 100.0%, 1343 bytes per datagram)
+embrquicsmgso egress over 11 connections: datagrams=9116173 sends=4342407 bytes=12242710809 (2.1 datagrams per send, 1343 bytes per datagram)
+```
+
+---
+
 <a id="raw-data-archive"></a>
-## §8 — Consolidated WAN source files
+## §10 — Consolidated WAN source files
 
 The following six files were copied byte-for-byte from bench/results/ before
 their originals were removed. Original names and hashes are retained for recovery.

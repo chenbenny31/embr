@@ -27,6 +27,7 @@ The TCP file-transfer path uses kernel I/O mechanisms. QUIC retains heap message
 - Chunks are `mmap`'d and retained for acknowledgement and retransmission; QUIC assembles and encrypts separate outgoing packets
 - Datagrams leave through an io_uring `SEND_ZC` egress: a registered per-connection slab, each packet slot retained until the kernel permits its memory to be reused
 - Falls back to `sendmsg` when the slab cannot be registered or the kernel lacks `SEND_ZC` (`EMBR_QUIC_EGRESS=sendmsg` forces it)
+- UDP GSO on both egress paths: same-size packets leave as one send that the kernel splits (`EMBR_QUIC_GSO=0` sends one packet per send)
 - The token carries a hash of the sender's certificate; pull verifies it after the handshake, before any request
 - Not yet: NAT traversal, tracker over QUIC
 
@@ -153,6 +154,17 @@ See [bench/bench.md](bench/bench.md) for methodology, consolidated raw data and 
 
 **`SEND_ZC` result.** The archived terminal summary reports **0 copied among 11,243,123 sends**, with no fallbacks or errors, over 12 connections including warmups. Individual egress logs were not preserved, so this aggregate cannot be independently recomputed from the retained files. Median sender total CPU, computed per successful timed push, is 5.755 s with SEND_ZC and 5.565 s with sendmsg. SEND_ZC did not reduce sender CPU in this campaign. Completion processing and packet size are candidates for further study; segmentation offload has no demonstrated benefit in these data.
 
+### UDP GSO on loopback (1 GiB, desktop, n=10, medians)
+
+| sender egress | receiver ACKs every | sender sys, one packet per send | sender sys, GSO | packets per GSO send |
+|---|---|---|---|---|
+| `SEND_ZC` | 2 packets (shipped) | 1.04 s | 0.81 s | 2.0 |
+| `sendmsg` | 2 packets (shipped) | 0.95 s | 0.75 s | 2.0 |
+| `SEND_ZC` | 10 packets | 0.76 s | 0.34 s | 9.7 |
+| `sendmsg` | 10 packets | 0.74 s | 0.33 s | 9.8 |
+
+Loopback copies every `SEND_ZC` send, so this measures the cost of a send, not zero-copy. The sender has no pacer and sends what each ACK frees, so at the shipped ACK rate a GSO batch is two packets; GSO still saves about 21% of sender kernel time. With the receiver acknowledging every 10 packets (`EMBR_QUIC_ACK_THRESH=10`; the default stays 2, since fewer ACKs slow recovery under loss) batches reach about 10, sender kernel time halves, and throughput goes from 3.3 to 4.8 Gbps. These rows were measured with 1200-byte packets; the 1350-byte packets embr sends since add about 10% throughput on the same setup. The same four rows on two hosts with a real NIC are still to run. [Full table and raw data](bench/bench.md#gso-loopback).
+
 ### Desktop ownership benchmark
 
 The corrected [erasure_cost.cpp](bench/erasure_cost.cpp) compares the existing `Buffer` with a move-only function-pointer owner carrying inline pool/slot state. Both construct, move into a table, expose the retained owner to a compiler barrier, retire it and return its slot. Lifetime checks precede timing.
@@ -166,19 +178,16 @@ AMD Ryzen 9 9900X desktop, Fedora Linux kernel 7.1.13, GCC 16.2.1 / libstdc++ 20
 
 ## Found Under Packet Loss
 
-Transfers were run through a private network namespace that drops a fixed share of UDP packets in each direction (nftables, 10% and 30%). That exposed four problems which loopback and the low-loss WAN campaign never showed. All four are fixed; the figures are 20 MB QUIC transfers on the desktop.
+20 MB QUIC transfers were run through a private network namespace that drops 10% or 30% of UDP packets in each direction. That exposed four problems which loopback and the low-loss WAN campaign never showed. All four are fixed.
 
-**Lost first packet.** The TLS hello carries a post-quantum key share and no longer fits one packet, so a client opens with two. When the first was lost, ngtcp2 told the server to drop the half-made connection; embr treated that as fatal and the push process exited. `quic_accept` now discards any packet a connection cannot start from and keeps listening, and the client's retransmission one second later connects. At 10% loss, 6 of 24 connections failed before and 0 of 36 after.
+| Problem | Before | After |
+|---|---|---|
+| A lost first packet ended the push process | 6 of 24 connections failed | 0 of 36 |
+| ICMP "connection refused" was fatal on send, tolerated on receive | 11 failures in 2,400 | 0 in 4,800 |
+| The io_uring sender waited for ACKs with sends still queued | 13–17 s per transfer | 1.4–2.3 s (`sendmsg`: 1.4–1.9 s) |
+| ngtcp2 up to 1.25 stopped probing at the minimum window | 1 stall in about 300 transfers | 0 in 1,504 with ngtcp2 1.26.0 |
 
-**"Connection refused" on one path only.** After a peer closes its socket, the kernel reports ICMP port-unreachable on the next socket call. embr tolerated that on receive and failed on send, so the result depended on which call came first: 11 failures in 2,400 runs of a client that connects and leaves. Both paths now count it as a lost packet (0 in 4,800), and a handshake that gets no answer ends after 10 s with a message that says whether the host refused the connection.
-
-**Sends queued but not submitted.** With the io_uring sender a packet is only queued until the ring is submitted. The send loop went to wait for acknowledgements with packets still queued, so each round moved only when a retransmit timer fired. Without loss this is invisible (2.6 s per GiB either way). At 10% loss a transfer took 13–17 s against 1.4–1.9 s for `sendmsg`; submitting before every wait brings it to 1.4–2.3 s.
-
-**Stall at the minimum window.** That delay held the congestion window at its two-packet minimum. When both packets were retransmission probes and both were lost, ngtcp2 up to 1.25, acting as server, sent no further probe and cancelled its timer while still counting them in flight. Both ends then sat silent until the 30 s idle timeout: about 1 transfer in 300 at 10% loss, and 2 in 96 at 30% loss even with the sender fixed. ngtcp2 1.26.0 sends a PING probe in that case: no stall in 1,504 transfers at 10% loss or in 96 at 30%. `install.sh` pins 1.26.0.
-
-At 30% loss a transfer still completes, slowly (about 130 s), and 2 to 3 handshakes in 100 do not finish inside the 10 s limit.
-
-Loss has to be injected on the receiving side (`numgen random mod 100 < N drop` on the nftables input hook). Dropping on the output hook is not loss: the send call itself fails with `EPERM`.
+Rows 1, 3 and 4 are at 10% loss; row 2 needs no loss. At 30% loss transfers still complete (about 130 s each) and 3 of 192 handshakes missed the 10 s limit. Causes, method and logs: [bench/bench.md §8](bench/bench.md#packet-loss-runs).
 
 ## Install Dependencies
 
@@ -266,8 +275,7 @@ embr/
 │       └── constants.hpp               # CHUNK_SIZE, HASH_SIZE, EMBR_PORT, TRACKER_PORT
 ├── bench/
 │   ├── bench.md                        # methodology, raw per-run data
-│   ├── tcp_loopback.sh / tcp_wan.sh    # TCP path benchmarks
-│   ├── quic_loopback.sh / quic_wan.sh  # QUIC path benchmarks, SEND_ZC vs sendmsg rows, egress counters
+│   ├── bench.sh                        # loopback / wan-sender / wan-receiver; TCP, QUIC SEND_ZC and sendmsg with and without GSO, nc, scp
 │   └── erasure_cost.cpp                # whole-owner lifecycle checks and desktop microbenchmark
 ├── tests/
 │   ├── test_protocol.cpp, test_tcp.cpp, test_udp.cpp, test_resume.cpp, test_tracker.cpp
@@ -344,7 +352,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 | v0.6 | Token + tracker, splice() zero-copy recv, .embr.hash cache, embr trust ✓ |
 | v0.7 | TCP path hardening, parallel pre-hash, strace zero-copy figure, WAN bench ✓ |
 | **v0.8** | **QUIC transport (ngtcp2 + wolfSSL), ownership until ACK, io_uring SEND_ZC egress with fallbacks, QUIC WAN bench ✓** |
-| v0.9 | Receiver batching (`recvmmsg`, hash off the connection thread), UDP GSO on the sender, server-cert verification, tracker over QUIC |
+| v0.9 | Receiver batching (`recvmmsg`, hash off the connection thread), ACK frequency and pacing for larger GSO batches, tracker over QUIC |
 | v1.x | SPMC ring buffer, 1-to-N fanout, parallel chunks via QUIC streams, eBPF/XDP, multi-tracker federation |
 
 ## Current Status
@@ -356,16 +364,19 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] Graceful close lingers up to 1 s so retained chunks are acknowledged; a peer's orderly close makes `recv()` return 0, as with TCP
 - [x] `ZcEgress` — per-connection packet slab registered with io_uring, `IORING_OP_SEND_ZC` with usage reporting, slot owner is a `Buffer` retired on the NOTIF completion; send CQE with `F_MORE` waits, without it the slot is final
 - [x] Egress fallbacks — refused datagram copy-sent once; no registration → sendmsg for the connection; pre-6.2 kernel → sendmsg; partial submit resubmitted from ring state; slab leaked, never reused, if the NIC may still hold it at teardown
-- [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters
-- [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in both egress modes; ASan/UBSan clean on the suite and a 1 GiB transfer
-- [x] Memlock footprint measured — ~105 KiB per QUIC connection; fits the default 8 MiB
-- [x] `install.sh`, `bench/quic_loopback.sh`, `bench/quic_wan.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights
+- [x] UDP GSO — up to 16 same-size packets per send on both egress paths, `UDP_SEGMENT` set to the packet size; `EMBR_QUIC_GSO=0` switch
+- [x] Path-MTU probe — data packets grow from QUIC's 1200-byte start to the 1350-byte buffer where the path carries them; DF is set, a size the path refuses counts as loss, and the transfer stays at 1200
+- [x] `EMBR_QUIC_ACK_THRESH=N` experiment switch — the receiver acknowledges every N packets instead of 2, so GSO batches grow; default unchanged
+- [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters (packets, sends and bytes in both modes)
+- [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in each of the four egress × GSO modes; ASan/UBSan clean on the suite and a 1 GiB transfer
+- [x] Memlock footprint — about 105 KiB per QUIC connection without GSO, a 169 KiB slab with it; fits the default 8 MiB
+- [x] `install.sh`, `bench/bench.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights
 - [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.910 Gbps; archived terminal summary reports no copied sends (individual egress logs unavailable)
 - [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
 - [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions
 - [x] Sender-certificate verification — the token carries the certificate's hash; pull checks it after the handshake
 - [x] Loss testing at 10% and 30% — accept survives a lost first packet, ICMP errors are loss on both paths, queued sends are submitted before every wait, ngtcp2 1.26 for the lost-probe stall ([details](#found-under-packet-loss))
-- [ ] Receive batching, asynchronous file-write overlap and sender segmentation offload; validate performance before making benefit claims
+- [ ] Receive batching and asynchronous file-write overlap; GSO on a real NIC (two-host run) before making benefit claims
 
 **v0.7 — TCP path hardening**
 
@@ -384,8 +395,8 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] Request-driven protocol — pull sends `CHUNK_REQ` per needed chunk + `COMPLETE`; push answers, stateless
 - [x] Token derivation, `TokenStore` with TTL, tracker HTTP server and client, `embr trust`
 - [x] Subcommand dispatch and full argparse per verb, `EMBR_TRACKER` env var
-- [x] `bench/tcp_loopback.sh`, `bench/tcp_wan.sh`; strace zero-copy figure
-- [x] Protocol, transport, resume, tracker and parallel-hash unit tests (99 tests at v0.8)
+- [x] TCP loopback and WAN benchmark rows (now in `bench/bench.sh`); strace zero-copy figure
+- [x] Protocol, transport, resume, tracker and parallel-hash unit tests (102 tests at v0.8)
 
 ## License
 

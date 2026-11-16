@@ -5,6 +5,7 @@
 #include "quic_transport.hpp"
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <netinet/udp.h>
 #include <sys/random.h>
 #include <sys/select.h>
 #include <sys/socket.h>
@@ -26,6 +27,10 @@
 #include <cstring>
 #include <stdexcept>
 #include <string>
+
+#ifndef UDP_SEGMENT
+#define UDP_SEGMENT 103 // libc headers older than the kernel feature
+#endif
 
 namespace {
 
@@ -85,13 +90,19 @@ QuicTransport::~QuicTransport() {
     if (conn_) { ngtcp2_conn_del(conn_); }
     if (ssl_) { wolfSSL_free(ssl_); }
     if (ssl_ctx_) { wolfSSL_CTX_free(ssl_ctx_); }
-    // EMBR_QUIC_STATS=1: one line per conn; copied==0 is the proof that NIC read pages
-    if (zc_ && std::getenv("EMBR_QUIC_STATS")) {
-        const auto& s = zc_->stats();
-        std::fprintf(stderr,
-            "[quic-egress] sends=%llu notifs=%llu copied=%llu fallback=%llu errors=%llu registered=%d\n",
-            (unsigned long long)s.sends, (unsigned long long)s.notifs, (unsigned long long)s.copied,
-            (unsigned long long)s.fallback, (unsigned long long)s.errors, zc_->registered() ? 1 : 0);
+    // EMBR_QUIC_STATS=1: one line per conn; datagrams/sends is the GSO batch size,
+    // copied==0 is the proof that NIC read pages
+    if (tx_.sends > 0 && std::getenv("EMBR_QUIC_STATS")) {
+        std::fprintf(stderr, "[quic-egress] mode=%s gso=%d datagrams=%llu sends=%llu bytes=%llu",
+            zc_ ? "zc" : "sendmsg", gso_ ? 1 : 0, (unsigned long long)tx_.datagrams,
+            (unsigned long long)tx_.sends, (unsigned long long)tx_.bytes);
+        if (zc_) {
+            const auto& s = zc_->stats();
+            std::fprintf(stderr, " notifs=%llu copied=%llu fallback=%llu errors=%llu registered=%d",
+                (unsigned long long)s.notifs, (unsigned long long)s.copied,
+                (unsigned long long)s.fallback, (unsigned long long)s.errors, zc_->registered() ? 1 : 0);
+        }
+        std::fputc('\n', stderr);
     }
     zc_.reset(); // drains in-flight SEND_ZC slots before the socket goes
     if (udp_fd_ >= 0) { ::close(udp_fd_); }
@@ -249,8 +260,7 @@ int QuicTransport::drain_packets() {
         if (sr == SendResult::blocked) { break; }
         if (sr == SendResult::failed) { return -1; }
     }
-    flush_packets();
-    return 0;
+    return flush_packets() ? 0 : -1;
 }
 
 ssize_t QuicTransport::write_stream(const uint8_t* base, size_t len) {
@@ -300,7 +310,7 @@ ssize_t QuicTransport::write_stream(const uint8_t* base, size_t len) {
             return -1;
         }
     }
-    flush_packets();
+    if (!flush_packets()) { return -1; } // errno left by the send
     return static_cast<ssize_t>(len);
 }
 
@@ -362,7 +372,8 @@ void QuicTransport::close_connection(int liberr) {
 int QuicTransport::pump_once(ngtcp2_tstamp until) {
     if (closed_) { return -1; }
 
-    flush_packets(); // nothing committed may sit unsubmitted while this call waits
+    // nothing written may sit unsent while this call waits
+    if (!flush_packets()) { return -1; }
 
     const ngtcp2_tstamp expiry = std::min(ngtcp2_conn_get_expiry(conn_), until);
     const ngtcp2_tstamp now = now_ns();
@@ -400,7 +411,8 @@ int QuicTransport::pump_once(ngtcp2_tstamp until) {
 
         const ssize_t nread = ::recvmsg(udp_fd_, &msg, MSG_DONTWAIT);
         if (nread < 0) {
-            if (errno != EAGAIN && errno != EWOULDBLOCK &&
+            // EMSGSIZE: a router's ICMP "fragmentation needed" about the size probe, not a failure
+            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EMSGSIZE &&
                 errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH) {
                 return -1;
             }
@@ -521,15 +533,31 @@ int QuicTransport::get_new_connection_id(ngtcp2_conn* conn, ngtcp2_cid* cid, uin
     return 0;
 }
 
-// EMBR_QUIC_EGRESS=sendmsg forces the per-datagram baseline
+// EMBR_QUIC_EGRESS=sendmsg forces the copying baseline, EMBR_QUIC_GSO=0 one packet per send
 // lazy: both factories connect() the socket before the first packet
 void QuicTransport::init_egress() {
     if (egress_init_) { return; }
     egress_init_ = true;
+
+    // writing 0 changes nothing; it fails only where the kernel has no UDP_SEGMENT
+    const char* gso = std::getenv("EMBR_QUIC_GSO");
+    const int unset = 0;
+    gso_ = !(gso && std::strcmp(gso, "0") == 0) &&
+           ::setsockopt(udp_fd_, SOL_UDP, UDP_SEGMENT, &unset, sizeof(unset)) == 0;
+    if (gso_) { batch_buf_.resize(QUIC_GSO_SEGS * QUIC_MAX_PKTLEN); }
+
+    // DF on every datagram and no kernel fragmenting: a packet too long for the path is lost or
+    // fails with EMSGSIZE, so the 1350-byte probe finds out whether the path carries it
+    const int df = IP_PMTUDISC_PROBE;
+    ::setsockopt(udp_fd_, IPPROTO_IP, IP_MTU_DISCOVER, &df, sizeof(df));
+
     const char* mode = std::getenv("EMBR_QUIC_EGRESS");
     if (mode && std::strcmp(mode, "sendmsg") == 0) { return; }
     try {
-        zc_ = std::make_unique<ZcEgress>(udp_fd_, QUIC_MAX_PKTLEN, QUIC_ZC_SLOTS);
+        // with GSO a slot holds a whole batch: fewer, larger slots
+        zc_ = gso_
+            ? std::make_unique<ZcEgress>(udp_fd_, QUIC_GSO_SEGS * QUIC_MAX_PKTLEN, QUIC_ZC_GSO_SLOTS)
+            : std::make_unique<ZcEgress>(udp_fd_, QUIC_MAX_PKTLEN, QUIC_ZC_SLOTS);
         // unregistered SEND_ZC pins 8KiB per in-flight datagram against the same budget, use copy
         if (!zc_->registered()) { zc_.reset(); }
     } catch (const std::exception&) {
@@ -539,23 +567,59 @@ void QuicTransport::init_egress() {
 
 uint8_t* QuicTransport::begin_packet() {
     init_egress();
+    if (batch_pkts_ > 0) { return batch_base_ + batch_len_; } // next window of the open batch
     if (zc_) {
-        if (uint8_t* p = zc_->reserve()) { return p; }
+        if (uint8_t* p = zc_->reserve()) { return batch_base_ = p; }
         zc_.reset(); // the ring latched an error -> finish this conn on sendmsg
     }
-    return packet_buf_;
+    return batch_base_ = gso_ ? batch_buf_.data() : packet_buf_;
 }
 
+// adds the packet just written at begin_packet() to the open batch
+// the batch leaves when it is full or the sizes stop matching: only its last packet may be shorter
 QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
+    ++tx_.datagrams;
+    tx_.bytes += n;
+    if (batch_pkts_ > 0 && n > batch_seg_) {
+        // a longer packet cannot follow shorter ones: send those, start a new batch with this one
+        uint8_t late[QUIC_MAX_PKTLEN];
+        std::memcpy(late, batch_base_ + batch_len_, n);
+        if (send_batch() == SendResult::failed) { return SendResult::failed; }
+        std::memcpy(begin_packet(), late, n);
+    }
+    if (batch_pkts_ == 0) { batch_seg_ = n; }
+    batch_len_ += n;
+    ++batch_pkts_;
+    if (n < batch_seg_ || batch_pkts_ >= (gso_ ? QUIC_GSO_SEGS : 1u)) { return send_batch(); }
+    return SendResult::ok;
+}
+
+QuicTransport::SendResult QuicTransport::send_batch() {
+    const size_t len = std::exchange(batch_len_, 0);
+    const unsigned pkts = std::exchange(batch_pkts_, 0);
+    if (pkts == 0) { return SendResult::ok; }
+    ++tx_.sends;
+
+    // the kernel cuts every send at the socket's UDP_SEGMENT: several packets need exactly their
+    // size there, a single packet only needs to be no longer than it
+    if (pkts > 1 ? sock_seg_ != batch_seg_ : (sock_seg_ != 0 && len > sock_seg_)) {
+        if (zc_) { zc_->flush(); } // sends already queued were laid out for the old value
+        const int seg = static_cast<int>(batch_seg_);
+        if (::setsockopt(udp_fd_, SOL_UDP, UDP_SEGMENT, &seg, sizeof(seg)) < 0) {
+            return SendResult::failed; // errno left for the caller's -1 contract
+        }
+        sock_seg_ = batch_seg_;
+    }
+
     if (zc_) {
-        if (zc_->commit(n)) { return SendResult::ok; }
+        if (zc_->commit(len)) { return SendResult::ok; }
         errno = zc_->error() != 0 ? zc_->error() : EIO; // a send CQE latched error
         return SendResult::failed;
     }
 
     struct iovec iov{};
-    iov.iov_base = packet_buf_;
-    iov.iov_len = n;
+    iov.iov_base = batch_base_;
+    iov.iov_len = len;
 
     struct msghdr msg{};
     msg.msg_name = nullptr; // connected socket, kernel pins the peer
@@ -566,7 +630,9 @@ QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
     if (::sendmsg(udp_fd_, &msg, 0) < 0) {
         if (errno == EAGAIN || errno == EWOULDBLOCK) { return SendResult::blocked; }
         // ICMP report about an earlier datagram: this one counts as lost, same errors recv tolerates
-        if (errno == ECONNREFUSED || errno == ENETUNREACH || errno == EHOSTUNREACH) {
+        // EMSGSIZE: longer than the link MTU, the answer the size probe is asking for
+        if (errno == ECONNREFUSED || errno == ENETUNREACH || errno == EHOSTUNREACH
+            || errno == EMSGSIZE) {
             if (errno == ECONNREFUSED) { refused_seen_ = true; }
             return SendResult::blocked;
         }
@@ -575,12 +641,14 @@ QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
     return SendResult::ok;
 }
 
-void QuicTransport::flush_packets() {
-    if (!zc_) { return; } // sendmsg has sent each datagram
+bool QuicTransport::flush_packets() {
+    const bool sent = send_batch() != SendResult::failed; // a blocked batch is loss, QUIC resends
+    if (!zc_) { return sent; } // sendmsg has sent each batch
     zc_->flush(); // one submit per burst
     if (zc_->refused()) { refused_seen_ = true; } // the ring took the ICMP report instead of recvmsg
     // pre-6.2 kernel: every SEND_ZC is EINVAL, stay on sendmsg
     if (zc_->unsupported()) { zc_.reset(); }
+    return sent;
 }
 
 // pops every block the peer acked, one call can cover several
