@@ -1,0 +1,50 @@
+# bench loopback Wed Nov 18 07:35:15 PM PST 2026
+# commit=bec6371-dirty build=$SCRATCH/build-126-Release cache=keep bytes=1073741824
+# rows: embrtcp embrquic embrquicsm embrquicgso embrquicsmgso nc   ack_thresh=2   gro=1   zc_slots=default
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.04s recv_user=0.39s recv_sys=0.25s host_cpu=2.03s host_irq=0.08s
+warmup1_embrquic wall=0:01.79 sec=1.79 gbps=4.80 send_user=0.33s send_sys=0.73s recv_user=0.77s recv_sys=0.59s host_cpu=5.18s host_irq=0.95s
+warmup1_embrquicsm wall=0:01.80 sec=1.8 gbps=4.77 send_user=0.46s send_sys=0.76s recv_user=0.79s recv_sys=0.68s host_cpu=7.54s host_irq=0.92s
+warmup1_embrquicgso wall=0:01.09 sec=1.09 gbps=7.88 send_user=0.39s send_sys=0.21s recv_user=0.76s recv_sys=0.30s host_cpu=3.11s host_irq=0.22s
+warmup1_embrquicsmgso wall=0:01.05 sec=1.05 gbps=8.18 send_user=0.46s send_sys=0.17s recv_user=0.77s recv_sys=0.26s host_cpu=2.62s host_irq=0.16s
+warmup1_nc wall=0:00.29 sec=0.29 gbps=29.62 send_user=0.02s send_sys=0.18s recv_user=0.02s recv_sys=0.24s host_cpu=1.23s host_irq=0.07s
+
+run2_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.03s recv_user=0.39s recv_sys=0.24s host_cpu=1.63s host_irq=0.09s
+run2_embrquic wall=0:01.73 sec=1.73 gbps=4.97 send_user=0.32s send_sys=0.70s recv_user=0.80s recv_sys=0.54s host_cpu=4.43s host_irq=0.91s
+run2_embrquicsm wall=0:01.65 sec=1.65 gbps=5.21 send_user=0.42s send_sys=0.67s recv_user=0.80s recv_sys=0.58s host_cpu=4.29s host_irq=0.80s
+run2_embrquicgso wall=0:01.10 sec=1.1 gbps=7.81 send_user=0.42s send_sys=0.19s recv_user=0.74s recv_sys=0.32s host_cpu=3.08s host_irq=0.22s
+run2_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.47s send_sys=0.16s recv_user=0.75s recv_sys=0.28s host_cpu=3.06s host_irq=0.15s
+run2_nc wall=0:00.27 sec=0.27 gbps=31.81 send_user=0.03s send_sys=0.17s recv_user=0.03s recv_sys=0.21s host_cpu=0.83s host_irq=0.06s
+
+run3_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.04s recv_user=0.40s recv_sys=0.25s host_cpu=1.27s host_irq=0.08s
+run3_embrquic wall=0:01.74 sec=1.74 gbps=4.94 send_user=0.32s send_sys=0.71s recv_user=0.80s recv_sys=0.54s host_cpu=4.99s host_irq=0.90s
+run3_embrquicsm wall=0:01.67 sec=1.67 gbps=5.14 send_user=0.43s send_sys=0.68s recv_user=0.79s recv_sys=0.60s host_cpu=4.27s host_irq=0.80s
+run3_embrquicgso wall=0:01.09 sec=1.09 gbps=7.88 send_user=0.41s send_sys=0.19s recv_user=0.79s recv_sys=0.27s host_cpu=2.72s host_irq=0.20s
+run3_embrquicsmgso wall=0:01.07 sec=1.07 gbps=8.03 send_user=0.45s send_sys=0.19s recv_user=0.77s recv_sys=0.27s host_cpu=2.60s host_irq=0.14s
+run3_nc wall=0:00.29 sec=0.29 gbps=29.62 send_user=0.02s send_sys=0.17s recv_user=0.02s recv_sys=0.22s host_cpu=0.95s host_irq=0.09s
+
+run4_embrtcp wall=0:00.68 sec=0.68 gbps=12.63 send_user=0.00s send_sys=0.03s recv_user=0.40s recv_sys=0.25s host_cpu=1.29s host_irq=0.08s
+run4_embrquic wall=0:01.73 sec=1.73 gbps=4.97 send_user=0.30s send_sys=0.72s recv_user=0.80s recv_sys=0.55s host_cpu=4.18s host_irq=0.89s
+run4_embrquicsm wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.42s send_sys=0.65s recv_user=0.82s recv_sys=0.55s host_cpu=4.20s host_irq=0.79s
+run4_embrquicgso wall=0:01.09 sec=1.09 gbps=7.88 send_user=0.41s send_sys=0.17s recv_user=0.79s recv_sys=0.28s host_cpu=2.56s host_irq=0.20s
+run4_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.46s send_sys=0.17s recv_user=0.70s recv_sys=0.33s host_cpu=2.69s host_irq=0.15s
+run4_nc wall=0:00.29 sec=0.29 gbps=29.62 send_user=0.02s send_sys=0.16s recv_user=0.03s recv_sys=0.21s host_cpu=0.82s host_irq=0.07s
+
+run5_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.03s recv_user=0.39s recv_sys=0.26s host_cpu=1.28s host_irq=0.08s
+run5_embrquic wall=0:01.74 sec=1.74 gbps=4.94 send_user=0.33s send_sys=0.70s recv_user=0.81s recv_sys=0.53s host_cpu=4.16s host_irq=0.90s
+run5_embrquicsm wall=0:01.67 sec=1.67 gbps=5.14 send_user=0.40s send_sys=0.70s recv_user=0.78s recv_sys=0.62s host_cpu=4.26s host_irq=0.81s
+run5_embrquicgso wall=0:01.08 sec=1.08 gbps=7.95 send_user=0.41s send_sys=0.18s recv_user=0.72s recv_sys=0.33s host_cpu=2.57s host_irq=0.19s
+run5_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.46s send_sys=0.16s recv_user=0.77s recv_sys=0.26s host_cpu=2.78s host_irq=0.14s
+run5_nc wall=0:00.28 sec=0.28 gbps=30.68 send_user=0.02s send_sys=0.16s recv_user=0.02s recv_sys=0.21s host_cpu=0.93s host_irq=0.09s
+
+run6_embrtcp wall=0:00.66 sec=0.66 gbps=13.02 send_user=0.00s send_sys=0.03s recv_user=0.38s recv_sys=0.25s host_cpu=1.40s host_irq=0.07s
+run6_embrquic wall=0:01.74 sec=1.74 gbps=4.94 send_user=0.32s send_sys=0.70s recv_user=0.79s recv_sys=0.55s host_cpu=4.17s host_irq=0.90s
+run6_embrquicsm wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.41s send_sys=0.66s recv_user=0.78s recv_sys=0.59s host_cpu=4.09s host_irq=0.78s
+run6_embrquicgso wall=0:01.07 sec=1.07 gbps=8.03 send_user=0.40s send_sys=0.19s recv_user=0.76s recv_sys=0.29s host_cpu=2.66s host_irq=0.20s
+run6_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.47s send_sys=0.16s recv_user=0.75s recv_sys=0.28s host_cpu=2.79s host_irq=0.16s
+run6_nc wall=0:00.30 sec=0.3 gbps=28.63 send_user=0.03s send_sys=0.16s recv_user=0.02s recv_sys=0.22s host_cpu=0.87s host_irq=0.09s
+

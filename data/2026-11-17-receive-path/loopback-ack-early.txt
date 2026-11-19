@@ -1,0 +1,17 @@
+# loopback, 1 GiB, single transfers, prototype with EMBR_QUIC_ACK_EARLY=K (experiment knob, not proposed):
+# the first K packets of each pump are acknowledged as they come, the rest once at the end. 2026-11-17, kernel 7.3.3
+early=0 gbps=7.67 wall=1.12 recv_user=0.79 recv_sys=0.30 send_user=0.40 send_sys=0.19
+early=0 gbps=7.95 wall=1.08 recv_user=0.76 recv_sys=0.29 send_user=0.40 send_sys=0.17
+early=0 gbps=7.95 wall=1.08 recv_user=0.81 recv_sys=0.25 send_user=0.38 send_sys=0.20
+early=2 gbps=7.74 wall=1.11 recv_user=0.75 recv_sys=0.32 send_user=0.40 send_sys=0.19
+early=2 gbps=7.67 wall=1.12 recv_user=0.76 recv_sys=0.32 send_user=0.41 send_sys=0.18
+early=2 gbps=7.74 wall=1.11 recv_user=0.74 recv_sys=0.33 send_user=0.42 send_sys=0.17
+early=4 gbps=7.60 wall=1.13 recv_user=0.75 recv_sys=0.32 send_user=0.42 send_sys=0.18
+early=4 gbps=7.54 wall=1.14 recv_user=0.76 recv_sys=0.33 send_user=0.42 send_sys=0.18
+early=4 gbps=7.60 wall=1.13 recv_user=0.77 recv_sys=0.31 send_user=0.45 send_sys=0.16
+early=8 gbps=7.22 wall=1.19 recv_user=0.73 recv_sys=0.38 send_user=0.45 send_sys=0.20
+early=8 gbps=7.22 wall=1.19 recv_user=0.76 recv_sys=0.35 send_user=0.43 send_sys=0.21
+early=8 gbps=7.28 wall=1.18 recv_user=0.77 recv_sys=0.34 send_user=0.44 send_sys=0.20
+early=16 gbps=6.61 wall=1.30 recv_user=0.75 recv_sys=0.43 send_user=0.49 send_sys=0.22
+early=16 gbps=6.56 wall=1.31 recv_user=0.77 recv_sys=0.41 send_user=0.52 send_sys=0.19
+early=16 gbps=6.61 wall=1.30 recv_user=0.77 recv_sys=0.40 send_user=0.48 send_sys=0.23

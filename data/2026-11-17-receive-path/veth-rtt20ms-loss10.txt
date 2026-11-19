@@ -1,0 +1,12 @@
+# veth A-R-B  rate=none delay=10ms (each way) loss=10% (each way) limit=10000 packets  file=5000000 bytes  kernel=7.3.3-300.fc45.x86_64
+# a0: tx-udp-segmentation: off   b0: generic-receive-offload: on
+run1 current rc=0 intact secs=20.216556863 mbps=2 | sender datagrams=4882 sends=2998 | receiver 
+run1 prototype rc=0 intact secs=23.579056825 mbps=2 | sender datagrams=4815 sends=1750 | receiver gro=1 datagrams=4357 reads=1725 bytes=5359872
+run1 prototype-burst16 rc=0 intact secs=25.713722308 mbps=2 | sender datagrams=4928 sends=1985 | receiver gro=1 datagrams=4409 reads=1897 bytes=5392158
+run2 current rc=0 intact secs=21.598072477 mbps=2 | sender datagrams=4887 sends=3003 | receiver 
+run2 prototype rc=0 intact secs=23.871398360 mbps=2 | sender datagrams=4887 sends=1903 | receiver gro=1 datagrams=4364 reads=1834 bytes=5362897
+run2 prototype-burst16 rc=0 intact secs=24.554913029 mbps=2 | sender datagrams=4855 sends=1883 | receiver gro=1 datagrams=4374 reads=1880 bytes=5397239
+run3 current rc=0 intact secs=20.532402503 mbps=2 | sender datagrams=4875 sends=2971 | receiver 
+run3 prototype rc=0 intact secs=25.446543852 mbps=2 | sender datagrams=4880 sends=1890 | receiver gro=1 datagrams=4417 reads=1810 bytes=5406987
+run3 prototype-burst16 rc=0 intact secs=25.229991227 mbps=2 | sender datagrams=4908 sends=1931 | receiver gro=1 datagrams=4396 reads=1850 bytes=5388110
+# r1 qdisc:  Sent 49673888 bytes 39553 pkt (dropped 4392, overlimits 0 requeues 0) 

@@ -1,0 +1,31 @@
+burst	mode	cpu_ns/send	wall_ns/send	copied	errs
+8	sendmsg	788	780	0	0
+8	zc slots=8	1080	12920	0	0
+8	zc slots=16	1036	6452	0	0
+8	zc slots=32	896	3236	0	0
+8	zc slots=128	816	816	0	0
+8	zc slots=128 defer	788	816	0	0
+10	sendmsg	820	856	0	0
+10	zc slots=8	1116	12888	0	0
+10	zc slots=16	1104	6460	0	0
+10	zc slots=32	984	3232	0	0
+10	zc slots=128	824	812	0	0
+10	zc slots=128 defer	824	816	0	0
+12	sendmsg	904	928	0	0
+12	zc slots=8	1136	12912	0	0
+12	zc slots=16	1052	6468	0	0
+12	zc slots=32	1024	3240	0	0
+12	zc slots=128	852	840	0	0
+12	zc slots=128 defer	860	848	0	0
+14	sendmsg	1004	1000	0	0
+14	zc slots=8	1168	12916	0	0
+14	zc slots=16	1128	6460	0	0
+14	zc slots=32	948	3248	0	0
+14	zc slots=128	884	876	0	0
+14	zc slots=128 defer	884	876	0	0
+16	sendmsg	1068	1068	0	0
+16	zc slots=8	1232	12928	0	0
+16	zc slots=16	1220	6476	0	0
+16	zc slots=32	980	3236	0	0
+16	zc slots=128	924	920	0	0
+16	zc slots=128 defer	932	920	0	0

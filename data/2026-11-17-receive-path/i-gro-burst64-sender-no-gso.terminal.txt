@@ -1,0 +1,63 @@
+[bench 23:11:10] local sockbuf ok: rmem_max=4194304 wmem_max=4194304
+[bench 23:11:10] local sendzc ok: kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB
+[bench 23:11:11] file 1.0G  sha256=d7623956eef4eda40c4737541344c3eba5e76f48db868cf4571d30aa9f502896
+[bench 23:11:11] === warmup1 (1/6) ===
+warmup1_embrquic wall=0:01.72 sec=1.72 gbps=4.99 send_user=0.35s send_sys=0.67s recv_user=0.78s recv_sys=0.55s host_cpu=4.18s host_irq=0.86s
+warmup1_embrquicsm wall=0:01.61 sec=1.61 gbps=5.34 send_user=0.37s send_sys=0.68s recv_user=0.79s recv_sys=0.58s host_cpu=3.48s host_irq=0.73s
+[bench 23:11:16] === run2 (2/6) ===
+run2_embrquic wall=0:01.72 sec=1.72 gbps=4.99 send_user=0.33s send_sys=0.69s recv_user=0.81s recv_sys=0.53s host_cpu=3.69s host_irq=0.85s
+run2_embrquicsm wall=0:01.61 sec=1.61 gbps=5.34 send_user=0.39s send_sys=0.66s recv_user=0.78s recv_sys=0.57s host_cpu=3.43s host_irq=0.73s
+[bench 23:11:21] === run3 (3/6) ===
+run3_embrquic wall=0:01.70 sec=1.7 gbps=5.05 send_user=0.32s send_sys=0.69s recv_user=0.80s recv_sys=0.52s host_cpu=3.59s host_irq=0.84s
+run3_embrquicsm wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.39s send_sys=0.68s recv_user=0.78s recv_sys=0.60s host_cpu=3.66s host_irq=0.75s
+[bench 23:11:27] === run4 (4/6) ===
+run4_embrquic wall=0:01.68 sec=1.68 gbps=5.11 send_user=0.34s send_sys=0.67s recv_user=0.79s recv_sys=0.52s host_cpu=3.43s host_irq=0.83s
+run4_embrquicsm wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.41s send_sys=0.66s recv_user=0.82s recv_sys=0.56s host_cpu=3.46s host_irq=0.72s
+[bench 23:11:32] === run5 (5/6) ===
+run5_embrquic wall=0:01.71 sec=1.71 gbps=5.02 send_user=0.35s send_sys=0.66s recv_user=0.80s recv_sys=0.52s host_cpu=3.33s host_irq=0.83s
+run5_embrquicsm wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.42s send_sys=0.64s recv_user=0.78s recv_sys=0.59s host_cpu=3.47s host_irq=0.74s
+[bench 23:11:38] === run6 (6/6) ===
+run6_embrquic wall=0:01.70 sec=1.7 gbps=5.05 send_user=0.34s send_sys=0.67s recv_user=0.79s recv_sys=0.52s host_cpu=3.27s host_irq=0.82s
+run6_embrquicsm wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.40s send_sys=0.67s recv_user=0.80s recv_sys=0.57s host_cpu=3.82s host_irq=0.73s
+[bench 23:11:43] === raw results ===
+# bench loopback Tue Nov 17 11:11:11 PM PST 2026
+# commit=bec6371-dirty build=$SCRATCH/rx-tree/build-Release cache=keep bytes=1073741824
+# rows: embrquic embrquicsm   ack_thresh=2   zc_slots=default
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquic wall=0:01.72 sec=1.72 gbps=4.99 send_user=0.35s send_sys=0.67s recv_user=0.78s recv_sys=0.55s host_cpu=4.18s host_irq=0.86s
+warmup1_embrquicsm wall=0:01.61 sec=1.61 gbps=5.34 send_user=0.37s send_sys=0.68s recv_user=0.79s recv_sys=0.58s host_cpu=3.48s host_irq=0.73s
+
+run2_embrquic wall=0:01.72 sec=1.72 gbps=4.99 send_user=0.33s send_sys=0.69s recv_user=0.81s recv_sys=0.53s host_cpu=3.69s host_irq=0.85s
+run2_embrquicsm wall=0:01.61 sec=1.61 gbps=5.34 send_user=0.39s send_sys=0.66s recv_user=0.78s recv_sys=0.57s host_cpu=3.43s host_irq=0.73s
+
+run3_embrquic wall=0:01.70 sec=1.7 gbps=5.05 send_user=0.32s send_sys=0.69s recv_user=0.80s recv_sys=0.52s host_cpu=3.59s host_irq=0.84s
+run3_embrquicsm wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.39s send_sys=0.68s recv_user=0.78s recv_sys=0.60s host_cpu=3.66s host_irq=0.75s
+
+run4_embrquic wall=0:01.68 sec=1.68 gbps=5.11 send_user=0.34s send_sys=0.67s recv_user=0.79s recv_sys=0.52s host_cpu=3.43s host_irq=0.83s
+run4_embrquicsm wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.41s send_sys=0.66s recv_user=0.82s recv_sys=0.56s host_cpu=3.46s host_irq=0.72s
+
+run5_embrquic wall=0:01.71 sec=1.71 gbps=5.02 send_user=0.35s send_sys=0.66s recv_user=0.80s recv_sys=0.52s host_cpu=3.33s host_irq=0.83s
+run5_embrquicsm wall=0:01.62 sec=1.62 gbps=5.30 send_user=0.42s send_sys=0.64s recv_user=0.78s recv_sys=0.59s host_cpu=3.47s host_irq=0.74s
+
+run6_embrquic wall=0:01.70 sec=1.7 gbps=5.05 send_user=0.34s send_sys=0.67s recv_user=0.79s recv_sys=0.52s host_cpu=3.27s host_irq=0.82s
+run6_embrquicsm wall=0:01.63 sec=1.63 gbps=5.27 send_user=0.40s send_sys=0.67s recv_user=0.80s recv_sys=0.57s host_cpu=3.82s host_irq=0.73s
+
+[bench 23:11:43] === summary (median, warmup excluded) ===
+
+row           | Gbps     | wall s   | send_user  | send_sys   | recv_user  | recv_sys  
+--------------+----------+----------+------------+------------+------------+-----------
+embrquic      | 5.05     | 1.7      | 0.34       | 0.67       | 0.80       | 0.52      
+embrquicsm    | 5.30     | 1.62     | 0.40       | 0.66       | 0.78       | 0.57      
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq  
+embrquic      | 3.43       | 0.83      
+embrquicsm    | 3.47       | 0.73      
+
+embrquic egress over 6 connections: datagrams=4970196 sends=4970196 bytes=6676405189 notifs=4970196 copied=4970196 fallback=0 errors=0 waits=0 (1.0 datagrams per send, copied 100.0%, 1343 bytes per datagram)
+embrquicsm egress over 6 connections: datagrams=4970164 sends=4970164 bytes=6676404441 (1.0 datagrams per send, 1343 bytes per datagram)
+[bench 23:11:43] raw results in $REPO/data/2026-11-17-receive-path/i-gro-burst64-sender-no-gso.txt

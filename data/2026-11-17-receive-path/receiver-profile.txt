@@ -1,0 +1,20 @@
+  receiver CPU seconds per GiB                       current   prototype
+  TOTAL                                                3.182       1.210
+  user: SHA-256 of the file                            0.421       0.423
+  user: AEAD decrypt (wolfSSL)                         0.280       0.215
+  user: ngtcp2                                         0.185       0.073
+  user: embr loop, memcpy, clock                       0.337       0.096
+  k: recvmsg                                           0.409       0.091
+  k: select                                            0.205       0.000
+  k: send ACKs: syscall + UDP/IP output                0.380       0.015
+  k: send ACKs: loopback delivery to the sender        0.626       0.030
+  k: SEND_ZC notifications                             0.027       0.001
+  k: file pages (mmap destination)                     0.108       0.093
+  k: file syscalls                                     0.159       0.164
+  k: interrupts, timers                                0.001       0.001
+  other                                                0.042       0.007
+# current sender:   [quic-egress] mode=zc gso=1 datagrams=829240 sends=384212 bytes=1113685444 notifs=384212 copied=384212 fallback=0 errors=0 waits=0 registered=1
+# prototype: prop1 rc=0 secs=2.177664580 [quic-egress] mode=zc gso=1 datagrams=827594 sends=55475 bytes=1112696738 notifs=55475 copied=55475 fallback=0 errors=0 waits=0 registered=1
+# prototype: [quic-egress] mode=zc gso=1 datagrams=14860 sends=14859 bytes=938702 notifs=14859 copied=14859 fallback=0 errors=0 waits=0 registered=1
+# prototype: [quic-ingress] gro=1 datagrams=827594 reads=55475 bytes=1112696738
+# prototype: prop1 intact

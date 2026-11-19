@@ -1,0 +1,20 @@
+# bench loopback Tue Nov 17 11:12:24 PM PST 2026
+# commit=bec6371-dirty build=$SCRATCH/rx-tree/build-Release cache=keep bytes=1073741824
+# rows: embrtcp   ack_thresh=2   zc_slots=default
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.03s recv_user=0.37s recv_sys=0.27s host_cpu=1.12s host_irq=0.06s
+
+run2_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.03s recv_user=0.39s recv_sys=0.25s host_cpu=1.10s host_irq=0.06s
+
+run3_embrtcp wall=0:00.68 sec=0.68 gbps=12.63 send_user=0.00s send_sys=0.04s recv_user=0.38s recv_sys=0.27s host_cpu=1.13s host_irq=0.06s
+
+run4_embrtcp wall=0:00.68 sec=0.68 gbps=12.63 send_user=0.00s send_sys=0.04s recv_user=0.38s recv_sys=0.27s host_cpu=0.87s host_irq=0.04s
+
+run5_embrtcp wall=0:00.67 sec=0.67 gbps=12.82 send_user=0.00s send_sys=0.04s recv_user=0.38s recv_sys=0.26s host_cpu=1.32s host_irq=0.06s
+
+run6_embrtcp wall=0:00.69 sec=0.69 gbps=12.45 send_user=0.00s send_sys=0.04s recv_user=0.38s recv_sys=0.28s host_cpu=1.96s host_irq=0.07s
+

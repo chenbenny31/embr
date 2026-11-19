@@ -1,0 +1,11 @@
+[quic-egress] mode=sendmsg gso=0 datagrams=935024 sends=935024
+[quic-egress] mode=sendmsg gso=0 datagrams=935011 sends=935011
+[quic-egress] mode=sendmsg gso=0 datagrams=934994 sends=934994
+[quic-egress] mode=sendmsg gso=0 datagrams=934992 sends=934992
+[quic-egress] mode=sendmsg gso=0 datagrams=934996 sends=934996
+[quic-egress] mode=sendmsg gso=0 datagrams=934988 sends=934988
+[quic-egress] mode=sendmsg gso=0 datagrams=934980 sends=934980
+[quic-egress] mode=sendmsg gso=0 datagrams=934991 sends=934991
+[quic-egress] mode=sendmsg gso=0 datagrams=935064 sends=935064
+[quic-egress] mode=sendmsg gso=0 datagrams=934984 sends=934984
+[quic-egress] mode=sendmsg gso=0 datagrams=935007 sends=935007

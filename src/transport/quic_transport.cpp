@@ -31,6 +31,9 @@
 #ifndef UDP_SEGMENT
 #define UDP_SEGMENT 103 // libc headers older than the kernel feature
 #endif
+#ifndef UDP_GRO
+#define UDP_GRO 104
+#endif
 
 namespace {
 
@@ -92,10 +95,10 @@ QuicTransport::~QuicTransport() {
     if (ssl_ctx_) { wolfSSL_CTX_free(ssl_ctx_); }
     // EMBR_QUIC_STATS=1: one line per conn; datagrams/sends is the GSO batch size,
     // copied==0 is the proof that NIC read pages
-    if (tx_.sends > 0 && std::getenv("EMBR_QUIC_STATS")) {
+    if (send_stats_.sends > 0 && std::getenv("EMBR_QUIC_STATS")) {
         std::fprintf(stderr, "[quic-egress] mode=%s gso=%d datagrams=%llu sends=%llu bytes=%llu",
-            zc_ ? "zc" : "sendmsg", gso_ ? 1 : 0, (unsigned long long)tx_.datagrams,
-            (unsigned long long)tx_.sends, (unsigned long long)tx_.bytes);
+            zc_ ? "zc" : "sendmsg", gso_ ? 1 : 0, (unsigned long long)send_stats_.datagrams,
+            (unsigned long long)send_stats_.sends, (unsigned long long)send_stats_.bytes);
         if (zc_) {
             const auto& s = zc_->stats();
             std::fprintf(stderr, " notifs=%llu copied=%llu fallback=%llu errors=%llu waits=%llu registered=%d",
@@ -104,6 +107,12 @@ QuicTransport::~QuicTransport() {
                 (unsigned long long)s.waits, zc_->registered() ? 1 : 0);
         }
         std::fputc('\n', stderr);
+    }
+    // datagrams/reads is how many packets one recvmsg returned
+    if (recv_stats_.reads > 0 && std::getenv("EMBR_QUIC_STATS")) {
+        std::fprintf(stderr, "[quic-ingress] gro=%d datagrams=%llu reads=%llu bytes=%llu\n",
+            gro_ ? 1 : 0, (unsigned long long)recv_stats_.datagrams,
+            (unsigned long long)recv_stats_.reads, (unsigned long long)recv_stats_.bytes);
     }
     zc_.reset(); // drains in-flight SEND_ZC slots before the socket goes
     if (udp_fd_ >= 0) { ::close(udp_fd_); }
@@ -223,7 +232,8 @@ void QuicTransport::recv_file(int file_fd, uint64_t offset, size_t len) {
         if (closed_) {
             throw std::runtime_error("QuicTransport::recv_file: connection closed");
         }
-        if (pump_once() != 0) {
+        // one read can hold the last bytes and the peer's close after them
+        if (pump_once() != 0 && recv_dest_got_ < len) {
             throw std::runtime_error("QuicTransport::recv_file: pump failed");
         }
     }
@@ -369,68 +379,81 @@ void QuicTransport::close_connection(int liberr) {
     closed_ = true;
 }
 
-// one recvmsg -> feed_data -> drain_packets cycle
-int QuicTransport::pump_once(ngtcp2_tstamp until) {
-    if (closed_) { return -1; }
+// EMBR_QUIC_GRO=0 reads one datagram per recvmsg
+// lazy: quic_accept_one reads the client's first datagram itself, before the socket is a connection's
+void QuicTransport::init_ingress() {
+    if (ingress_init_) { return; }
+    ingress_init_ = true;
 
-    // nothing written may sit unsent while this call waits
-    if (!flush_packets()) { return -1; }
+    const char* gro = std::getenv("EMBR_QUIC_GRO");
+    const int enable = 1;
+    gro_ = !(gro && std::strcmp(gro, "0") == 0) &&
+           ::setsockopt(udp_fd_, SOL_UDP, UDP_GRO, &enable, sizeof(enable)) == 0;
+    read_buf_.resize(gro_ ? QUIC_GRO_BUFLEN : QUIC_MAX_RECV_PKTLEN);
+}
 
-    const ngtcp2_tstamp expiry = std::min(ngtcp2_conn_get_expiry(conn_), until);
-    const ngtcp2_tstamp now = now_ns();
+// reads until the socket is empty or QUIC_RECV_BURST packets are in: the ACKs for all of them
+// are then written once, and the sender's next batch grows to match
+int QuicTransport::read_packets() {
+    init_ingress();
 
-    struct timeval tv{};
-    if (expiry == UINT64_MAX) {
-        tv.tv_usec = 100'000; // no timer armed
-    } else if (expiry > now) {
-        const uint64_t diff_ns = expiry - now;
-        tv.tv_sec = static_cast<time_t>(diff_ns / 1'000'000'000ULL);
-        tv.tv_usec = static_cast<suseconds_t>(
-            (diff_ns % 1'000'000'000ULL) / 1000ULL);
-    } // already expired: tv stays {0, 0}, poll and fall through to handle_expiry
-
-    fd_set rfds{};
-    FD_ZERO(&rfds);
-    FD_SET(udp_fd_, &rfds);
-    const int sel = ::select(udp_fd_ + 1, &rfds, nullptr, nullptr, &tv);
-
-    if (sel < 0 && errno != EINTR) { return -1; }
-
-    if (sel > 0) {
-        // recv cap is independent of send cap
-        uint8_t buf[QUIC_MAX_RECV_PKTLEN];
+    unsigned packets = 0; // handed to ngtcp2 by this call
+    for (unsigned reads = 0; reads < QUIC_RECV_BURST && packets < QUIC_RECV_BURST; ++reads) {
         sockaddr_storage remote_addr{};
         struct iovec iov{};
-        iov.iov_base = buf;
-        iov.iov_len = sizeof(buf);
+        iov.iov_base = read_buf_.data();
+        iov.iov_len = read_buf_.size();
 
+        alignas(cmsghdr) char cmsg_buf[CMSG_SPACE(sizeof(int))]; // room for the UDP_GRO segment size
         struct msghdr msg{};
         msg.msg_name = &remote_addr;
         msg.msg_namelen = sizeof(remote_addr);
         msg.msg_iov = &iov;
         msg.msg_iovlen = 1;
+        msg.msg_control = cmsg_buf;
+        msg.msg_controllen = sizeof(cmsg_buf);
 
         const ssize_t nread = ::recvmsg(udp_fd_, &msg, MSG_DONTWAIT);
         if (nread < 0) {
+            if (errno == EAGAIN || errno == EWOULDBLOCK) { break; }
             // EMSGSIZE: a router's ICMP "fragmentation needed" about the size probe, not a failure
-            if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EMSGSIZE &&
-                errno != ECONNREFUSED && errno != ENETUNREACH && errno != EHOSTUNREACH) {
+            if (errno != EMSGSIZE && errno != ECONNREFUSED &&
+                errno != ENETUNREACH && errno != EHOSTUNREACH) {
                 return -1;
             }
             if (errno == ECONNREFUSED) { refused_seen_ = true; }
-        } else if (msg.msg_flags & MSG_TRUNC) {
-            return -1; // truncated packet
-        } else {
-            // path.local must equal what the factory gave conn_*_new
-            // or client discards every packets "from unknown path"
-            ngtcp2_path path{};
-            path.local.addr = reinterpret_cast<sockaddr*>(&local_addr_);
-            path.local.addrlen = local_len_;
-            path.remote.addr = reinterpret_cast<sockaddr*>(&remote_addr);
-            path.remote.addrlen = msg.msg_namelen;
+            continue; // the report is consumed; the next read is a datagram or EAGAIN
+        }
+        if (msg.msg_flags & MSG_TRUNC) { return -1; } // truncated packet
+
+        // with UDP_GRO one read can hold several datagrams of this size, the last one maybe shorter
+        size_t segment_len = static_cast<size_t>(nread);
+        for (cmsghdr* cmsg = CMSG_FIRSTHDR(&msg); cmsg != nullptr; cmsg = CMSG_NXTHDR(&msg, cmsg)) {
+            if (cmsg->cmsg_level == SOL_UDP && cmsg->cmsg_type == UDP_GRO &&
+                cmsg->cmsg_len >= CMSG_LEN(sizeof(int))) {
+                int gro_segment_len = 0;
+                std::memcpy(&gro_segment_len, CMSG_DATA(cmsg), sizeof(gro_segment_len));
+                if (gro_segment_len > 0) { segment_len = static_cast<size_t>(gro_segment_len); }
+            }
+        }
+        ++recv_stats_.reads;
+        recv_stats_.bytes += static_cast<uint64_t>(nread);
+
+        // path.local must equal what the factory gave conn_*_new
+        // or client discards every packets "from unknown path"
+        ngtcp2_path path{};
+        path.local.addr = reinterpret_cast<sockaddr*>(&local_addr_);
+        path.local.addrlen = local_len_;
+        path.remote.addr = reinterpret_cast<sockaddr*>(&remote_addr);
+        path.remote.addrlen = msg.msg_namelen;
+
+        for (size_t offset = 0; offset < static_cast<size_t>(nread); offset += segment_len) {
+            const size_t packet_len = std::min(segment_len, static_cast<size_t>(nread) - offset);
+            ++recv_stats_.datagrams;
+            ++packets;
 
             ngtcp2_pkt_info pi{};
-            const int rv = feed_data(buf, static_cast<size_t>(nread), &path, &pi);
+            const int rv = feed_data(read_buf_.data() + offset, packet_len, &path, &pi);
             if (rv == NGTCP2_ERR_DRAINING || rv == NGTCP2_ERR_DROP_CONN) {
                 if (rv == NGTCP2_ERR_DRAINING) {
                     // CONNECTION_CLOSE carrying NO_ERROR is the peer's orderly close
@@ -446,6 +469,42 @@ int QuicTransport::pump_once(ngtcp2_tstamp until) {
                 return -1;
             }
         }
+    }
+    return static_cast<int>(packets);
+}
+
+// one read_packets -> drain_packets cycle
+int QuicTransport::pump_once(ngtcp2_tstamp until) {
+    if (closed_) { return -1; }
+
+    // nothing written may sit unsent while this call waits
+    if (!flush_packets()) { return -1; }
+
+    // read first: under load the next packets are already queued and the wait is skipped
+    const int packets = read_packets();
+    if (packets < 0) { return -1; }
+
+    if (packets == 0) {
+        const ngtcp2_tstamp expiry = std::min(ngtcp2_conn_get_expiry(conn_), until);
+        const ngtcp2_tstamp now = now_ns();
+
+        struct timeval tv{};
+        if (expiry == UINT64_MAX) {
+            tv.tv_usec = 100'000; // no timer armed
+        } else if (expiry > now) {
+            const uint64_t diff_ns = expiry - now;
+            tv.tv_sec = static_cast<time_t>(diff_ns / 1'000'000'000ULL);
+            tv.tv_usec = static_cast<suseconds_t>(
+                (diff_ns % 1'000'000'000ULL) / 1000ULL);
+        } // already expired: tv stays {0, 0}, poll and fall through to handle_expiry
+
+        fd_set rfds{};
+        FD_ZERO(&rfds);
+        FD_SET(udp_fd_, &rfds);
+        const int sel = ::select(udp_fd_ + 1, &rfds, nullptr, nullptr, &tv);
+
+        if (sel < 0 && errno != EINTR) { return -1; }
+        if (sel > 0 && read_packets() < 0) { return -1; }
     }
 
     // a due timer and an arriving packet are not mutually exclusive
@@ -475,7 +534,8 @@ int QuicTransport::run_handshake() {
     if (drain_packets() != 0) { return -1; }
 
     while (!ngtcp2_conn_get_handshake_completed(conn_)) {
-        if (pump_once() != 0) { return -1; }
+        // one read can hold the packet that completes the handshake and the peer's close after it
+        if (pump_once() != 0 && !ngtcp2_conn_get_handshake_completed(conn_)) { return -1; }
     }
     return 0;
 }
@@ -582,8 +642,8 @@ uint8_t* QuicTransport::begin_packet() {
 // adds the packet just written at begin_packet() to the open batch
 // the batch leaves when it is full or the sizes stop matching: only its last packet may be shorter
 QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
-    ++tx_.datagrams;
-    tx_.bytes += n;
+    ++send_stats_.datagrams;
+    send_stats_.bytes += n;
     if (batch_pkts_ > 0 && n > batch_seg_) {
         // a longer packet cannot follow shorter ones: send those, start a new batch with this one
         uint8_t late[QUIC_MAX_PKTLEN];
@@ -602,7 +662,7 @@ QuicTransport::SendResult QuicTransport::send_batch() {
     const size_t len = std::exchange(batch_len_, 0);
     const unsigned pkts = std::exchange(batch_pkts_, 0);
     if (pkts == 0) { return SendResult::ok; }
-    ++tx_.sends;
+    ++send_stats_.sends;
 
     // the kernel cuts every send at the socket's UDP_SEGMENT: several packets need exactly their
     // size there, a single packet only needs to be no longer than it

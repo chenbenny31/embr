@@ -565,9 +565,12 @@ TEST(QuicTransport, Egress_ZcPathCarriesTransfer) {
 
 // ── Gso ───────────────────────────────────────────────────────────────────────
 // one 1 MiB send_file over a fresh connection, reporting the sender's packet and send counts
+// and the receiver's packet and read counts
 struct GsoRun {
     bool gso{false};
-    QuicTransport::TxStats tx;
+    QuicTransport::SendStats send;
+    bool gro{false};
+    QuicTransport::RecvStats recv;
     bool intact{false};
     std::string server_err;
 };
@@ -591,6 +594,9 @@ static GsoRun run_gso_transfer() {
             t->recv_file(dst_fd, 0, kLen);
             const uint8_t ack = 1;
             send_exact(*t, &ack, 1);
+            const auto* server_qt = dynamic_cast<QuicTransport*>(t.get());
+            run.gro = server_qt->gro();
+            run.recv = server_qt->recv_stats();
         } catch (const std::exception& e) {
             run.server_err = e.what();
         }
@@ -605,7 +611,7 @@ static GsoRun run_gso_transfer() {
 
     const auto* qt = dynamic_cast<QuicTransport*>(client.get());
     run.gso = qt->gso();
-    run.tx = qt->tx_stats();
+    run.send = qt->send_stats();
     std::vector<uint8_t> got(kLen);
     ::pread(dst.fd, got.data(), kLen, 0);
     run.intact = std::memcmp(pattern.data(), got.data(), kLen) == 0;
@@ -618,7 +624,7 @@ TEST(QuicTransport, Gso_BatchesPacketsIntoFewerSends) {
     EXPECT_TRUE(run.server_err.empty()) << run.server_err;
     EXPECT_TRUE(run.intact);
     if (!run.gso) { GTEST_SKIP() << "GSO off"; }
-    EXPECT_GT(run.tx.datagrams, run.tx.sends);
+    EXPECT_GT(run.send.datagrams, run.send.sends);
 }
 
 TEST(QuicTransport, Gso_SwitchedOffSendsOnePacketPerSend) {
@@ -632,7 +638,7 @@ TEST(QuicTransport, Gso_SwitchedOffSendsOnePacketPerSend) {
     EXPECT_TRUE(run.server_err.empty()) << run.server_err;
     EXPECT_TRUE(run.intact);
     EXPECT_FALSE(run.gso);
-    EXPECT_EQ(run.tx.datagrams, run.tx.sends);
+    EXPECT_EQ(run.send.datagrams, run.send.sends);
 }
 
 // ngtcp2 starts at 1200 bytes; the 1350-byte probe must lift data packets to the buffer size
@@ -640,8 +646,33 @@ TEST(QuicTransport, Pmtud_GrowsPacketsToBufferSize) {
     const GsoRun run = run_gso_transfer();
     EXPECT_TRUE(run.server_err.empty()) << run.server_err;
     EXPECT_TRUE(run.intact);
-    ASSERT_GT(run.tx.datagrams, 0u);
-    EXPECT_GT(run.tx.bytes / run.tx.datagrams, 1280u); // 1200 at most if the size never grew
+    ASSERT_GT(run.send.datagrams, 0u);
+    EXPECT_GT(run.send.bytes / run.send.datagrams, 1280u); // 1200 at most if the size never grew
+}
+
+// ── Gro ───────────────────────────────────────────────────────────────────────
+// loopback hands a GSO batch to a UDP_GRO socket whole, so the receiver sees more packets than reads
+// skipped when the suite runs with GSO or GRO off, or the kernel has no UDP_GRO
+TEST(QuicTransport, Gro_ReadsSeveralPacketsPerRecvmsg) {
+    const GsoRun run = run_gso_transfer();
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    if (!run.gso || !run.gro) { GTEST_SKIP() << "GSO or GRO off"; }
+    EXPECT_GT(run.recv.datagrams, run.recv.reads);
+}
+
+TEST(QuicTransport, Gro_SwitchedOffReadsOnePacketPerRecvmsg) {
+    const char* prev = std::getenv("EMBR_QUIC_GRO");
+    const bool had = prev != nullptr;
+    const std::string saved = had ? prev : "";
+    ::setenv("EMBR_QUIC_GRO", "0", 1);
+    const GsoRun run = run_gso_transfer();
+    if (had) { ::setenv("EMBR_QUIC_GRO", saved.c_str(), 1); } else { ::unsetenv("EMBR_QUIC_GRO"); }
+
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    EXPECT_FALSE(run.gro);
+    EXPECT_EQ(run.recv.datagrams, run.recv.reads);
 }
 
 // ── SendFile_RecvFile_UnalignedOffset ─────────────────────────────────────────

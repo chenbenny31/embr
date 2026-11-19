@@ -28,6 +28,9 @@
 inline constexpr size_t QUIC_MAX_PKTLEN = 1350;      // datagram local sends include header
 inline constexpr uint16_t QUIC_PMTUD_PROBE = QUIC_MAX_PKTLEN; // the one size path MTU discovery tries
 inline constexpr size_t QUIC_MAX_RECV_PKTLEN = 1500; // independent of send cap
+// UDP GRO: the kernel hands a run of same-size datagrams over as one read of at most 64 KiB
+inline constexpr size_t QUIC_GRO_BUFLEN = 65536;
+inline constexpr unsigned QUIC_RECV_BURST = 64;      // packets read before the ACKs for them are written
 inline constexpr size_t QUIC_MAX_BURST = 10;         // datagrams per write cycle
 inline constexpr uint64_t QUIC_CLOSE_LINER_NS = 1'000'000'000ULL; // graceful close bound: 100ms RTT
 inline constexpr uint64_t QUIC_HANDSHAKE_TIMEOUT_NS = 10'000'000'000ULL; // give up connecting after this
@@ -58,13 +61,22 @@ public:
 
     // packets written and send calls made; datagrams > sends means GSO batched them
     // bytes / datagrams is the packet size the path settled on
-    struct TxStats {
+    struct SendStats {
         uint64_t datagrams{0};
         uint64_t sends{0};
         uint64_t bytes{0};
     };
-    const TxStats& tx_stats() const { return tx_; }
+    const SendStats& send_stats() const { return send_stats_; }
     bool gso() const { return gso_; } // false: EMBR_QUIC_GSO=0 or the kernel has no UDP_SEGMENT
+
+    // packets received and recvmsg calls that returned them; datagrams > reads means reads were batched
+    struct RecvStats {
+        uint64_t datagrams{0};
+        uint64_t reads{0};
+        uint64_t bytes{0};
+    };
+    const RecvStats& recv_stats() const { return recv_stats_; }
+    bool gro() const { return gro_; } // false: EMBR_QUIC_GRO=0, the kernel has no UDP_GRO, or nothing read yet
 
     // --- data plane ---
     void send_file(int file_fd, uint64_t offset, size_t len) override;
@@ -120,7 +132,15 @@ private:
     unsigned batch_pkts_{0};
     size_t sock_seg_{0};             // UDP_SEGMENT the socket holds now, 0 = unset
     SendResult send_batch();
-    TxStats tx_;
+    SendStats send_stats_;
+
+    // ingress: read what the socket holds, feed every packet, then write the ACKs once
+    bool ingress_init_{false};
+    bool gro_{false};
+    std::vector<uint8_t> read_buf_;
+    RecvStats recv_stats_;
+    void init_ingress();
+    int read_packets(); // packets read and handed to ngtcp2; 0: nothing was waiting; -1: the connection is over
 
     // drive ones retained block until ngtcp2 accepts every byte
     ssize_t write_stream(const uint8_t* base, size_t len);
@@ -154,7 +174,7 @@ private:
 
     void close_connection(int liberr); // fire-once, liberr==0 (app NO_ERROR), until unacked_ drains
 
-    // one recvmsg -> feed_data -> drain_packets cycle; until caps the wait
+    // one read_packets -> drain_packets cycle, waiting for the socket only when it is empty; until caps the wait
     int pump_once(ngtcp2_tstamp until = UINT64_MAX);
 
     int run_handshake();

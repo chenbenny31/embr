@@ -1,0 +1,8 @@
+# routed veth A-R-B, a0 without UDP segmentation offload, r1 TSO off, b0 GRO on; 64 MB transfers, prototype binary
+# 2026-11-17, kernel 7.3.3. The receiver's reads show whether device GRO coalesced the packets.
+sender SEND_ZC + GSO: .108986788s sender mode=zc gso=1 datagrams=51741 sends=3496 | receiver gro=1 datagrams=51741 reads=51741 bytes=69547122
+sender sendmsg + GSO: .093468393s sender mode=sendmsg gso=1 datagrams=51749 sends=3493 | receiver gro=1 datagrams=51749 reads=3493 bytes=69547240
+sender sendmsg + GSO, receiver ACKs by sendmsg: .091599014s sender mode=sendmsg gso=1 datagrams=51741 sends=3485 | receiver gro=1 datagrams=51741 reads=3485 bytes=69546910
+sender SEND_ZC + GSO, receiver ACKs by sendmsg: .104169993s sender mode=zc gso=1 datagrams=51697 sends=3456 | receiver gro=1 datagrams=51697 reads=51697 bytes=69544956
+sender sendmsg, GSO off: .121760297s sender mode=sendmsg gso=0 datagrams=51811 sends=51811 | receiver gro=1 datagrams=51808 reads=51808 bytes=69549230
+# minimal UDP sender (grotest.py, 16 x 1350 bytes per GSO send, DF set), same path: reads=200 packets=3200 packets-per-read histogram={16: 200}

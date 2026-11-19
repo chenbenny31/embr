@@ -16,6 +16,7 @@
 #   scp            encrypted reference; the fair wall-clock peer for QUIC
 # A row's environment is set on the sender only, so the receiver is identical across QUIC rows.
 # EMBR_QUIC_ZC_SLOTS (the SEND_ZC slot pool) is read by the sender: set it where the sender starts.
+# EMBR_QUIC_GRO=0 (UDP GRO off: one packet per read) is read by the receiver: set it where the pull runs.
 # EMBR_QUIC_ACK_THRESH=N in the caller's environment applies to every QUIC row: the receiver then
 # acknowledges every N packets instead of 2 and the sender's GSO batches grow with it. Set it on
 # the receiving host (on both for loopback); the results header records it.
@@ -206,7 +207,7 @@ make_file() {
 results_header() {
     { echo "# bench $MODE $(date)"
       echo "# commit=$(git describe --always --dirty 2>/dev/null || echo unknown) build=$BUILD cache=$CACHE_DISCIPLINE bytes=$EXPECTED_BYTES"
-      echo "# rows: $ROWS   ack_thresh=${EMBR_QUIC_ACK_THRESH:-2}$([[ "$MODE" == loopback ]] && echo "   zc_slots=${EMBR_QUIC_ZC_SLOTS:-default}")"
+      echo "# rows: $ROWS   ack_thresh=${EMBR_QUIC_ACK_THRESH:-2}   gro=${EMBR_QUIC_GRO:-1}$([[ "$MODE" == loopback ]] && echo "   zc_slots=${EMBR_QUIC_ZC_SLOTS:-default}")"
       echo "$@"
       echo "# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress."
       echo "# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off."
@@ -227,6 +228,16 @@ egress_summary() { # egress_summary <row> <stderr log of its pushes>
                if (t["sends"] && ("copied" in t)) printf ", copied %.1f%%", 100*t["copied"]/t["sends"]
                if (t["datagrams"] && ("bytes" in t)) printf ", %.0f bytes per datagram", t["bytes"]/t["datagrams"]
                if (t["sends"]) printf ")"
+               printf "\n" }' "$2" >&2
+}
+
+ingress_summary() { # ingress_summary <row> <stderr log of its pulls>
+    grep -q '^\[quic-ingress\]' "$2" 2>/dev/null || return 0
+    awk -v row="$1" '/^\[quic-ingress\]/ { n++
+             for (i=2;i<=NF;i++) { split($i,kv,"="); if (kv[1] == "gro") { gro=kv[2]; continue }
+                                   t[kv[1]]+=kv[2] } }
+         END { printf "%s ingress over %d connections: gro=%s datagrams=%d reads=%d bytes=%d", row, n, gro, t["datagrams"], t["reads"], t["bytes"]
+               if (t["reads"]) printf " (%.1f datagrams per read)", t["datagrams"]/t["reads"]
                printf "\n" }' "$2" >&2
 }
 
@@ -311,7 +322,7 @@ assert_ports() {
 
 # run_pair <label> <row>: sender in the background, receiver in the foreground, both timed
 run_pair() {
-    local label="$1" row="$2" slog=/dev/null
+    local label="$1" row="$2" slog=/dev/null rlog=/dev/null
     local -a send recv
     case "$row" in
         nc)  send=(bash -c "ncat -l $NC_PORT --send-only < '$FILE'")
@@ -319,8 +330,8 @@ run_pair() {
         scp) send=(true) # sshd is the sender; its CPU is not charged to a timed process
              recv=(scp -o StrictHostKeyChecking=no "$(whoami)@127.0.0.1:$FILE" "$OUT") ;;
         *)   mapfile -t send < <(push_args "$row"); mapfile -t recv < <(pull_args "$row" 127.0.0.1)
-             send=(env $(row_env "$row") EMBR_QUIC_STATS=1 "$EMBR" "${send[@]}"); recv=("$EMBR" "${recv[@]}")
-             slog="$RESULTS.$row.log" ;; # the push's [quic-egress] line
+             send=(env $(row_env "$row") EMBR_QUIC_STATS=1 "$EMBR" "${send[@]}"); recv=(env EMBR_QUIC_STATS=1 "$EMBR" "${recv[@]}")
+             slog="$RESULTS.$row.log"; rlog="$RESULTS.$row.recv.log" ;; # the push's [quic-egress] line, the pull's [quic-ingress] line
     esac
 
     rm -f "$OUT"
@@ -332,7 +343,7 @@ run_pair() {
     /usr/bin/time -v -o "$stfile" "${send[@]}" >/dev/null 2>>"$slog" &
     local spid=$!
     sleep 0.5 # let the sender reach listen state
-    /usr/bin/time -v -o "$rfile" "${recv[@]}" >/dev/null 2>&1 || rc=$?
+    /usr/bin/time -v -o "$rfile" "${recv[@]}" >/dev/null 2>>"$rlog" || rc=$?
     wait "$spid" 2>/dev/null || true
     c1=$(cpu_snap) # before verify_output, whose hashing is not the transfer's
 
@@ -365,7 +376,7 @@ run_loopback() {
     results_header "# kernel=$(uname -r) memlock=$(ulimit -l)KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall"
 
     local total=$(( RUNS + WARMUP )) i row
-    for row in $ROWS; do rm -f "$RESULTS.$row.log"; done
+    for row in $ROWS; do rm -f "$RESULTS.$row.log" "$RESULTS.$row.recv.log"; done
     for (( i=1; i<=total; i++ )); do
         local label="run$i"; (( i <= WARMUP )) && label="warmup$i"
         log "=== $label ($i/$total) ==="
@@ -390,7 +401,7 @@ run_loopback() {
     host_cpu_table host_cpu host_irq
     set -e
     echo
-    for row in $ROWS; do if is_quic "$row"; then egress_summary "$row" "$RESULTS.$row.log"; fi; done
+    for row in $ROWS; do if is_quic "$row"; then egress_summary "$row" "$RESULTS.$row.log"; ingress_summary "$row" "$RESULTS.$row.recv.log"; fi; done
     log "raw results in $RESULTS"
 }
 
@@ -495,6 +506,7 @@ run_tool() {
                 'BEGIN{ if(s>0)printf "%.2f",b*8/s/1e9; else print "NA" }')
             printf '%s wall=%s sec=%s gbps=%s user=%ss sys=%ss rss=%sKB host_cpu=%ss host_irq=%ss sender_cpu=%ss sender_irq=%ss\n' \
                 "$label" "$wall" "$sec" "$gbps" "$user" "$sys" "$rss" "$hcpu" "$hirq" "$scpu" "$sirq" | tee -a "$RESULTS" >&2
+            grep -a '^\[quic-ingress\]' "$terr" >> "$RESULTS.${label#*_}.recv.log" || true # the pull's read counts
             rm -f "$terr" "$ttime"; return 0
         fi
         log "  $label attempt $attempt failed (rc=$rc):"
@@ -512,7 +524,7 @@ pull_row() { # pull_row <label> <row>
         nc)  run_tool "$label" bash -c "ncat '$SENDER_IP' '$NC_PORT' --recv-only > '$OUT'" ;;
         scp) run_tool "$label" scp "${SSH_OPTS[@]}" "${SENDER_USER}@${SENDER_IP}:${FILE}" "$OUT" ;;
         *)   mapfile -t args < <(pull_args "$row" "$SENDER_IP")
-             run_tool "$label" "$EMBR" "${args[@]}" ;;
+             run_tool "$label" env EMBR_QUIC_STATS=1 "$EMBR" "${args[@]}" ;;
     esac
 }
 
@@ -538,6 +550,7 @@ run_receiver() {
     results_header "# sender=$SENDER_IP kernel local=$(uname -r) remote=$(on_sender uname -r 2>/dev/null || echo NA)"
 
     local total=$(( RUNS + WARMUP )) i row
+    for row in $ROWS; do rm -f "$RESULTS.$row.recv.log"; done
     for (( i=1; i<=total; i++ )); do
         local label="run$i"; (( i <= WARMUP )) && label="warmup$i"
         log "=== $label ($i/$total) ==="
@@ -561,6 +574,7 @@ run_receiver() {
     done
     host_cpu_table host_cpu host_irq sender_cpu sender_irq
     echo
+    for row in $ROWS; do if is_quic "$row"; then ingress_summary "$row" "$RESULTS.$row.recv.log"; fi; done
     set -e
     log "raw results in $RESULTS"
     log "read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C."

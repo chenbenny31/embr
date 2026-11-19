@@ -1,0 +1,160 @@
+== dummy: 1 x 1200 B per send (1.2 kB), 2 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                       352      365      424
+  copy payload               19.5     15.5      0.0
+  zc notification             0.0      0.0     45.4
+  zc buffer import            0.0      0.0      3.1
+  io_uring submit             0.0     47.7     55.7
+  sendmsg entry              42.3     13.0      5.2
+  syscall entry/exit         24.3     15.8     15.2
+  page/skb alloc+free        54.7     49.7     44.1
+  user: egress code          10.8      8.4     31.8
+  user: fill packet          13.4     16.0      6.8
+  UDP/IP send path          186.1    197.3    215.8
+  user: other                 0.0      0.6      0.1
+== dummy: 2 x 1200 B per send (2.4 kB), 2 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                       373      441      523
+  copy payload               17.8     17.6      0.0
+  zc notification             0.0      0.0     68.9
+  zc buffer import            0.0      0.0      2.6
+  io_uring submit             0.0     54.3     69.0
+  sendmsg entry              49.5     15.6      5.4
+  syscall entry/exit         22.9     28.4     26.5
+  page/skb alloc+free        47.9     52.6     47.7
+  loopback receive            2.7      2.9      2.8
+  user: egress code           9.4     16.9     47.9
+  user: fill packet          20.5     27.7     16.2
+  UDP/IP send path          201.7    221.4    235.4
+  user: other                 0.0      2.8      0.2
+== dummy: 10 x 1200 B per send (12.0 kB), 10 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                       462      557      586
+  copy payload               47.8     57.3      0.0
+  zc notification             0.0      0.1     71.7
+  zc buffer import            0.0      0.0      3.0
+  io_uring submit             0.0     59.1     68.8
+  sendmsg entry              49.8     15.7      5.2
+  syscall entry/exit         22.8     31.4     29.8
+  page/skb alloc+free        48.7     51.0     44.0
+  loopback receive            3.1      3.3      2.6
+  user: egress code          10.5     12.7     47.9
+  user: fill packet          77.9     95.3     76.1
+  UDP/IP send path          200.8    228.3    236.1
+  user: other                 0.1      1.5      0.1
+== dummy: 16 x 1200 B per send (19.2 kB), 16 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                       549      694      628
+  copy payload               79.3    109.5      0.0
+  zc notification             0.0      0.1     78.6
+  zc buffer import            0.0      0.0      2.8
+  io_uring submit             0.0     70.0     68.2
+  sendmsg entry              51.7     18.0      5.6
+  syscall entry/exit         32.4     31.9     30.4
+  page/skb alloc+free        46.9     52.6     44.3
+  loopback receive            2.4      3.1      2.8
+  user: egress code          11.5     13.8     49.5
+  user: fill packet         118.3    150.6    111.0
+  UDP/IP send path          206.3    242.5    234.0
+  user: other                 0.1      0.8      0.1
+== lo: 1 x 1200 B per send (1.2 kB), 2 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                       550      569      730
+  copy payload               15.3     15.0     10.2
+  zc notification             0.0      0.0     49.4
+  zc buffer import            0.0      0.0      2.8
+  io_uring submit             0.0     47.3     52.9
+  sendmsg entry              45.5     15.9      5.0
+  syscall entry/exit         31.5     20.2     19.7
+  page/skb alloc+free        64.2     65.4    106.3
+  loopback receive          110.8    110.7    112.5
+  user: egress code          10.0     10.6     34.5
+  user: fill packet          14.5     16.7      7.2
+  UDP/IP send path          257.5    265.8    329.3
+== lo: 2 x 1200 B per send (2.4 kB), 2 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                       785      842     1041
+  copy payload               18.0     17.7     10.7
+  zc notification             0.5      0.3     78.6
+  zc buffer import            0.0      0.0      2.8
+  io_uring submit             0.0     54.8     66.0
+  sendmsg entry              44.5     17.4      6.5
+  syscall entry/exit         29.1     35.9     31.9
+  page/skb alloc+free       124.7    122.5    174.8
+  loopback receive          197.7    197.0    201.1
+  user: egress code          12.2     16.9     47.1
+  user: fill packet          22.6     26.9     17.5
+  UDP/IP send path          334.8    349.0    403.3
+  user: other                 0.1      2.0      0.0
+== lo: 10 x 1200 B per send (12.0 kB), 10 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                      1803     1798     2175
+  copy payload               67.2     68.3     34.6
+  zc notification             2.3      1.8     95.3
+  zc buffer import            0.0      0.0      3.7
+  io_uring submit             0.0     72.1     81.8
+  sendmsg entry              58.0     19.6      6.1
+  syscall entry/exit         34.6     42.1     37.6
+  page/skb alloc+free       412.1    382.3    513.3
+  loopback receive          452.8    431.2    426.7
+  user: egress code          12.1     16.5     49.2
+  user: fill packet          91.8    106.1     83.7
+  UDP/IP send path          670.2    651.5    839.8
+  user: other                 0.0      1.8      0.0
+== lo: 16 x 1200 B per send (19.2 kB), 16 packets per flush.  ns per send:
+                          sendmsg    usend       zc
+  TOTAL                      2393     2387     2875
+  copy payload              115.8    114.6     71.9
+  zc notification             4.1      3.1    101.8
+  zc buffer import            0.0      0.0      3.7
+  io_uring submit             0.0     73.5     80.5
+  sendmsg entry              59.1     19.3      5.5
+  syscall entry/exit         41.2     41.8     40.8
+  page/skb alloc+free       570.1    551.8    722.7
+  loopback receive          581.3    554.7    563.4
+  user: egress code          14.1     11.0     49.7
+  user: fill packet         139.5    167.3    127.6
+  UDP/IP send path          865.2    845.8   1104.4
+  user: other                 0.0      0.7      0.0
+== dummy: 16 x 1350 B per send (21.6 kB), 16 packets per flush.  ns per send:
+                          sendmsg       zc
+  TOTAL                       619      674
+  copy payload              109.9      0.0
+  zc notification             0.0     78.0
+  zc buffer import            0.0      2.8
+  io_uring submit             0.0     72.1
+  sendmsg entry              51.3      5.7
+  syscall entry/exit         29.2     37.7
+  page/skb alloc+free        49.7     45.8
+  loopback receive            2.5      3.0
+  user: egress code          12.9     43.5
+  user: fill packet         151.4    144.1
+  UDP/IP send path          211.7    240.2
+== dummy: 32 x 1350 B per send (43.2 kB), 32 packets per flush.  ns per send:
+                          sendmsg       zc
+  TOTAL                      1324      882
+  copy payload              328.5      0.0
+  zc notification             0.0     89.9
+  zc buffer import            0.0      2.4
+  io_uring submit             0.0     77.5
+  sendmsg entry              58.6      5.5
+  syscall entry/exit         24.5     32.0
+  page/skb alloc+free       139.9     44.8
+  loopback receive            3.3      3.4
+  user: egress code          12.3     50.7
+  user: fill packet         341.5    327.7
+  UDP/IP send path          413.6    246.3
+== dummy: 47 x 1350 B per send (63.5 kB), 47 packets per flush.  ns per send:
+                          sendmsg       zc
+  TOTAL                      1624     1056
+  copy payload              483.8      0.0
+  zc notification             0.0     89.6
+  zc buffer import            0.0      2.3
+  io_uring submit             0.0     76.5
+  sendmsg entry              62.4      5.8
+  syscall entry/exit         31.0     35.2
+  page/skb alloc+free       147.5     38.2
+  loopback receive            2.8      2.9
+  user: egress code          12.0     46.2
+  user: fill packet         464.2    525.6
+  UDP/IP send path          419.0    231.9

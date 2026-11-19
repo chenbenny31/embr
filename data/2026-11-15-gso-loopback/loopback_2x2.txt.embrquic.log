@@ -1,0 +1,11 @@
+[quic-egress] mode=zc gso=0 datagrams=937950 sends=937950 notifs=937950 copied=937950 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937513 sends=937513 notifs=937513 copied=937513 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=936694 sends=936694 notifs=936694 copied=936694 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937966 sends=937966 notifs=937966 copied=937966 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937282 sends=937282 notifs=937282 copied=937282 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937275 sends=937275 notifs=937275 copied=937275 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937186 sends=937186 notifs=937186 copied=937186 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937241 sends=937241 notifs=937241 copied=937241 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937739 sends=937739 notifs=937739 copied=937739 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=936820 sends=936820 notifs=936820 copied=936820 fallback=0 errors=0 registered=1
+[quic-egress] mode=zc gso=0 datagrams=937777 sends=937777 notifs=937777 copied=937777 fallback=0 errors=0 registered=1

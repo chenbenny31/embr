@@ -1,0 +1,44 @@
+--- a/src/transport/quic_transport.cpp
++++ b/src/transport/quic_transport.cpp
+@@ -390,6 +390,12 @@
+     gro_ = !(gro && std::strcmp(gro, "0") == 0) &&
+            ::setsockopt(udp_fd_, SOL_UDP, UDP_GRO, &on, sizeof(on)) == 0;
+     rx_buf_.resize(gro_ ? QUIC_GRO_BUFLEN : QUIC_MAX_RECV_PKTLEN);
++    if (const char* n = std::getenv("EMBR_QUIC_RECV_BURST")) { // PROTOTYPE ONLY
++        recv_burst_ = static_cast<unsigned>(std::clamp(std::atoi(n), 1, 4096));
++    }
++    if (const char* n = std::getenv("EMBR_QUIC_ACK_EARLY")) { // PROTOTYPE ONLY
++        ack_early_ = static_cast<unsigned>(std::clamp(std::atoi(n), 0, 4096));
++    }
+ }
+ 
+ // reads until the socket is empty or QUIC_RECV_BURST packets are in: the ACKs for all of them
+@@ -398,7 +404,7 @@
+     init_ingress();
+ 
+     unsigned fed = 0;
+-    for (unsigned reads = 0; reads < QUIC_RECV_BURST && fed < QUIC_RECV_BURST; ++reads) {
++    for (unsigned reads = 0; reads < recv_burst_ && fed < recv_burst_; ++reads) {
+         sockaddr_storage remote_addr{};
+         struct iovec iov{};
+         iov.iov_base = rx_buf_.data();
+@@ -468,6 +474,8 @@
+                 close_connection(rv);
+                 return -1;
+             }
++            // the first packets of a pump are acknowledged as they come, the rest once at the end
++            if (fed <= ack_early_ && drain_packets() != 0) { return -1; }
+         }
+     }
+     return static_cast<int>(fed);
+--- a/src/transport/quic_transport.hpp
++++ b/src/transport/quic_transport.hpp
+@@ -137,6 +137,8 @@
+     // ingress: read what the socket holds, feed every packet, then write the ACKs once
+     bool ingress_init_{false};
+     bool gro_{false};
++    unsigned recv_burst_{QUIC_RECV_BURST};
++    unsigned ack_early_{0}; // PROTOTYPE ONLY
+     std::vector<uint8_t> rx_buf_;
+     RxStats rx_;
+     void init_ingress();

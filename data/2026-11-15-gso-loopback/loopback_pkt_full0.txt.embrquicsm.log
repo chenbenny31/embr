@@ -1,0 +1,6 @@
+[quic-egress] mode=sendmsg gso=0 datagrams=936000 sends=936000
+[quic-egress] mode=sendmsg gso=0 datagrams=936152 sends=936152
+[quic-egress] mode=sendmsg gso=0 datagrams=936325 sends=936325
+[quic-egress] mode=sendmsg gso=0 datagrams=935812 sends=935812
+[quic-egress] mode=sendmsg gso=0 datagrams=936153 sends=936153
+[quic-egress] mode=sendmsg gso=0 datagrams=936016 sends=936016

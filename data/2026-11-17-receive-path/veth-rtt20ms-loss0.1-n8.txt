@@ -1,0 +1,27 @@
+# veth A-R-B  rate=none delay=10ms (each way) loss=0.1% (each way) limit=10000 packets  file=67108864 bytes  kernel=7.3.3-300.fc45.x86_64
+# a0: tx-udp-segmentation: off   b0: generic-receive-offload: on
+run1 current rc=0 intact secs=15.398632829 mbps=35 | sender datagrams=52486 sends=25527 | receiver 
+run1 prototype rc=0 intact secs=16.813305294 mbps=32 | sender datagrams=52149 sends=4591 | receiver gro=1 datagrams=52104 reads=5330 bytes=69522894
+run1 prototype-ack-early4 rc=0 intact secs=45.787708534 mbps=12 | sender datagrams=53615 sends=8736 | receiver gro=1 datagrams=53547 reads=9062 bytes=69576830
+run2 current rc=0 intact secs=18.703006842 mbps=29 | sender datagrams=52671 sends=26808 | receiver 
+run2 prototype rc=0 intact secs=16.946914520 mbps=32 | sender datagrams=52215 sends=5024 | receiver gro=1 datagrams=52158 reads=5926 bytes=69531888
+run2 prototype-ack-early4 rc=0 intact secs=26.895425861 mbps=20 | sender datagrams=52754 sends=8388 | receiver gro=1 datagrams=52707 reads=9104 bytes=69553208
+run3 current rc=0 intact secs=18.957654954 mbps=28 | sender datagrams=52648 sends=26643 | receiver 
+run3 prototype rc=0 intact secs=20.392344256 mbps=26 | sender datagrams=52225 sends=4918 | receiver gro=1 datagrams=52174 reads=5665 bytes=69524237
+run3 prototype-ack-early4 rc=0 intact secs=31.669992840 mbps=17 | sender datagrams=52924 sends=9924 | receiver gro=1 datagrams=52870 reads=10630 bytes=69546398
+run4 current rc=0 intact secs=15.485983700 mbps=35 | sender datagrams=52507 sends=24869 | receiver 
+run4 prototype rc=0 intact secs=22.723812087 mbps=24 | sender datagrams=52275 sends=4867 | receiver gro=1 datagrams=52218 reads=5748 bytes=69521413
+run4 prototype-ack-early4 rc=0 intact secs=36.743735056 mbps=15 | sender datagrams=53099 sends=8031 | receiver gro=1 datagrams=53044 reads=8523 bytes=69554225
+run5 current rc=0 intact secs=20.758181146 mbps=26 | sender datagrams=52740 sends=27201 | receiver 
+run5 prototype rc=0 intact secs=25.079795416 mbps=21 | sender datagrams=52180 sends=4617 | receiver gro=1 datagrams=52129 reads=5022 bytes=69518323
+run5 prototype-ack-early4 rc=0 intact secs=30.522061762 mbps=18 | sender datagrams=52880 sends=7875 | receiver gro=1 datagrams=52823 reads=8633 bytes=69558668
+run6 current rc=0 intact secs=23.674939346 mbps=23 | sender datagrams=52867 sends=27603 | receiver 
+run6 prototype rc=0 intact secs=17.576805659 mbps=31 | sender datagrams=52135 sends=4681 | receiver gro=1 datagrams=52075 reads=5589 bytes=69534146
+run6 prototype-ack-early4 rc=0 intact secs=39.656644921 mbps=14 | sender datagrams=53318 sends=10932 | receiver gro=1 datagrams=53256 reads=11377 bytes=69563751
+run7 current rc=0 intact secs=14.527332706 mbps=37 | sender datagrams=52453 sends=25491 | receiver 
+run7 prototype rc=0 intact secs=16.532405620 mbps=32 | sender datagrams=52144 sends=4818 | receiver gro=1 datagrams=52095 reads=5550 bytes=69526847
+run7 prototype-ack-early4 rc=0 intact secs=33.568420988 mbps=16 | sender datagrams=52981 sends=9060 | receiver gro=1 datagrams=52934 reads=9588 bytes=69549564
+run8 current rc=0 intact secs=23.823364077 mbps=23 | sender datagrams=52906 sends=27349 | receiver 
+run8 prototype rc=0 intact secs=20.189239063 mbps=27 | sender datagrams=52360 sends=5704 | receiver gro=1 datagrams=52305 reads=6933 bytes=69525957
+run8 prototype-ack-early4 rc=0 intact secs=35.410882173 mbps=15 | sender datagrams=53118 sends=10412 | receiver gro=1 datagrams=53054 reads=11130 bytes=69554682
+# r1 qdisc:  Sent 1722057181 bytes 1262422 pkt (dropped 1319, overlimits 0 requeues 0) 
