@@ -51,6 +51,7 @@ public:
         uint64_t notifs{0};
         uint64_t copied{0};
         uint64_t fallback{0}; // copies attempted after a refused SEND_ZC; failed copy also counts
+        uint64_t waits{0}; // reserve() found every slot in flight and blocked for a completion
         uint64_t errors{0};
     };
     const Stats& stats() const { return stats_;}

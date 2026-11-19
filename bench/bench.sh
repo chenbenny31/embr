@@ -15,6 +15,7 @@
 #   nc             plaintext floor; the fair peer for embr TCP
 #   scp            encrypted reference; the fair wall-clock peer for QUIC
 # A row's environment is set on the sender only, so the receiver is identical across QUIC rows.
+# EMBR_QUIC_ZC_SLOTS (the SEND_ZC slot pool) is read by the sender: set it where the sender starts.
 # EMBR_QUIC_ACK_THRESH=N in the caller's environment applies to every QUIC row: the receiver then
 # acknowledges every N packets instead of 2 and the sender's GSO batches grow with it. Set it on
 # the receiving host (on both for loopback); the results header records it.
@@ -205,7 +206,7 @@ make_file() {
 results_header() {
     { echo "# bench $MODE $(date)"
       echo "# commit=$(git describe --always --dirty 2>/dev/null || echo unknown) build=$BUILD cache=$CACHE_DISCIPLINE bytes=$EXPECTED_BYTES"
-      echo "# rows: $ROWS   ack_thresh=${EMBR_QUIC_ACK_THRESH:-2}"
+      echo "# rows: $ROWS   ack_thresh=${EMBR_QUIC_ACK_THRESH:-2}$([[ "$MODE" == loopback ]] && echo "   zc_slots=${EMBR_QUIC_ZC_SLOTS:-default}")"
       echo "$@"
       echo "# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress."
       echo "# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off."
@@ -463,7 +464,7 @@ run_sender() {
         SENDER_PIDS+=($!)
     done
     trap stop_sender EXIT INT TERM
-    log "serving: $ROWS — tcp:$TCP_PORT nc:$NC_PORT quic udp: $(row_ports)(pids ${SENDER_PIDS[*]})"
+    log "serving: $ROWS — tcp:$TCP_PORT nc:$NC_PORT quic udp: $(row_ports)(pids ${SENDER_PIDS[*]}) zc_slots=${EMBR_QUIC_ZC_SLOTS:-default}"
     log "Ctrl-C when the receiver is done — the sender summary prints on exit"
     wait
 }

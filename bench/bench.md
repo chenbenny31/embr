@@ -5,8 +5,9 @@ Release build) on 2026-09-05/06. Transfer timing ends without an explicit fsync;
 it measures transfer completion, not durable storage. Section 1 contains older
 v0.7 syscall counts. The [corrected desktop ownership benchmark](#desktop-ownership-cost)
 is a separate run after the benchmark implementation was repaired. The
-[packet-loss runs](#packet-loss-runs) in §8 and the
-[GSO loopback runs](#gso-loopback) in §9 are from November 2026.
+[packet-loss runs](#packet-loss-runs) in §8, the
+[GSO loopback runs](#gso-loopback) in §9 and the
+[send-cost runs](#egress-cost) in §10 are from November 2026.
 
 All six former `bench/results/` files are preserved verbatim in the
 [raw-data archive](#raw-data-archive), including their original provenance and
@@ -361,7 +362,13 @@ datagram:            1350 bytes (QUIC_MAX_PKTLEN) where the path carries them, e
                      every earlier run in this file, September's WAN included, sent 1200
 egress slab:         without GSO, QUIC_ZC_SLOTS = 64 slots × 1350 B per connection, registered
                      once; about 105 KiB locked per connection including the ring.
-                     With GSO, QUIC_ZC_GSO_SLOTS = 8 slots × 16 × 1350 B (169 KiB slab)
+                     With GSO, QUIC_ZC_GSO_SLOTS = 8 slots × 16 × 1350 B (169 KiB slab).
+                     A slot is busy until the NIC frees its packets; with none free the
+                     sender waits for a completion. EMBR_QUIC_ZC_SLOTS=N (1-1024) sets the
+                     count for experiments (§10). The slab counts against the user's locked
+                     memory (8 MiB by default, shared by all of the user's processes): 128
+                     GSO slots are 2.8 MiB, so a third concurrent connection no longer
+                     registers and runs on sendmsg
 GSO (after v0.8 WAN): same-size packets are laid end to end, up to QUIC_GSO_SEGS = 16, and
                      leave as one send; the socket's UDP_SEGMENT is set to the packet size.
                      A batch ends when it is full, when a packet of another size arrives,
@@ -374,7 +381,8 @@ ACK threshold:       2 packets (ngtcp2's default). EMBR_QUIC_ACK_THRESH=N (1-100
                      endpoint acknowledge every N packets; it matters on the receiver (§9)
 knobs:               EMBR_QUIC_EGRESS=sendmsg (copying baseline), EMBR_QUIC_GSO=0,
                      EMBR_QUIC_STATS=1 (per-connection mode/gso/datagrams/sends/bytes, and for
-                     SEND_ZC notifs/copied/fallback/errors, at close)
+                     SEND_ZC notifs/copied/fallback/errors/waits, at close; waits counts the
+                     times the sender blocked for a free slot)
 flow control:        4 MiB per stream, 8 MiB per connection, one bidi stream
 receive loop:        select + one recvmsg per datagram (v0.8); recvmmsg batching is v0.9
 certificate:         the token carries a hash of the sender's certificate and pull checks it
@@ -401,7 +409,7 @@ use the [README Release build commands](../README.md#build).
 
 All harnesses are modes of one script, `bench/bench.sh`. The September campaign
 ran its predecessors (`quic_wan.sh`, `tcp_loopback.sh`, `quic_loopback.sh`), which
-that script merges; the raw blocks in §10 keep their original command lines.
+that script merges; the raw blocks in §11 keep their original command lines.
 `ROWS="..."` picks and orders the rows.
 
 **WAN, all seven rows** (the five of §2 plus the two GSO rows):
@@ -437,6 +445,11 @@ receiver `sender_cpu` / `sender_irq`: whole-machine CPU seconds over the transfe
 include packet work the kernel does in softirq, which no process's user/sys shows
 (Fedora's kernel keeps softirq time out of process time). The runs archived in this
 file predate these fields.
+
+**The `SEND_ZC` slot pool** is a sender setting: start the sender with
+`EMBR_QUIC_ZC_SLOTS=128` to run the `embrquic` rows with a larger pool. The sender
+summary's `waits` total says how often the sender blocked for a free slot. §10's
+send-only tables come from `bench/egress_cost.sh`, which needs no second host and no root.
 
 QUIC rows use the certificate `install.sh` creates in `~/.config/embr/`
 (`CERT=` / `KEY=` override). The loopback scp row requires a working localhost
@@ -502,8 +515,7 @@ No per-GiB extrapolation is made.
 
 Both owners passed active checks for move construction, replacement of an occupied
 destination, moved-from destruction, repeated retirement and scope-exit cleanup.
-Release and ASan/UBSan preflight runs passed. See the
-[implementation and validation record](../docs/tasks/erasure-cost-benchmark.md).
+Release and ASan/UBSan preflight runs passed.
 
 ### Reproduce locally
 
@@ -726,7 +738,8 @@ thresholds 10 and 32; the cause was not investigated.
 kernel time than `sendmsg`, as in §4: on loopback it pays the copy and the
 notification. With batches of 10 or more the two are level (0.34 / 0.33 s, 0.26 /
 0.26 s): one notification now covers a whole batch. Whether `SEND_ZC` then comes out
-ahead when the NIC really reads user pages is the question for the two-host run.
+ahead when the NIC really reads user pages is the question for the two-host run;
+[§10](#egress-cost) measures the send alone, without the loopback copy.
 
 **Limits.** Loopback only. Thresholds 10 and 32 were set with `EMBR_QUIC_ACK_THRESH`
 (`settings.ack_thresh`) on both ends, on a build that had the switch before the tree
@@ -1089,8 +1102,107 @@ embrquicsmgso egress over 11 connections: datagrams=9116173 sends=4342407 bytes=
 
 ---
 
+<a id="egress-cost"></a>
+## §10 — What one send costs: `SEND_ZC` against `sendmsg` (send-only, desktop)
+
+Run on 2026-11-15 on the Fedora desktop (kernel 7.3.3). `bench/egress_cost.cpp` drives the
+tree's `ZcEgress` and a plain `sendmsg` loop in the call pattern `QuicTransport` uses, with
+no QUIC and no receiver, on a dummy network device in a private namespace. A dummy device
+frees every packet at transmit, so no `SEND_ZC` is copied (copied = 0 in every row below).
+One pinned core, 1350-byte packets. Numbers are nanoseconds of CPU per send (user + sys +
+softirq): median of 5 runs, or of 3 where the device delays.
+
+### The device frees each packet at once
+
+| packets per send | bytes | `sendmsg` | `SEND_ZC` | `SEND_ZC` − `sendmsg` |
+|---|---|---|---|---|
+| 1 | 1,350 | 342 | 425 | +83 |
+| 2 | 2,700 | 375 | 527 | +152 |
+| 4 | 5,400 | 404 | 547 | +143 |
+| 8 | 10,800 | 450 | 586 | +136 |
+| 10 | 13,500 | 472 | 609 | +137 |
+| 12 | 16,200 | 507 | 637 | +130 |
+| 14 | 18,900 | 546 | 641 | +95 |
+| 16 | 21,600 | 611 | 680 | +69 |
+| 20 | 27,000 | 725 | 724 | −1 |
+| 24 | 32,400 | 834 | 769 | −65 |
+| 32 | 43,200 | 1280 | 870 | −410 |
+| 47 | 63,450 | 1562 | 1039 | −523 |
+
+### The device holds each packet for 100 µs
+
+A netem qdisc in front of the dummy device delays every packet, and with it the `SEND_ZC`
+completion that frees the slot, as a NIC's transmit queue does. The slot count is
+`ZcEgress`'s pool; embr uses 8 with GSO.
+
+| packets per send | `sendmsg` | `SEND_ZC`, 8 slots | 16 slots | 128 slots |
+|---|---|---|---|---|
+| 2 | 590 | 1000 | 934 | 689 |
+| 8 | 805 | 1061 | 1037 | 800 |
+| 10 | 876 | 1109 | 1060 | 826 |
+| 12 | 952 | 1096 | 994 | 824 |
+| 14 | 1048 | 1181 | 1069 | 895 |
+| 16 | 1116 | 1225 | 1116 | 901 |
+| wall time per send | as CPU | 12.9 µs | 6.4 µs | 0.8–0.9 µs |
+
+### In a transfer (loopback, 1 GiB, n = 5, GSO on)
+
+| ACK threshold | packets per send | `SEND_ZC` | `sendmsg` | send_sys, `SEND_ZC` / `sendmsg` |
+|---|---|---|---|---|
+| 2 (default) | 2.1 | 3.70 Gbps | 3.78 Gbps | 0.74 / 0.69 s |
+| 8 | 8.3 | 5.05 | 5.08 | 0.35 / 0.35 |
+| 10 | 10.1 | 5.11 | 5.24 | 0.35 / 0.33 |
+| 12 | 11.5 | 5.24 | 5.27 | 0.32 / 0.31 |
+| 14 | 13.2 | 5.30 | 5.34 | 0.31 / 0.31 |
+| 16 | 14.6 | 5.27 | 5.37 | 0.32 / 0.30 |
+
+### How to read this
+
+**`SEND_ZC` has a fixed cost per send and saves a copy per byte.** From 2 to 12 packets it
+costs 130–150 ns more per send than `sendmsg`: the completion notification, the io_uring
+submit and the slot bookkeeping. The copy it removes grows with the send, and with packets
+freed at once the two meet at about 20 packets (27 kB). embr sends at most 16 packets
+(21.6 kB), and 2 at the default ACK threshold, so on this device `SEND_ZC` costs more at
+every size embr sends.
+
+**When the device holds packets, the slot pool decides.** A slot stays busy until the
+device frees its packets. With 100 µs of delay and 8 slots the sender can start one send
+every 12.9 µs and sleeps in between (`waits` in the stats line counts these); 16 slots
+halve the sleep. With 128 slots it does not wait, and `SEND_ZC` is level with `sendmsg`
+at 8–10 packets and 6–19% cheaper at 12–16 (two runs; the table is the second).
+`sendmsg`'s cost rises more under delay than `SEND_ZC`'s; the cause was not profiled.
+
+**It moves little in a transfer.** At 8–16 packets per send a GiB is 57k–100k sends, so
+150 ns per send either way is 0.009–0.015 s per GiB against about 0.8 s of sender CPU.
+The transfers above show it: from threshold 8 up the two egress paths are within 2%.
+GSO removed the per-send cost that the choice of egress acts on. Loopback copies every
+`SEND_ZC`, so those transfers can show a tie at best.
+
+**Limits.** One desktop, one kernel, a dummy device: no DMA mapping, no real
+transmit-completion path, and a sender that never waits for an ACK. 100 µs is an assumed
+delay, not a measured NIC. Which table a real NIC resembles is for the two-host run.
+
+### Reproduce
+
+```bash
+bash bench/egress_cost.sh                                   # first table
+DELAY=100us SEGS_LIST="2 8 10 12 14 16" REPS=3 bash bench/egress_cost.sh               # 8 slots
+DELAY=100us SLOTS=128 SEGS_LIST="2 8 10 12 14 16" REPS=3 bash bench/egress_cost.sh     # 128 slots
+for t in 2 8 10 12 14 16; do                                # transfers
+    EMBR_QUIC_ACK_THRESH=$t ROWS="embrquicgso embrquicsmgso" CACHE_DISCIPLINE=keep bash bench/bench.sh loopback
+done
+```
+
+The delay table was measured with `REPS=3` and the row list shown; its 16-slot column is
+`SLOTS=16`. In a transfer the pool is set with `EMBR_QUIC_ZC_SLOTS` on the sender.
+
+No root is needed: the script runs in a private user and network namespace. The delay rows
+need `tc` and the `sch_netem` module (Fedora: `kernel-modules-extra`).
+
+---
+
 <a id="raw-data-archive"></a>
-## §10 — Consolidated WAN source files
+## §11 — Consolidated WAN source files
 
 The following six files were copied byte-for-byte from bench/results/ before
 their originals were removed. Original names and hashes are retained for recovery.

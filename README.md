@@ -64,7 +64,7 @@ embr trust --show    # print current trusted tracker
 embr trust --clear   # remove saved tracker
 
 # Diagnostics
-EMBR_QUIC_STATS=1 embr push ...   # one [quic-egress] line per connection: sends, notifs, copied, fallback, errors
+EMBR_QUIC_STATS=1 embr push ...   # one [quic-egress] line per connection: sends, notifs, copied, fallback, errors, waits
 EMBR_QUIC_LOG=1   embr pull ...   # ngtcp2 packet log
 ```
 
@@ -164,6 +164,8 @@ See [bench/bench.md](bench/bench.md) for methodology, consolidated raw data and 
 | `sendmsg` | 10 packets | 0.74 s | 0.33 s | 9.8 |
 
 Loopback copies every `SEND_ZC` send, so this measures the cost of a send, not zero-copy. The sender has no pacer and sends what each ACK frees, so at the shipped ACK rate a GSO batch is two packets; GSO still saves about 21% of sender kernel time. With the receiver acknowledging every 10 packets (`EMBR_QUIC_ACK_THRESH=10`; the default stays 2, since fewer ACKs slow recovery under loss) batches reach about 10, sender kernel time halves, and throughput goes from 3.3 to 4.8 Gbps. These rows were measured with 1200-byte packets; the 1350-byte packets embr sends since add about 10% throughput on the same setup. The same four rows on two hosts with a real NIC are still to run. [Full table and raw data](bench/bench.md#gso-loopback).
+
+A send-only benchmark (`bench/egress_cost.sh`, dummy device, nothing copied) puts `SEND_ZC` at 130–150 ns more per send than `sendmsg`; the copy it saves repays that only above about 20 packets per send, and embr sends at most 16. When the device holds packets for 100 µs, the 8-slot pool makes the sender wait, and with 128 slots `SEND_ZC` is level at 8–10 packets and 6–19% cheaper at 12–16. At 8–16 packets per send either outcome is about 0.01 s per GiB. [Tables](bench/bench.md#egress-cost).
 
 ### Desktop ownership benchmark
 
@@ -368,6 +370,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] Path-MTU probe — data packets grow from QUIC's 1200-byte start to the 1350-byte buffer where the path carries them; DF is set, a size the path refuses counts as loss, and the transfer stays at 1200
 - [x] `EMBR_QUIC_ACK_THRESH=N` experiment switch — the receiver acknowledges every N packets instead of 2, so GSO batches grow; default unchanged
 - [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters (packets, sends and bytes in both modes)
+- [x] `EMBR_QUIC_ZC_SLOTS=N` experiment switch for the `SEND_ZC` slot pool; the stats line counts `waits`, the times the sender blocked for a free slot
 - [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in each of the four egress × GSO modes; ASan/UBSan clean on the suite and a 1 GiB transfer
 - [x] Memlock footprint — about 105 KiB per QUIC connection without GSO, a 169 KiB slab with it; fits the default 8 MiB
 - [x] `install.sh`, `bench/bench.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights

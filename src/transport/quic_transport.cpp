@@ -98,9 +98,10 @@ QuicTransport::~QuicTransport() {
             (unsigned long long)tx_.sends, (unsigned long long)tx_.bytes);
         if (zc_) {
             const auto& s = zc_->stats();
-            std::fprintf(stderr, " notifs=%llu copied=%llu fallback=%llu errors=%llu registered=%d",
+            std::fprintf(stderr, " notifs=%llu copied=%llu fallback=%llu errors=%llu waits=%llu registered=%d",
                 (unsigned long long)s.notifs, (unsigned long long)s.copied,
-                (unsigned long long)s.fallback, (unsigned long long)s.errors, zc_->registered() ? 1 : 0);
+                (unsigned long long)s.fallback, (unsigned long long)s.errors,
+                (unsigned long long)s.waits, zc_->registered() ? 1 : 0);
         }
         std::fputc('\n', stderr);
     }
@@ -555,9 +556,12 @@ void QuicTransport::init_egress() {
     if (mode && std::strcmp(mode, "sendmsg") == 0) { return; }
     try {
         // with GSO a slot holds a whole batch: fewer, larger slots
-        zc_ = gso_
-            ? std::make_unique<ZcEgress>(udp_fd_, QUIC_GSO_SEGS * QUIC_MAX_PKTLEN, QUIC_ZC_GSO_SLOTS)
-            : std::make_unique<ZcEgress>(udp_fd_, QUIC_MAX_PKTLEN, QUIC_ZC_SLOTS);
+        unsigned slots = gso_ ? QUIC_ZC_GSO_SLOTS : QUIC_ZC_SLOTS;
+        // EMBR_QUIC_ZC_SLOTS=N: pool size for experiments; a slot is busy until the NIC frees its packets
+        if (const char* n = std::getenv("EMBR_QUIC_ZC_SLOTS")) {
+            slots = static_cast<unsigned>(std::clamp(std::atoi(n), 1, 1024));
+        }
+        zc_ = std::make_unique<ZcEgress>(udp_fd_, (gso_ ? QUIC_GSO_SEGS : 1u) * QUIC_MAX_PKTLEN, slots);
         // unregistered SEND_ZC pins 8KiB per in-flight datagram against the same budget, use copy
         if (!zc_->registered()) { zc_.reset(); }
     } catch (const std::exception&) {

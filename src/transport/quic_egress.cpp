@@ -64,7 +64,10 @@ uint8_t* ZcEgress::reserve() {
     while (free_.empty()) {
         if (err_ != 0) { return nullptr; } // ring latched an error: waiting here cannot end
         flush();
-        if (free_.empty()) { reap(true); }
+        if (free_.empty()) {
+            ++stats_.waits;
+            reap(true);
+        }
     }
     reserved_ = static_cast<int>(free_.back());
     free_.pop_back();

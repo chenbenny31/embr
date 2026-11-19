@@ -198,7 +198,7 @@ main() {
     verify
     ensure_cert
     [[ "$BUILD_EMBR" == "1" ]] && build_embr
-    log "done. Sender host security group: inbound UDP 10008/10009 (QUIC zc/sendmsg) + TCP 10007/9999/22."
+    log "done. Sender host security group: inbound UDP 10008-10011 (one per QUIC bench row) + TCP 10007/9999/22."
 }
 
 main "$@"
