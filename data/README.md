@@ -12,7 +12,7 @@ holds what they were computed from.
 - Each results file starts with its date, kernel, commit and settings. Local paths are
   replaced by `$SCRATCH` (a build directory outside the repo) and `$REPO`.
 - A run made on a commit marked `-dirty` names in the table below what was uncommitted.
-- Notes that are not measurements go in a `.md` file at this level: `send-zc-boundary.md`, `receive-path.md`.
+- Notes that are not measurements go in a `.md` file at this level: `send-zc-boundary.md`, `receive-path.md`, `batch-size-and-slots.md`.
 
 ## Machine
 
@@ -24,6 +24,7 @@ wolfSSL 5.9.2, ngtcp2 1.26.0.
 
 | Directory | What | Backs | Command |
 |---|---|---|---|
+| `2026-11-18-gso-cap-and-slots/` | Packets per send (cap 16, 24, 32, 48) × read burst × `SEND_ZC` slots: loopback transfers (1 GiB, n = 5), veth runs, send-only cost with packets held 100 µs at 4–64 slots, and a probe of how `RLIMIT_MEMLOCK` is counted for io_uring buffers. The tree with the receive-path change, plus two experiment switches (`harness/experiment-switches.patch`) | `batch-size-and-slots.md` | `harness/tune.sh`, `harness/run.sh` |
 | `2026-11-18-receive-path-applied/` | The receive-path change as applied to the tree: every loopback row (1 GiB, n = 5), the two GSO rows with `EMBR_QUIC_GRO=0`, and 10% loss on loopback, 24 per mode. `bec6371` plus the wait counter and the receive-path change | a future bench.md section | `bash bench/bench.sh loopback`; `EMBR_QUIC_GRO=0 ROWS="embrquicgso embrquicsmgso" bash bench/bench.sh loopback` |
 | `2026-11-17-receive-path/` | Receive-path prototype: batched reads and UDP GRO against the current tree. Loopback variants `a`–`k` (1 GiB, n = 5), receiver perf profile before and after, veth runs where packets arrive one by one (unshaped, rate-limited, loss at 20 ms round trip), 10% loss on loopback, the patch measured (`harness/prototype-final.patch`) and the scripts. `bec6371` plus the wait counter, with the patch applied in a scratch tree | `receive-path.md` | `harness/all.sh`, `harness/vethall.sh`, `harness/lossv.sh` |
 | `2026-11-17-default-settings/` | `SEND_ZC` against `sendmsg` at embr's defaults: GSO on, ACK every 2 packets, 8 slots. `bec6371` plus the wait counter and `EMBR_QUIC_ZC_SLOTS` | table below | `ROWS="embrquicgso embrquicsmgso" RUNS=10 CACHE_DISCIPLINE=keep bash bench/bench.sh loopback`; `SEGS_LIST="1 2 4" bash bench/egress_cost.sh`; `DELAY=100us SEGS_LIST=2 bash bench/egress_cost.sh` |

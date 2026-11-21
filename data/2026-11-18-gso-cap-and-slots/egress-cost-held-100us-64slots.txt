@@ -1,0 +1,6 @@
+# egress_cost Wed Nov 18 11:21:25 PM PST 2026  kernel=7.3.3-300.fc45.x86_64  pkt=1350  delay=100us  zc_slots=64  reps=3  cpu=23
+packets/send | bytes/send | sendmsg cpu | SEND_ZC cpu | difference | sendmsg wall | SEND_ZC wall | copied  waits  errors
+16           | 21600      | 1086        | 906         | -180       | 1086         | 1635         | 0  25678  0
+24           | 32400      | 1378        | 1020        | -358       | 1386         | 1636         | 0  20492  0
+32           | 43200      | 1670        | 1171        | -499       | 1674         | 1640         | 0  20386  0
+47           | 63450      | 2205        | 1366        | -839       | 2209         | 1641         | 0  18689  0

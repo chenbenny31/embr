@@ -1,0 +1,58 @@
+--- a/src/transport/quic_transport.hpp
++++ b/src/transport/quic_transport.hpp
+@@ -133,6 +133,8 @@
+     size_t sock_seg_{0};             // UDP_SEGMENT the socket holds now, 0 = unset
+     SendResult send_batch();
+     SendStats send_stats_;
++    unsigned gso_segs_{QUIC_GSO_SEGS};      // EXPERIMENT ONLY: EMBR_QUIC_GSO_SEGS
++    unsigned recv_burst_{QUIC_RECV_BURST};  // EXPERIMENT ONLY: EMBR_QUIC_RECV_BURST
+ 
+     // ingress: read what the socket holds, feed every packet, then write the ACKs once
+     bool ingress_init_{false};
+--- a/src/transport/quic_transport.cpp
++++ b/src/transport/quic_transport.cpp
+@@ -390,6 +390,7 @@
+     gro_ = !(gro && std::strcmp(gro, "0") == 0) &&
+            ::setsockopt(udp_fd_, SOL_UDP, UDP_GRO, &enable, sizeof(enable)) == 0;
+     read_buf_.resize(gro_ ? QUIC_GRO_BUFLEN : QUIC_MAX_RECV_PKTLEN);
++    if (const char* n = std::getenv("EMBR_QUIC_RECV_BURST")) { recv_burst_ = static_cast<unsigned>(std::clamp(std::atoi(n), 1, 4096)); } // EXPERIMENT ONLY
+ }
+ 
+ // reads until the socket is empty or QUIC_RECV_BURST packets are in: the ACKs for all of them
+@@ -398,7 +399,7 @@
+     init_ingress();
+ 
+     unsigned packets = 0; // handed to ngtcp2 by this call
+-    for (unsigned reads = 0; reads < QUIC_RECV_BURST && packets < QUIC_RECV_BURST; ++reads) {
++    for (unsigned reads = 0; reads < recv_burst_ && packets < recv_burst_; ++reads) {
+         sockaddr_storage remote_addr{};
+         struct iovec iov{};
+         iov.iov_base = read_buf_.data();
+@@ -605,7 +606,8 @@
+     const int unset = 0;
+     gso_ = !(gso && std::strcmp(gso, "0") == 0) &&
+            ::setsockopt(udp_fd_, SOL_UDP, UDP_SEGMENT, &unset, sizeof(unset)) == 0;
+-    if (gso_) { batch_buf_.resize(QUIC_GSO_SEGS * QUIC_MAX_PKTLEN); }
++    if (const char* n = std::getenv("EMBR_QUIC_GSO_SEGS")) { gso_segs_ = static_cast<unsigned>(std::clamp(std::atoi(n), 1, 48)); } // EXPERIMENT ONLY
++    if (gso_) { batch_buf_.resize(gso_segs_ * QUIC_MAX_PKTLEN); }
+ 
+     // DF on every datagram and no kernel fragmenting: a packet too long for the path is lost or
+     // fails with EMSGSIZE, so the 1350-byte probe finds out whether the path carries it
+@@ -621,7 +623,7 @@
+         if (const char* n = std::getenv("EMBR_QUIC_ZC_SLOTS")) {
+             slots = static_cast<unsigned>(std::clamp(std::atoi(n), 1, 1024));
+         }
+-        zc_ = std::make_unique<ZcEgress>(udp_fd_, (gso_ ? QUIC_GSO_SEGS : 1u) * QUIC_MAX_PKTLEN, slots);
++        zc_ = std::make_unique<ZcEgress>(udp_fd_, (gso_ ? gso_segs_ : 1u) * QUIC_MAX_PKTLEN, slots);
+         // unregistered SEND_ZC pins 8KiB per in-flight datagram against the same budget, use copy
+         if (!zc_->registered()) { zc_.reset(); }
+     } catch (const std::exception&) {
+@@ -654,7 +656,7 @@
+     if (batch_pkts_ == 0) { batch_seg_ = n; }
+     batch_len_ += n;
+     ++batch_pkts_;
+-    if (n < batch_seg_ || batch_pkts_ >= (gso_ ? QUIC_GSO_SEGS : 1u)) { return send_batch(); }
++    if (n < batch_seg_ || batch_pkts_ >= (gso_ ? gso_segs_ : 1u)) { return send_batch(); }
+     return SendResult::ok;
+ }
+ 

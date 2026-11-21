@@ -1,0 +1,18 @@
+[warn] sender certificate not verified - pull with the token push printed
+[quic-egress] mode=zc gso=1 datagrams=13368 sends=13367 bytes=722555 notifs=13367 copied=13367 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=827787 reads=38155 bytes=1112704382
+[warn] sender certificate not verified - pull with the token push printed
+[quic-egress] mode=zc gso=1 datagrams=13370 sends=13369 bytes=700705 notifs=13369 copied=13369 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=827938 reads=38308 bytes=1112713867
+[warn] sender certificate not verified - pull with the token push printed
+[quic-egress] mode=zc gso=1 datagrams=13368 sends=13367 bytes=747133 notifs=13367 copied=13367 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=827862 reads=38234 bytes=1112710264
+[warn] sender certificate not verified - pull with the token push printed
+[quic-egress] mode=zc gso=1 datagrams=13368 sends=13367 bytes=961925 notifs=13367 copied=13367 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=827660 reads=38029 bytes=1112699604
+[warn] sender certificate not verified - pull with the token push printed
+[quic-egress] mode=zc gso=1 datagrams=13369 sends=13368 bytes=730673 notifs=13368 copied=13368 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=827898 reads=38265 bytes=1112712423
+[warn] sender certificate not verified - pull with the token push printed
+[quic-egress] mode=zc gso=1 datagrams=13369 sends=13367 bytes=786240 notifs=13367 copied=13367 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=827840 reads=38201 bytes=1112708483

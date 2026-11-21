@@ -1,0 +1,12 @@
+[quic-egress] mode=sendmsg gso=1 datagrams=827037 sends=20118 bytes=1112670855
+[quic-ingress] gro=1 datagrams=4965 reads=4965 bytes=250101
+[quic-egress] mode=sendmsg gso=1 datagrams=827666 sends=20740 bytes=1112695864
+[quic-ingress] gro=1 datagrams=4963 reads=4962 bytes=248835
+[quic-egress] mode=sendmsg gso=1 datagrams=827083 sends=20165 bytes=1112670525
+[quic-ingress] gro=1 datagrams=4964 reads=4963 bytes=248908
+[quic-egress] mode=sendmsg gso=1 datagrams=827143 sends=20225 bytes=1112673318
+[quic-ingress] gro=1 datagrams=4964 reads=4963 bytes=248864
+[quic-egress] mode=sendmsg gso=1 datagrams=827639 sends=20711 bytes=1112694434
+[quic-ingress] gro=1 datagrams=4962 reads=4962 bytes=248687
+[quic-egress] mode=sendmsg gso=1 datagrams=827053 sends=20118 bytes=1112669587
+[quic-ingress] gro=1 datagrams=4963 reads=4963 bytes=248819

@@ -1,0 +1,12 @@
+[quic-egress] mode=zc gso=1 datagrams=827370 sends=29648 bytes=1112680535 notifs=29648 copied=29648 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=5260 reads=5260 bytes=261634
+[quic-egress] mode=zc gso=1 datagrams=827272 sends=29550 bytes=1112676110 notifs=29550 copied=29550 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=5260 reads=5260 bytes=261533
+[quic-egress] mode=zc gso=1 datagrams=827359 sends=29637 bytes=1112679779 notifs=29637 copied=29637 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=5261 reads=5260 bytes=261557
+[quic-egress] mode=zc gso=1 datagrams=827358 sends=29637 bytes=1112679863 notifs=29637 copied=29637 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=5261 reads=5261 bytes=261707
+[quic-egress] mode=zc gso=1 datagrams=827360 sends=29638 bytes=1112679990 notifs=29638 copied=29638 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=5260 reads=5260 bytes=261631
+[quic-egress] mode=zc gso=1 datagrams=827380 sends=29659 bytes=1112681498 notifs=29659 copied=29659 fallback=0 errors=0 waits=0 registered=1
+[quic-ingress] gro=1 datagrams=5261 reads=5260 bytes=261642

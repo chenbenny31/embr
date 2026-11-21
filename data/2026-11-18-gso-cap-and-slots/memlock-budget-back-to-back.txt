@@ -1,0 +1,46 @@
+# Flawed first attempt, kept as evidence: the attempts ran back to back, and the charge for a registered
+# buffer outlives its process for a moment (see memlock-accounting.txt, tests 6 and 7), so later rows were
+# refused because of earlier ones. Do not read slot limits from this file.
+# ulimit -l = 8192 KiB, kernel 7.3.3-300.fc45.x86_64; slab = slots x packets x 1350 bytes; one process
+packets=16 slots=8 slab=168KiB registered
+packets=16 slots=16 slab=337KiB registered
+packets=16 slots=32 slab=675KiB registered
+packets=16 slots=64 slab=1350KiB registered
+packets=16 slots=96 slab=2025KiB registered
+packets=16 slots=128 slab=2700KiB registered
+packets=16 slots=160 slab=3375KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=192 slab=4050KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=256 slab=5400KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=320 slab=6750KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=384 slab=8100KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=388 slab=8184KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=400 slab=8437KiB refused (slab not registered: raise ulimit -l )
+packets=16 slots=512 slab=10800KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=8 slab=337KiB registered
+packets=32 slots=16 slab=675KiB registered
+packets=32 slots=32 slab=1350KiB registered
+packets=32 slots=64 slab=2700KiB registered
+packets=32 slots=96 slab=4050KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=128 slab=5400KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=160 slab=6750KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=192 slab=8100KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=256 slab=10800KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=320 slab=13500KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=384 slab=16200KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=388 slab=16368KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=400 slab=16875KiB refused (slab not registered: raise ulimit -l )
+packets=32 slots=512 slab=21600KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=8 slab=506KiB registered
+packets=48 slots=16 slab=1012KiB registered
+packets=48 slots=32 slab=2025KiB registered
+packets=48 slots=64 slab=4050KiB registered
+packets=48 slots=96 slab=6075KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=128 slab=8100KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=160 slab=10125KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=192 slab=12150KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=256 slab=16200KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=320 slab=20250KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=384 slab=24300KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=388 slab=24553KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=400 slab=25312KiB refused (slab not registered: raise ulimit -l )
+packets=48 slots=512 slab=32400KiB refused (slab not registered: raise ulimit -l )

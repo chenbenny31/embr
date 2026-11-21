@@ -1,0 +1,26 @@
+# bench loopback Wed Nov 18 11:14:44 PM PST 2026
+# commit=bec6371-dirty build=$SCRATCH/tune-tree/build-Release cache=keep bytes=1073741824
+# rows: embrquicgso embrquicsmgso   ack_thresh=2   gro=1   zc_slots=default
+# kernel=7.3.3-300.fc45.x86_64 memlock=8192KiB — loopback copies every SEND_ZC; compare CPU seconds, not wall
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquicgso wall=0:01.08 sec=1.08 gbps=7.95 send_user=0.37s send_sys=0.20s recv_user=0.74s recv_sys=0.33s host_cpu=2.69s host_irq=0.17s
+warmup1_embrquicsmgso wall=0:01.05 sec=1.05 gbps=8.18 send_user=0.46s send_sys=0.15s recv_user=0.77s recv_sys=0.26s host_cpu=2.46s host_irq=0.09s
+
+run2_embrquicgso wall=0:01.05 sec=1.05 gbps=8.18 send_user=0.37s send_sys=0.18s recv_user=0.70s recv_sys=0.33s host_cpu=2.14s host_irq=0.13s
+run2_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.45s send_sys=0.16s recv_user=0.76s recv_sys=0.28s host_cpu=2.74s host_irq=0.11s
+
+run3_embrquicgso wall=0:01.07 sec=1.07 gbps=8.03 send_user=0.39s send_sys=0.18s recv_user=0.77s recv_sys=0.28s host_cpu=2.51s host_irq=0.17s
+run3_embrquicsmgso wall=0:01.05 sec=1.05 gbps=8.18 send_user=0.42s send_sys=0.18s recv_user=0.78s recv_sys=0.25s host_cpu=2.49s host_irq=0.11s
+
+run4_embrquicgso wall=0:01.07 sec=1.07 gbps=8.03 send_user=0.37s send_sys=0.19s recv_user=0.75s recv_sys=0.30s host_cpu=3.29s host_irq=0.18s
+run4_embrquicsmgso wall=0:01.07 sec=1.07 gbps=8.03 send_user=0.45s send_sys=0.17s recv_user=0.78s recv_sys=0.27s host_cpu=2.67s host_irq=0.11s
+
+run5_embrquicgso wall=0:01.07 sec=1.07 gbps=8.03 send_user=0.41s send_sys=0.16s recv_user=0.80s recv_sys=0.25s host_cpu=2.46s host_irq=0.17s
+run5_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.44s send_sys=0.17s recv_user=0.75s recv_sys=0.29s host_cpu=2.39s host_irq=0.10s
+
+run6_embrquicgso wall=0:01.09 sec=1.09 gbps=7.88 send_user=0.40s send_sys=0.18s recv_user=0.77s recv_sys=0.30s host_cpu=3.06s host_irq=0.18s
+run6_embrquicsmgso wall=0:01.06 sec=1.06 gbps=8.10 send_user=0.45s send_sys=0.16s recv_user=0.79s recv_sys=0.25s host_cpu=2.40s host_irq=0.11s
+

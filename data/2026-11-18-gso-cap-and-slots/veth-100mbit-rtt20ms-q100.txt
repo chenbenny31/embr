@@ -1,0 +1,12 @@
+# veth A-R-B  rate=100mbit delay=10ms (each way) loss=none% (each way) limit=100 packets  file=67108864 bytes  kernel=7.3.3-300.fc45.x86_64
+# a0: tx-udp-segmentation: off   b0: generic-receive-offload: on
+run1 packets16-burst64 rc=0 intact secs=6.853530687 mbps=78 | sender datagrams=52231 sends=26108 | receiver gro=1 datagrams=52042 reads=52019 bytes=69559393
+run1 packets32-burst128 rc=0 intact secs=7.803388555 mbps=69 | sender datagrams=52273 sends=26157 | receiver gro=1 datagrams=52078 reads=52058 bytes=69546197
+run1 packets48-burst256 rc=0 intact secs=7.797020279 mbps=69 | sender datagrams=52243 sends=26100 | receiver gro=1 datagrams=52058 reads=52034 bytes=69545230
+run2 packets16-burst64 rc=0 intact secs=7.142663103 mbps=75 | sender datagrams=52204 sends=26085 | receiver gro=1 datagrams=52021 reads=52006 bytes=69554838
+run2 packets32-burst128 rc=0 intact secs=6.861876987 mbps=78 | sender datagrams=52194 sends=26079 | receiver gro=1 datagrams=52006 reads=51990 bytes=69557629
+run2 packets48-burst256 rc=0 intact secs=7.311437339 mbps=73 | sender datagrams=52237 sends=26111 | receiver gro=1 datagrams=52044 reads=52023 bytes=69552169
+run3 packets16-burst64 rc=0 intact secs=7.318933282 mbps=73 | sender datagrams=52243 sends=26107 | receiver gro=1 datagrams=52051 reads=52037 bytes=69552350
+run3 packets32-burst128 rc=0 intact secs=7.787440654 mbps=69 | sender datagrams=52249 sends=26127 | receiver gro=1 datagrams=52065 reads=52043 bytes=69545735
+run3 packets48-burst256 rc=0 intact secs=7.792317721 mbps=69 | sender datagrams=52247 sends=26114 | receiver gro=1 datagrams=52063 reads=52042 bytes=69545538
+# r1 qdisc:  Sent 645636291 bytes 468467 pkt (dropped 1684, overlimits 0 requeues 0) 

@@ -1,0 +1,44 @@
+# RLIMIT_MEMLOCK = 8192 KiB soft, 8192 KiB hard; kernel 7.3.3-300.fc45.x86_64; Wed Nov 18 11:26:41 PM PST 2026
+# each test waits 1 s after the previous processes exit, so their charge is gone
+## 1. one process, io_uring registered buffer: how much fits
+one: register 4096 KiB with io_uring: ok
+one: register 6144 KiB with io_uring: ok
+one: register 7168 KiB with io_uring: ok
+one: register 8000 KiB with io_uring: ok
+one: register 8100 KiB with io_uring: ok
+one: register 8160 KiB with io_uring: ok
+one: register 8180 KiB with io_uring: ok
+one: register 8192 KiB with io_uring: ok
+one: register 8200 KiB with io_uring: Cannot allocate memory
+one: register 8400 KiB with io_uring: Cannot allocate memory
+## 2. two processes of the same user, io_uring registered buffers
+A: register 5000 KiB with io_uring: ok
+B while A holds 5000 KiB: register 5000 KiB with io_uring: Cannot allocate memory
+B while A holds 5000 KiB: register 3000 KiB with io_uring: ok
+## 3. another process holds 6 MiB with mlock(); does that reduce what io_uring can register?
+A: mlock 6144 KiB: ok
+B while A mlocks 6144 KiB: register 6144 KiB with io_uring: ok
+B while A mlocks 6144 KiB: register 8000 KiB with io_uring: Cannot allocate memory
+## 4. the same process: mlock() 6 MiB, then register 6 MiB with io_uring
+same: mlock 6144 KiB: ok
+same: register 6144 KiB with io_uring: ok
+## 5. mlock() alone: per process
+one process, 9000 KiB: mlock 9000 KiB: Cannot allocate memory
+A: mlock 6144 KiB: ok
+B while A mlocks 6144 KiB: mlock 6144 KiB: ok
+## 6. charge after exit: register 5000 KiB in a process that exits at once, then again with no pause
+first: register 5000 KiB with io_uring: ok
+second, no pause: register 5000 KiB with io_uring: Cannot allocate memory
+third, no pause: register 5000 KiB with io_uring: Cannot allocate memory
+after 1 s: register 5000 KiB with io_uring: ok
+## 3b. repeat of 3 with a pause before the large registration
+A: mlock 6144 KiB: ok
+B while A mlocks 6144 KiB: register 8000 KiB with io_uring: ok
+## 7. how long the charge outlives the process: register 5000 KiB, exit, wait, register 5000 KiB again
+after    0 ms: register 5000 KiB with io_uring: Cannot allocate memory
+after   10 ms: register 5000 KiB with io_uring: ok
+after   20 ms: register 5000 KiB with io_uring: ok
+after   50 ms: register 5000 KiB with io_uring: ok
+after  100 ms: register 5000 KiB with io_uring: ok
+after  200 ms: register 5000 KiB with io_uring: ok
+after  500 ms: register 5000 KiB with io_uring: ok
