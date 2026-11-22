@@ -1,0 +1,975 @@
+[wan 03:10:46] run 2026-11-22-0310: passes [default gro-off ack10 slots128]  runs=10 warmup=2 file=1GiB  sender ec2-user@<sender>:~/embr
+ninja: no work to do.
+ninja: no work to do.
+[wan 03:10:48] WARNING: uncommitted changes (here: dirty, sender: dirty) — the results header will say -dirty
+[wan 03:10:48] commit 1bfdaf8 on both hosts, built
+[wan 03:10:57] receiver: Linux 6.18.62-127.179.amzn2023.x86_64 x86_64;c5n.large us-east-2a;Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz, 2 cpus, 2 threads per core;
+[wan 03:10:57] sender:   Linux 6.18.62-127.179.amzn2023.x86_64 x86_64;c5n.large us-east-1a;Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz, 2 cpus, 2 threads per core;
+[wan 03:10:57] round trip: 16.7 17.0 15.9 16.6 15.3 ms (tcp connect)
+[wan 03:10:57] === pass default: rows [embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp]  receiver env [none]  sender env [none] ===
+[bench 03:11:01] ssh ok: ec2-user@SENDER
+[bench 03:11:01] tcp port ok: 10007 (embrtcp)
+[bench 03:11:01] tcp port ok: 9999 (nc)
+[bench 03:11:01] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:11:02] remote sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:11:02] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:11:02] remote sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:11:02] RECEIVER — ec2-user@SENDER — fetching source size+hash...
+[bench 03:11:05] expected 1073741824 bytes  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:11:06] === warmup1 (1/12) ===
+warmup1_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.73s sys=1.11s rss=12148KB host_cpu=5.58s host_irq=0.83s sender_cpu=4.70s sender_irq=0.99s udp_drops=0
+warmup1_embrquicsm wall=0:05.16 sec=5.16 gbps=1.66 user=3.81s sys=1.04s rss=12292KB host_cpu=5.42s host_irq=0.68s sender_cpu=3.42s sender_irq=0.18s udp_drops=0
+warmup1_embrquicgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.57s sys=1.18s rss=12280KB host_cpu=5.32s host_irq=0.63s sender_cpu=2.31s sender_irq=0.20s udp_drops=0
+warmup1_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.64s sys=1.13s rss=12200KB host_cpu=5.37s host_irq=0.68s sender_cpu=2.51s sender_irq=0.18s udp_drops=0
+warmup1_embrtcp wall=0:03.96 sec=3.96 gbps=2.17 user=2.59s sys=0.79s rss=9688KB host_cpu=3.87s host_irq=0.57s sender_cpu=0.72s sender_irq=0.35s udp_drops=0
+warmup1_nc wall=0:03.89 sec=3.89 gbps=2.21 user=0.26s sys=1.02s rss=9836KB host_cpu=1.94s host_irq=0.65s sender_cpu=1.62s sender_irq=0.42s udp_drops=0
+warmup1_scp wall=0:07.24 sec=7.24 gbps=1.19 user=0.95s sys=1.76s rss=10932KB host_cpu=3.22s host_irq=0.78s sender_cpu=2.96s sender_irq=0.58s udp_drops=0
+[bench 03:12:14] === warmup2 (2/12) ===
+warmup2_embrquic wall=0:05.09 sec=5.09 gbps=1.69 user=3.66s sys=1.23s rss=12200KB host_cpu=5.26s host_irq=0.66s sender_cpu=3.59s sender_irq=0.50s udp_drops=0
+warmup2_embrquicsm wall=0:05.20 sec=5.2 gbps=1.65 user=3.71s sys=1.24s rss=12364KB host_cpu=5.21s host_irq=0.48s sender_cpu=3.39s sender_irq=0.21s udp_drops=0
+warmup2_embrquicgso wall=0:04.97 sec=4.97 gbps=1.73 user=3.66s sys=1.12s rss=12288KB host_cpu=5.31s host_irq=0.62s sender_cpu=2.70s sender_irq=0.38s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.03 sec=5.03 gbps=1.71 user=3.59s sys=1.26s rss=12196KB host_cpu=5.30s host_irq=0.68s sender_cpu=2.63s sender_irq=0.28s udp_drops=0
+warmup2_embrtcp wall=0:04.22 sec=4.22 gbps=2.04 user=2.56s sys=0.83s rss=9668KB host_cpu=3.85s host_irq=0.62s sender_cpu=0.55s sender_irq=0.22s udp_drops=0
+warmup2_nc wall=0:03.52 sec=3.52 gbps=2.44 user=0.27s sys=1.04s rss=9664KB host_cpu=1.91s host_irq=0.64s sender_cpu=1.60s sender_irq=0.48s udp_drops=0
+warmup2_scp wall=0:07.45 sec=7.45 gbps=1.15 user=1.05s sys=1.90s rss=10664KB host_cpu=3.00s host_irq=0.71s sender_cpu=2.80s sender_irq=0.47s udp_drops=0
+[bench 03:13:21] === run3 (3/12) ===
+run3_embrquic wall=0:04.93 sec=4.93 gbps=1.74 user=3.62s sys=1.13s rss=12212KB host_cpu=5.33s host_irq=0.57s sender_cpu=3.43s sender_irq=0.58s udp_drops=0
+run3_embrquicsm wall=0:04.98 sec=4.98 gbps=1.72 user=3.71s sys=1.04s rss=12332KB host_cpu=5.29s host_irq=0.55s sender_cpu=3.44s sender_irq=0.27s udp_drops=0
+run3_embrquicgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.82s sys=1.03s rss=12188KB host_cpu=5.13s host_irq=0.40s sender_cpu=2.68s sender_irq=0.25s udp_drops=0
+run3_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.59s sys=1.23s rss=12188KB host_cpu=5.18s host_irq=0.50s sender_cpu=2.45s sender_irq=0.15s udp_drops=0
+run3_embrtcp wall=0:04.38 sec=4.38 gbps=1.96 user=2.55s sys=0.87s rss=9752KB host_cpu=3.92s host_irq=0.68s sender_cpu=0.54s sender_irq=0.17s udp_drops=0
+run3_nc wall=0:03.90 sec=3.9 gbps=2.20 user=0.18s sys=1.13s rss=9888KB host_cpu=1.62s host_irq=0.52s sender_cpu=1.77s sender_irq=0.54s udp_drops=0
+run3_scp wall=0:07.18 sec=7.18 gbps=1.20 user=0.95s sys=1.78s rss=11012KB host_cpu=3.19s host_irq=0.65s sender_cpu=2.93s sender_irq=0.58s udp_drops=0
+[bench 03:14:29] === run4 (4/12) ===
+run4_embrquic wall=0:05.20 sec=5.2 gbps=1.65 user=3.54s sys=1.30s rss=12208KB host_cpu=5.32s host_irq=0.57s sender_cpu=3.81s sender_irq=0.59s udp_drops=0
+run4_embrquicsm wall=0:05.11 sec=5.11 gbps=1.68 user=3.60s sys=1.23s rss=12324KB host_cpu=5.27s host_irq=0.53s sender_cpu=3.49s sender_irq=0.28s udp_drops=0
+run4_embrquicgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.73s sys=1.06s rss=12272KB host_cpu=5.36s host_irq=0.64s sender_cpu=2.69s sender_irq=0.29s udp_drops=0
+run4_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.75s sys=1.03s rss=12204KB host_cpu=5.48s host_irq=0.73s sender_cpu=2.56s sender_irq=0.28s udp_drops=0
+run4_embrtcp wall=0:04.50 sec=4.5 gbps=1.91 user=2.53s sys=0.79s rss=9696KB host_cpu=3.92s host_irq=0.63s sender_cpu=0.66s sender_irq=0.26s udp_drops=0
+run4_nc wall=0:03.96 sec=3.96 gbps=2.17 user=0.21s sys=1.17s rss=9804KB host_cpu=1.56s host_irq=0.46s sender_cpu=1.52s sender_irq=0.39s udp_drops=0
+run4_scp wall=0:07.45 sec=7.45 gbps=1.15 user=0.88s sys=2.04s rss=10920KB host_cpu=3.48s host_irq=0.65s sender_cpu=2.94s sender_irq=0.64s udp_drops=0
+[bench 03:15:38] === run5 (5/12) ===
+run5_embrquic wall=0:05.07 sec=5.07 gbps=1.69 user=3.54s sys=1.31s rss=12196KB host_cpu=5.24s host_irq=0.47s sender_cpu=4.47s sender_irq=1.00s udp_drops=0
+run5_embrquicsm wall=0:05.06 sec=5.06 gbps=1.70 user=3.80s sys=1.06s rss=12332KB host_cpu=5.53s host_irq=0.78s sender_cpu=3.24s sender_irq=0.22s udp_drops=0
+run5_embrquicgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.58s sys=1.21s rss=12188KB host_cpu=5.24s host_irq=0.57s sender_cpu=2.48s sender_irq=0.40s udp_drops=0
+run5_embrquicsmgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.58s sys=1.27s rss=12188KB host_cpu=5.31s host_irq=0.62s sender_cpu=2.37s sender_irq=0.28s udp_drops=0
+run5_embrtcp wall=0:04.26 sec=4.26 gbps=2.02 user=2.62s sys=0.75s rss=9752KB host_cpu=3.99s host_irq=0.69s sender_cpu=0.53s sender_irq=0.20s udp_drops=0
+run5_nc wall=0:03.58 sec=3.58 gbps=2.40 user=0.18s sys=1.06s rss=9848KB host_cpu=1.96s host_irq=0.67s sender_cpu=1.53s sender_irq=0.42s udp_drops=0
+run5_scp wall=0:07.30 sec=7.3 gbps=1.18 user=1.03s sys=1.66s rss=11168KB host_cpu=3.31s host_irq=0.84s sender_cpu=3.25s sender_irq=0.61s udp_drops=0
+[bench 03:16:46] === run6 (6/12) ===
+run6_embrquic wall=0:04.97 sec=4.97 gbps=1.73 user=3.63s sys=1.15s rss=12240KB host_cpu=5.38s host_irq=0.67s sender_cpu=4.33s sender_irq=0.89s udp_drops=0
+run6_embrquicsm wall=0:05.01 sec=5.01 gbps=1.71 user=3.83s sys=0.98s rss=12272KB host_cpu=5.36s host_irq=0.63s sender_cpu=3.53s sender_irq=0.25s udp_drops=0
+run6_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.86s sys=0.94s rss=12208KB host_cpu=5.31s host_irq=0.53s sender_cpu=2.58s sender_irq=0.47s udp_drops=0
+run6_embrquicsmgso wall=0:05.03 sec=5.03 gbps=1.71 user=3.67s sys=1.16s rss=12172KB host_cpu=5.30s host_irq=0.62s sender_cpu=2.68s sender_irq=0.11s udp_drops=0
+run6_embrtcp wall=0:04.53 sec=4.53 gbps=1.90 user=2.66s sys=0.73s rss=9672KB host_cpu=3.99s host_irq=0.70s sender_cpu=0.63s sender_irq=0.39s udp_drops=0
+run6_nc wall=0:03.94 sec=3.94 gbps=2.18 user=0.30s sys=0.91s rss=9740KB host_cpu=1.73s host_irq=0.54s sender_cpu=1.79s sender_irq=0.54s udp_drops=0
+run6_scp wall=0:07.20 sec=7.2 gbps=1.19 user=0.94s sys=1.99s rss=10948KB host_cpu=3.15s host_irq=0.57s sender_cpu=3.18s sender_irq=0.73s udp_drops=0
+[bench 03:17:54] === run7 (7/12) ===
+run7_embrquic wall=0:05.00 sec=5 gbps=1.72 user=3.59s sys=1.23s rss=12152KB host_cpu=5.31s host_irq=0.60s sender_cpu=4.27s sender_irq=0.75s udp_drops=0
+run7_embrquicsm wall=0:05.02 sec=5.02 gbps=1.71 user=3.63s sys=1.21s rss=12332KB host_cpu=5.22s host_irq=0.57s sender_cpu=3.27s sender_irq=0.21s udp_drops=0
+run7_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.60s sys=1.23s rss=12316KB host_cpu=5.26s host_irq=0.49s sender_cpu=2.57s sender_irq=0.22s udp_drops=0
+run7_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.56s sys=1.22s rss=12008KB host_cpu=5.31s host_irq=0.61s sender_cpu=2.71s sender_irq=0.33s udp_drops=0
+run7_embrtcp wall=0:04.11 sec=4.11 gbps=2.09 user=2.56s sys=0.79s rss=9684KB host_cpu=3.75s host_irq=0.53s sender_cpu=0.54s sender_irq=0.34s udp_drops=0
+run7_nc wall=0:03.87 sec=3.87 gbps=2.22 user=0.25s sys=1.04s rss=9828KB host_cpu=1.81s host_irq=0.63s sender_cpu=1.52s sender_irq=0.45s udp_drops=0
+run7_scp wall=0:06.88 sec=6.88 gbps=1.25 user=0.80s sys=1.93s rss=11156KB host_cpu=3.13s host_irq=0.68s sender_cpu=3.19s sender_irq=0.57s udp_drops=0
+[bench 03:19:01] === run8 (8/12) ===
+run8_embrquic wall=0:05.14 sec=5.14 gbps=1.67 user=3.72s sys=1.16s rss=12244KB host_cpu=5.34s host_irq=0.55s sender_cpu=4.95s sender_irq=1.14s udp_drops=0
+run8_embrquicsm wall=0:05.05 sec=5.05 gbps=1.70 user=3.63s sys=1.19s rss=12268KB host_cpu=5.54s host_irq=0.77s sender_cpu=3.75s sender_irq=0.18s udp_drops=0
+run8_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.70s sys=1.10s rss=12004KB host_cpu=5.29s host_irq=0.59s sender_cpu=2.48s sender_irq=0.24s udp_drops=0
+run8_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.59s sys=1.27s rss=12172KB host_cpu=5.25s host_irq=0.57s sender_cpu=2.49s sender_irq=0.17s udp_drops=0
+run8_embrtcp wall=0:04.35 sec=4.35 gbps=1.97 user=2.68s sys=0.68s rss=9660KB host_cpu=4.05s host_irq=0.64s sender_cpu=0.57s sender_irq=0.26s udp_drops=0
+run8_nc wall=0:03.92 sec=3.92 gbps=2.19 user=0.20s sys=1.09s rss=9804KB host_cpu=1.69s host_irq=0.54s sender_cpu=1.63s sender_irq=0.42s udp_drops=0
+run8_scp wall=0:07.00 sec=7 gbps=1.23 user=0.86s sys=1.84s rss=10820KB host_cpu=3.19s host_irq=0.75s sender_cpu=3.11s sender_irq=0.59s udp_drops=0
+[bench 03:20:10] === run9 (9/12) ===
+run9_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.64s sys=1.17s rss=12212KB host_cpu=5.37s host_irq=0.69s sender_cpu=3.74s sender_irq=0.60s udp_drops=0
+run9_embrquicsm wall=0:05.04 sec=5.04 gbps=1.70 user=3.53s sys=1.30s rss=12188KB host_cpu=5.19s host_irq=0.54s sender_cpu=3.20s sender_irq=0.26s udp_drops=0
+run9_embrquicgso wall=0:05.03 sec=5.03 gbps=1.71 user=3.72s sys=1.11s rss=12212KB host_cpu=5.36s host_irq=0.69s sender_cpu=2.61s sender_irq=0.34s udp_drops=0
+run9_embrquicsmgso wall=0:05.11 sec=5.11 gbps=1.68 user=3.62s sys=1.29s rss=12280KB host_cpu=5.18s host_irq=0.44s sender_cpu=2.54s sender_irq=0.24s udp_drops=0
+run9_embrtcp wall=0:04.20 sec=4.2 gbps=2.05 user=2.60s sys=0.77s rss=9688KB host_cpu=4.15s host_irq=0.82s sender_cpu=0.42s sender_irq=0.16s udp_drops=0
+run9_nc wall=0:04.03 sec=4.03 gbps=2.13 user=0.19s sys=1.12s rss=9756KB host_cpu=1.69s host_irq=0.47s sender_cpu=1.68s sender_irq=0.43s udp_drops=0
+run9_scp wall=0:07.49 sec=7.49 gbps=1.15 user=0.90s sys=1.79s rss=10832KB host_cpu=3.03s host_irq=0.79s sender_cpu=2.91s sender_irq=0.63s udp_drops=0
+[bench 03:21:18] === run10 (10/12) ===
+run10_embrquic wall=0:05.00 sec=5 gbps=1.72 user=3.58s sys=1.23s rss=12260KB host_cpu=5.25s host_irq=0.62s sender_cpu=4.94s sender_irq=1.11s udp_drops=0
+run10_embrquicsm wall=0:04.98 sec=4.98 gbps=1.72 user=3.72s sys=1.03s rss=12016KB host_cpu=5.50s host_irq=0.71s sender_cpu=6.04s sender_irq=0.35s udp_drops=0
+run10_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.64s sys=1.15s rss=12084KB host_cpu=5.11s host_irq=0.44s sender_cpu=2.65s sender_irq=0.31s udp_drops=0
+run10_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.75s sys=1.03s rss=12124KB host_cpu=5.38s host_irq=0.67s sender_cpu=2.91s sender_irq=0.35s udp_drops=0
+run10_embrtcp wall=0:04.57 sec=4.57 gbps=1.88 user=2.67s sys=0.78s rss=9660KB host_cpu=3.99s host_irq=0.61s sender_cpu=0.49s sender_irq=0.16s udp_drops=0
+run10_nc wall=0:03.77 sec=3.77 gbps=2.28 user=0.26s sys=1.00s rss=9780KB host_cpu=1.94s host_irq=0.73s sender_cpu=1.93s sender_irq=0.66s udp_drops=0
+run10_scp wall=0:07.14 sec=7.14 gbps=1.20 user=0.92s sys=1.96s rss=11140KB host_cpu=3.10s host_irq=0.67s sender_cpu=2.88s sender_irq=0.53s udp_drops=0
+[bench 03:22:26] === run11 (11/12) ===
+run11_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.86s sys=0.98s rss=12200KB host_cpu=5.42s host_irq=0.70s sender_cpu=3.86s sender_irq=0.66s udp_drops=0
+run11_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.68s sys=1.13s rss=12196KB host_cpu=5.34s host_irq=0.54s sender_cpu=3.43s sender_irq=0.23s udp_drops=0
+run11_embrquicgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.72s sys=1.11s rss=12172KB host_cpu=5.20s host_irq=0.61s sender_cpu=2.84s sender_irq=0.29s udp_drops=0
+run11_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.61s sys=1.21s rss=12172KB host_cpu=5.40s host_irq=0.75s sender_cpu=2.59s sender_irq=0.29s udp_drops=0
+run11_embrtcp wall=0:04.47 sec=4.47 gbps=1.92 user=2.49s sys=0.88s rss=9768KB host_cpu=3.78s host_irq=0.55s sender_cpu=0.65s sender_irq=0.45s udp_drops=0
+run11_nc wall=0:03.87 sec=3.87 gbps=2.22 user=0.35s sys=1.02s rss=9676KB host_cpu=1.89s host_irq=0.68s sender_cpu=1.71s sender_irq=0.56s udp_drops=0
+run11_scp wall=0:07.19 sec=7.19 gbps=1.19 user=0.82s sys=1.93s rss=10964KB host_cpu=3.14s host_irq=0.69s sender_cpu=2.88s sender_irq=0.37s udp_drops=0
+[bench 03:23:34] === run12 (12/12) ===
+run12_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.69s sys=1.09s rss=12196KB host_cpu=5.41s host_irq=0.69s sender_cpu=3.62s sender_irq=0.57s udp_drops=0
+run12_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.64s sys=1.19s rss=12200KB host_cpu=5.39s host_irq=0.63s sender_cpu=3.39s sender_irq=0.28s udp_drops=0
+run12_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.76s sys=1.04s rss=12140KB host_cpu=5.51s host_irq=0.77s sender_cpu=2.51s sender_irq=0.16s udp_drops=0
+run12_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.54s sys=1.28s rss=12208KB host_cpu=5.24s host_irq=0.66s sender_cpu=2.83s sender_irq=0.25s udp_drops=0
+run12_embrtcp wall=0:04.32 sec=4.32 gbps=1.99 user=2.54s sys=0.84s rss=9768KB host_cpu=4.13s host_irq=0.74s sender_cpu=0.48s sender_irq=0.20s udp_drops=0
+run12_nc wall=0:03.59 sec=3.59 gbps=2.39 user=0.22s sys=1.09s rss=9752KB host_cpu=1.90s host_irq=0.61s sender_cpu=1.89s sender_irq=0.63s udp_drops=0
+run12_scp wall=0:07.31 sec=7.31 gbps=1.18 user=0.99s sys=1.71s rss=10592KB host_cpu=3.04s host_irq=0.65s sender_cpu=3.52s sender_irq=0.70s udp_drops=0
+[bench 03:24:42] === raw results ===
+# bench wan-receiver Sun Nov 22 03:11:06 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp   ack_thresh=2   gro=1
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.73s sys=1.11s rss=12148KB host_cpu=5.58s host_irq=0.83s sender_cpu=4.70s sender_irq=0.99s udp_drops=0
+warmup1_embrquicsm wall=0:05.16 sec=5.16 gbps=1.66 user=3.81s sys=1.04s rss=12292KB host_cpu=5.42s host_irq=0.68s sender_cpu=3.42s sender_irq=0.18s udp_drops=0
+warmup1_embrquicgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.57s sys=1.18s rss=12280KB host_cpu=5.32s host_irq=0.63s sender_cpu=2.31s sender_irq=0.20s udp_drops=0
+warmup1_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.64s sys=1.13s rss=12200KB host_cpu=5.37s host_irq=0.68s sender_cpu=2.51s sender_irq=0.18s udp_drops=0
+warmup1_embrtcp wall=0:03.96 sec=3.96 gbps=2.17 user=2.59s sys=0.79s rss=9688KB host_cpu=3.87s host_irq=0.57s sender_cpu=0.72s sender_irq=0.35s udp_drops=0
+warmup1_nc wall=0:03.89 sec=3.89 gbps=2.21 user=0.26s sys=1.02s rss=9836KB host_cpu=1.94s host_irq=0.65s sender_cpu=1.62s sender_irq=0.42s udp_drops=0
+warmup1_scp wall=0:07.24 sec=7.24 gbps=1.19 user=0.95s sys=1.76s rss=10932KB host_cpu=3.22s host_irq=0.78s sender_cpu=2.96s sender_irq=0.58s udp_drops=0
+
+warmup2_embrquic wall=0:05.09 sec=5.09 gbps=1.69 user=3.66s sys=1.23s rss=12200KB host_cpu=5.26s host_irq=0.66s sender_cpu=3.59s sender_irq=0.50s udp_drops=0
+warmup2_embrquicsm wall=0:05.20 sec=5.2 gbps=1.65 user=3.71s sys=1.24s rss=12364KB host_cpu=5.21s host_irq=0.48s sender_cpu=3.39s sender_irq=0.21s udp_drops=0
+warmup2_embrquicgso wall=0:04.97 sec=4.97 gbps=1.73 user=3.66s sys=1.12s rss=12288KB host_cpu=5.31s host_irq=0.62s sender_cpu=2.70s sender_irq=0.38s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.03 sec=5.03 gbps=1.71 user=3.59s sys=1.26s rss=12196KB host_cpu=5.30s host_irq=0.68s sender_cpu=2.63s sender_irq=0.28s udp_drops=0
+warmup2_embrtcp wall=0:04.22 sec=4.22 gbps=2.04 user=2.56s sys=0.83s rss=9668KB host_cpu=3.85s host_irq=0.62s sender_cpu=0.55s sender_irq=0.22s udp_drops=0
+warmup2_nc wall=0:03.52 sec=3.52 gbps=2.44 user=0.27s sys=1.04s rss=9664KB host_cpu=1.91s host_irq=0.64s sender_cpu=1.60s sender_irq=0.48s udp_drops=0
+warmup2_scp wall=0:07.45 sec=7.45 gbps=1.15 user=1.05s sys=1.90s rss=10664KB host_cpu=3.00s host_irq=0.71s sender_cpu=2.80s sender_irq=0.47s udp_drops=0
+
+run3_embrquic wall=0:04.93 sec=4.93 gbps=1.74 user=3.62s sys=1.13s rss=12212KB host_cpu=5.33s host_irq=0.57s sender_cpu=3.43s sender_irq=0.58s udp_drops=0
+run3_embrquicsm wall=0:04.98 sec=4.98 gbps=1.72 user=3.71s sys=1.04s rss=12332KB host_cpu=5.29s host_irq=0.55s sender_cpu=3.44s sender_irq=0.27s udp_drops=0
+run3_embrquicgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.82s sys=1.03s rss=12188KB host_cpu=5.13s host_irq=0.40s sender_cpu=2.68s sender_irq=0.25s udp_drops=0
+run3_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.59s sys=1.23s rss=12188KB host_cpu=5.18s host_irq=0.50s sender_cpu=2.45s sender_irq=0.15s udp_drops=0
+run3_embrtcp wall=0:04.38 sec=4.38 gbps=1.96 user=2.55s sys=0.87s rss=9752KB host_cpu=3.92s host_irq=0.68s sender_cpu=0.54s sender_irq=0.17s udp_drops=0
+run3_nc wall=0:03.90 sec=3.9 gbps=2.20 user=0.18s sys=1.13s rss=9888KB host_cpu=1.62s host_irq=0.52s sender_cpu=1.77s sender_irq=0.54s udp_drops=0
+run3_scp wall=0:07.18 sec=7.18 gbps=1.20 user=0.95s sys=1.78s rss=11012KB host_cpu=3.19s host_irq=0.65s sender_cpu=2.93s sender_irq=0.58s udp_drops=0
+
+run4_embrquic wall=0:05.20 sec=5.2 gbps=1.65 user=3.54s sys=1.30s rss=12208KB host_cpu=5.32s host_irq=0.57s sender_cpu=3.81s sender_irq=0.59s udp_drops=0
+run4_embrquicsm wall=0:05.11 sec=5.11 gbps=1.68 user=3.60s sys=1.23s rss=12324KB host_cpu=5.27s host_irq=0.53s sender_cpu=3.49s sender_irq=0.28s udp_drops=0
+run4_embrquicgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.73s sys=1.06s rss=12272KB host_cpu=5.36s host_irq=0.64s sender_cpu=2.69s sender_irq=0.29s udp_drops=0
+run4_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.75s sys=1.03s rss=12204KB host_cpu=5.48s host_irq=0.73s sender_cpu=2.56s sender_irq=0.28s udp_drops=0
+run4_embrtcp wall=0:04.50 sec=4.5 gbps=1.91 user=2.53s sys=0.79s rss=9696KB host_cpu=3.92s host_irq=0.63s sender_cpu=0.66s sender_irq=0.26s udp_drops=0
+run4_nc wall=0:03.96 sec=3.96 gbps=2.17 user=0.21s sys=1.17s rss=9804KB host_cpu=1.56s host_irq=0.46s sender_cpu=1.52s sender_irq=0.39s udp_drops=0
+run4_scp wall=0:07.45 sec=7.45 gbps=1.15 user=0.88s sys=2.04s rss=10920KB host_cpu=3.48s host_irq=0.65s sender_cpu=2.94s sender_irq=0.64s udp_drops=0
+
+run5_embrquic wall=0:05.07 sec=5.07 gbps=1.69 user=3.54s sys=1.31s rss=12196KB host_cpu=5.24s host_irq=0.47s sender_cpu=4.47s sender_irq=1.00s udp_drops=0
+run5_embrquicsm wall=0:05.06 sec=5.06 gbps=1.70 user=3.80s sys=1.06s rss=12332KB host_cpu=5.53s host_irq=0.78s sender_cpu=3.24s sender_irq=0.22s udp_drops=0
+run5_embrquicgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.58s sys=1.21s rss=12188KB host_cpu=5.24s host_irq=0.57s sender_cpu=2.48s sender_irq=0.40s udp_drops=0
+run5_embrquicsmgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.58s sys=1.27s rss=12188KB host_cpu=5.31s host_irq=0.62s sender_cpu=2.37s sender_irq=0.28s udp_drops=0
+run5_embrtcp wall=0:04.26 sec=4.26 gbps=2.02 user=2.62s sys=0.75s rss=9752KB host_cpu=3.99s host_irq=0.69s sender_cpu=0.53s sender_irq=0.20s udp_drops=0
+run5_nc wall=0:03.58 sec=3.58 gbps=2.40 user=0.18s sys=1.06s rss=9848KB host_cpu=1.96s host_irq=0.67s sender_cpu=1.53s sender_irq=0.42s udp_drops=0
+run5_scp wall=0:07.30 sec=7.3 gbps=1.18 user=1.03s sys=1.66s rss=11168KB host_cpu=3.31s host_irq=0.84s sender_cpu=3.25s sender_irq=0.61s udp_drops=0
+
+run6_embrquic wall=0:04.97 sec=4.97 gbps=1.73 user=3.63s sys=1.15s rss=12240KB host_cpu=5.38s host_irq=0.67s sender_cpu=4.33s sender_irq=0.89s udp_drops=0
+run6_embrquicsm wall=0:05.01 sec=5.01 gbps=1.71 user=3.83s sys=0.98s rss=12272KB host_cpu=5.36s host_irq=0.63s sender_cpu=3.53s sender_irq=0.25s udp_drops=0
+run6_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.86s sys=0.94s rss=12208KB host_cpu=5.31s host_irq=0.53s sender_cpu=2.58s sender_irq=0.47s udp_drops=0
+run6_embrquicsmgso wall=0:05.03 sec=5.03 gbps=1.71 user=3.67s sys=1.16s rss=12172KB host_cpu=5.30s host_irq=0.62s sender_cpu=2.68s sender_irq=0.11s udp_drops=0
+run6_embrtcp wall=0:04.53 sec=4.53 gbps=1.90 user=2.66s sys=0.73s rss=9672KB host_cpu=3.99s host_irq=0.70s sender_cpu=0.63s sender_irq=0.39s udp_drops=0
+run6_nc wall=0:03.94 sec=3.94 gbps=2.18 user=0.30s sys=0.91s rss=9740KB host_cpu=1.73s host_irq=0.54s sender_cpu=1.79s sender_irq=0.54s udp_drops=0
+run6_scp wall=0:07.20 sec=7.2 gbps=1.19 user=0.94s sys=1.99s rss=10948KB host_cpu=3.15s host_irq=0.57s sender_cpu=3.18s sender_irq=0.73s udp_drops=0
+
+run7_embrquic wall=0:05.00 sec=5 gbps=1.72 user=3.59s sys=1.23s rss=12152KB host_cpu=5.31s host_irq=0.60s sender_cpu=4.27s sender_irq=0.75s udp_drops=0
+run7_embrquicsm wall=0:05.02 sec=5.02 gbps=1.71 user=3.63s sys=1.21s rss=12332KB host_cpu=5.22s host_irq=0.57s sender_cpu=3.27s sender_irq=0.21s udp_drops=0
+run7_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.60s sys=1.23s rss=12316KB host_cpu=5.26s host_irq=0.49s sender_cpu=2.57s sender_irq=0.22s udp_drops=0
+run7_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.56s sys=1.22s rss=12008KB host_cpu=5.31s host_irq=0.61s sender_cpu=2.71s sender_irq=0.33s udp_drops=0
+run7_embrtcp wall=0:04.11 sec=4.11 gbps=2.09 user=2.56s sys=0.79s rss=9684KB host_cpu=3.75s host_irq=0.53s sender_cpu=0.54s sender_irq=0.34s udp_drops=0
+run7_nc wall=0:03.87 sec=3.87 gbps=2.22 user=0.25s sys=1.04s rss=9828KB host_cpu=1.81s host_irq=0.63s sender_cpu=1.52s sender_irq=0.45s udp_drops=0
+run7_scp wall=0:06.88 sec=6.88 gbps=1.25 user=0.80s sys=1.93s rss=11156KB host_cpu=3.13s host_irq=0.68s sender_cpu=3.19s sender_irq=0.57s udp_drops=0
+
+run8_embrquic wall=0:05.14 sec=5.14 gbps=1.67 user=3.72s sys=1.16s rss=12244KB host_cpu=5.34s host_irq=0.55s sender_cpu=4.95s sender_irq=1.14s udp_drops=0
+run8_embrquicsm wall=0:05.05 sec=5.05 gbps=1.70 user=3.63s sys=1.19s rss=12268KB host_cpu=5.54s host_irq=0.77s sender_cpu=3.75s sender_irq=0.18s udp_drops=0
+run8_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.70s sys=1.10s rss=12004KB host_cpu=5.29s host_irq=0.59s sender_cpu=2.48s sender_irq=0.24s udp_drops=0
+run8_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.59s sys=1.27s rss=12172KB host_cpu=5.25s host_irq=0.57s sender_cpu=2.49s sender_irq=0.17s udp_drops=0
+run8_embrtcp wall=0:04.35 sec=4.35 gbps=1.97 user=2.68s sys=0.68s rss=9660KB host_cpu=4.05s host_irq=0.64s sender_cpu=0.57s sender_irq=0.26s udp_drops=0
+run8_nc wall=0:03.92 sec=3.92 gbps=2.19 user=0.20s sys=1.09s rss=9804KB host_cpu=1.69s host_irq=0.54s sender_cpu=1.63s sender_irq=0.42s udp_drops=0
+run8_scp wall=0:07.00 sec=7 gbps=1.23 user=0.86s sys=1.84s rss=10820KB host_cpu=3.19s host_irq=0.75s sender_cpu=3.11s sender_irq=0.59s udp_drops=0
+
+run9_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.64s sys=1.17s rss=12212KB host_cpu=5.37s host_irq=0.69s sender_cpu=3.74s sender_irq=0.60s udp_drops=0
+run9_embrquicsm wall=0:05.04 sec=5.04 gbps=1.70 user=3.53s sys=1.30s rss=12188KB host_cpu=5.19s host_irq=0.54s sender_cpu=3.20s sender_irq=0.26s udp_drops=0
+run9_embrquicgso wall=0:05.03 sec=5.03 gbps=1.71 user=3.72s sys=1.11s rss=12212KB host_cpu=5.36s host_irq=0.69s sender_cpu=2.61s sender_irq=0.34s udp_drops=0
+run9_embrquicsmgso wall=0:05.11 sec=5.11 gbps=1.68 user=3.62s sys=1.29s rss=12280KB host_cpu=5.18s host_irq=0.44s sender_cpu=2.54s sender_irq=0.24s udp_drops=0
+run9_embrtcp wall=0:04.20 sec=4.2 gbps=2.05 user=2.60s sys=0.77s rss=9688KB host_cpu=4.15s host_irq=0.82s sender_cpu=0.42s sender_irq=0.16s udp_drops=0
+run9_nc wall=0:04.03 sec=4.03 gbps=2.13 user=0.19s sys=1.12s rss=9756KB host_cpu=1.69s host_irq=0.47s sender_cpu=1.68s sender_irq=0.43s udp_drops=0
+run9_scp wall=0:07.49 sec=7.49 gbps=1.15 user=0.90s sys=1.79s rss=10832KB host_cpu=3.03s host_irq=0.79s sender_cpu=2.91s sender_irq=0.63s udp_drops=0
+
+run10_embrquic wall=0:05.00 sec=5 gbps=1.72 user=3.58s sys=1.23s rss=12260KB host_cpu=5.25s host_irq=0.62s sender_cpu=4.94s sender_irq=1.11s udp_drops=0
+run10_embrquicsm wall=0:04.98 sec=4.98 gbps=1.72 user=3.72s sys=1.03s rss=12016KB host_cpu=5.50s host_irq=0.71s sender_cpu=6.04s sender_irq=0.35s udp_drops=0
+run10_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.64s sys=1.15s rss=12084KB host_cpu=5.11s host_irq=0.44s sender_cpu=2.65s sender_irq=0.31s udp_drops=0
+run10_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.75s sys=1.03s rss=12124KB host_cpu=5.38s host_irq=0.67s sender_cpu=2.91s sender_irq=0.35s udp_drops=0
+run10_embrtcp wall=0:04.57 sec=4.57 gbps=1.88 user=2.67s sys=0.78s rss=9660KB host_cpu=3.99s host_irq=0.61s sender_cpu=0.49s sender_irq=0.16s udp_drops=0
+run10_nc wall=0:03.77 sec=3.77 gbps=2.28 user=0.26s sys=1.00s rss=9780KB host_cpu=1.94s host_irq=0.73s sender_cpu=1.93s sender_irq=0.66s udp_drops=0
+run10_scp wall=0:07.14 sec=7.14 gbps=1.20 user=0.92s sys=1.96s rss=11140KB host_cpu=3.10s host_irq=0.67s sender_cpu=2.88s sender_irq=0.53s udp_drops=0
+
+run11_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.86s sys=0.98s rss=12200KB host_cpu=5.42s host_irq=0.70s sender_cpu=3.86s sender_irq=0.66s udp_drops=0
+run11_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.68s sys=1.13s rss=12196KB host_cpu=5.34s host_irq=0.54s sender_cpu=3.43s sender_irq=0.23s udp_drops=0
+run11_embrquicgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.72s sys=1.11s rss=12172KB host_cpu=5.20s host_irq=0.61s sender_cpu=2.84s sender_irq=0.29s udp_drops=0
+run11_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.61s sys=1.21s rss=12172KB host_cpu=5.40s host_irq=0.75s sender_cpu=2.59s sender_irq=0.29s udp_drops=0
+run11_embrtcp wall=0:04.47 sec=4.47 gbps=1.92 user=2.49s sys=0.88s rss=9768KB host_cpu=3.78s host_irq=0.55s sender_cpu=0.65s sender_irq=0.45s udp_drops=0
+run11_nc wall=0:03.87 sec=3.87 gbps=2.22 user=0.35s sys=1.02s rss=9676KB host_cpu=1.89s host_irq=0.68s sender_cpu=1.71s sender_irq=0.56s udp_drops=0
+run11_scp wall=0:07.19 sec=7.19 gbps=1.19 user=0.82s sys=1.93s rss=10964KB host_cpu=3.14s host_irq=0.69s sender_cpu=2.88s sender_irq=0.37s udp_drops=0
+
+run12_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.69s sys=1.09s rss=12196KB host_cpu=5.41s host_irq=0.69s sender_cpu=3.62s sender_irq=0.57s udp_drops=0
+run12_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.64s sys=1.19s rss=12200KB host_cpu=5.39s host_irq=0.63s sender_cpu=3.39s sender_irq=0.28s udp_drops=0
+run12_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.76s sys=1.04s rss=12140KB host_cpu=5.51s host_irq=0.77s sender_cpu=2.51s sender_irq=0.16s udp_drops=0
+run12_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.54s sys=1.28s rss=12208KB host_cpu=5.24s host_irq=0.66s sender_cpu=2.83s sender_irq=0.25s udp_drops=0
+run12_embrtcp wall=0:04.32 sec=4.32 gbps=1.99 user=2.54s sys=0.84s rss=9768KB host_cpu=4.13s host_irq=0.74s sender_cpu=0.48s sender_irq=0.20s udp_drops=0
+run12_nc wall=0:03.59 sec=3.59 gbps=2.39 user=0.22s sys=1.09s rss=9752KB host_cpu=1.90s host_irq=0.61s sender_cpu=1.89s sender_irq=0.63s udp_drops=0
+run12_scp wall=0:07.31 sec=7.31 gbps=1.18 user=0.99s sys=1.71s rss=10592KB host_cpu=3.04s host_irq=0.65s sender_cpu=3.52s sender_irq=0.70s udp_drops=0
+
+[bench 03:24:42] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.7100  [1.65 1.74] | 5.0100  [4.93 5.2] | 3.6250   | 1.1650  
+embrquicsm    | 1.7100  [1.68 1.72] | 5.0300  [4.98 5.11] | 3.6600   | 1.1600  
+embrquicgso   | 1.7100  [1.69 1.72] | 5.0150  [4.98 5.07] | 3.7200   | 1.1050  
+embrquicsmgso | 1.7100  [1.68 1.73] | 5.0100  [4.96 5.11] | 3.6000   | 1.2250  
+embrtcp       | 1.9650  [1.88 2.09] | 4.3650  [4.11 4.57] | 2.5800   | 0.7850  
+nc            | 2.2100  [2.13 2.40] | 3.8850  [3.58 4.03] | 0.2150   | 1.0750  
+scp           | 1.1900  [1.15 1.25] | 7.1950  [6.88 7.49] | 0.9100   | 1.8850  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 5.3350     | 0.6100     | 4.0650     | 0.7050    
+embrquicsm    | 5.3500     | 0.6000     | 3.4350     | 0.2550    
+embrquicgso   | 5.2750     | 0.5800     | 2.5950     | 0.2900    
+embrquicsmgso | 5.3050     | 0.6200     | 2.5750     | 0.2650    
+embrtcp       | 3.9900     | 0.6600     | 0.5400     | 0.2300    
+nc            | 1.7700     | 0.5750     | 1.6950     | 0.4950    
+scp           | 3.1450     | 0.6750     | 3.0250     | 0.6000    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicsm=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=1 datagrams=9926001 reads=501181 bytes=13352095937 (19.8 datagrams per read)
+embrquicsm ingress over 12 connections: gro=1 datagrams=9926167 reads=528715 bytes=13352772456 (18.8 datagrams per read)
+embrquicgso ingress over 12 connections: gro=1 datagrams=9926409 reads=791910 bytes=13352114963 (12.5 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=1 datagrams=9925865 reads=792421 bytes=13352089298 (12.5 datagrams per read)
+[bench 03:24:42] raw results in /home/ec2-user/embr-wan/2026-11-22-0310/default/results.txt
+[bench 03:24:42] read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C.
+[bench 03:24:42]       host_* is this host, sender_* the sender, whole machine: compare rows on these, since
+[bench 03:24:42]       softirq packet work is in no process's user/sys
+[bench 03:24:42]       embrquic vs embrquicsm = SEND_ZC vs sendmsg; embrquic vs scp = encrypted vs encrypted;
+[bench 03:24:42]       embrtcp vs nc = plaintext vs plaintext
+[wan 03:24:44] pass default, receiver: udp InDatagrams+2614306 InErrors+0 OutDatagrams+685962 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:24:44] pass default, sender: udp InDatagrams+601543 InErrors+0 OutDatagrams+21174755 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+6585 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:24:44] === pass gro-off: rows [embrquic embrquicsm embrquicgso embrquicsmgso embrtcp]  receiver env [EMBR_QUIC_GRO=0]  sender env [none] ===
+[bench 03:24:49] ssh ok: ec2-user@SENDER
+[bench 03:24:49] tcp port ok: 10007 (embrtcp)
+[bench 03:24:49] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:24:49] remote sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:24:49] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:24:50] remote sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:24:50] RECEIVER — ec2-user@SENDER — fetching source size+hash...
+[bench 03:24:53] expected 1073741824 bytes  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:24:54] === warmup1 (1/12) ===
+warmup1_embrquic wall=0:06.15 sec=6.15 gbps=1.40 user=4.54s sys=1.44s rss=12048KB host_cpu=8.24s host_irq=1.04s sender_cpu=3.96s sender_irq=0.74s udp_drops=0
+warmup1_embrquicsm wall=0:05.81 sec=5.81 gbps=1.48 user=4.17s sys=1.45s rss=19376KB host_cpu=6.60s host_irq=1.19s sender_cpu=3.46s sender_irq=0.35s udp_drops=0
+warmup1_embrquicgso wall=0:05.69 sec=5.69 gbps=1.51 user=4.24s sys=1.25s rss=12044KB host_cpu=6.62s host_irq=1.14s sender_cpu=2.76s sender_irq=0.37s udp_drops=0
+warmup1_embrquicsmgso wall=0:05.77 sec=5.77 gbps=1.49 user=4.20s sys=1.38s rss=12188KB host_cpu=6.40s host_irq=0.96s sender_cpu=2.59s sender_irq=0.13s udp_drops=0
+warmup1_embrtcp wall=0:04.47 sec=4.47 gbps=1.92 user=2.58s sys=0.81s rss=9700KB host_cpu=3.86s host_irq=0.68s sender_cpu=0.63s sender_irq=0.25s udp_drops=0
+[bench 03:25:45] === warmup2 (2/12) ===
+warmup2_embrquic wall=0:05.77 sec=5.77 gbps=1.49 user=3.90s sys=1.66s rss=12188KB host_cpu=6.36s host_irq=0.99s sender_cpu=4.32s sender_irq=0.97s udp_drops=0
+warmup2_embrquicsm wall=0:05.78 sec=5.78 gbps=1.49 user=4.13s sys=1.46s rss=12140KB host_cpu=6.79s host_irq=1.23s sender_cpu=3.51s sender_irq=0.23s udp_drops=0
+warmup2_embrquicgso wall=0:05.78 sec=5.78 gbps=1.49 user=3.92s sys=1.66s rss=12140KB host_cpu=6.21s host_irq=0.91s sender_cpu=2.81s sender_irq=0.50s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.80 sec=5.8 gbps=1.48 user=3.98s sys=1.63s rss=12124KB host_cpu=6.56s host_irq=1.05s sender_cpu=2.78s sender_irq=0.36s udp_drops=0
+warmup2_embrtcp wall=0:04.45 sec=4.45 gbps=1.93 user=2.59s sys=0.80s rss=9704KB host_cpu=3.82s host_irq=0.64s sender_cpu=0.63s sender_irq=0.18s udp_drops=0
+[bench 03:26:37] === run3 (3/12) ===
+run3_embrquic wall=0:05.77 sec=5.77 gbps=1.49 user=4.14s sys=1.44s rss=12232KB host_cpu=6.31s host_irq=0.91s sender_cpu=4.34s sender_irq=0.94s udp_drops=0
+run3_embrquicsm wall=0:05.76 sec=5.76 gbps=1.49 user=4.07s sys=1.51s rss=12112KB host_cpu=6.68s host_irq=1.17s sender_cpu=3.48s sender_irq=0.27s udp_drops=0
+run3_embrquicgso wall=0:05.71 sec=5.71 gbps=1.50 user=3.93s sys=1.58s rss=12280KB host_cpu=6.46s host_irq=1.17s sender_cpu=2.42s sender_irq=0.23s udp_drops=0
+run3_embrquicsmgso wall=0:05.71 sec=5.71 gbps=1.50 user=4.27s sys=1.25s rss=12164KB host_cpu=6.39s host_irq=0.97s sender_cpu=2.56s sender_irq=0.28s udp_drops=0
+run3_embrtcp wall=0:04.10 sec=4.1 gbps=2.10 user=2.72s sys=0.63s rss=9692KB host_cpu=3.95s host_irq=0.54s sender_cpu=0.44s sender_irq=0.29s udp_drops=0
+[bench 03:27:28] === run4 (4/12) ===
+run4_embrquic wall=0:05.74 sec=5.74 gbps=1.50 user=4.14s sys=1.41s rss=12060KB host_cpu=6.45s host_irq=1.06s sender_cpu=3.98s sender_irq=0.56s udp_drops=0
+run4_embrquicsm wall=0:05.73 sec=5.73 gbps=1.50 user=4.18s sys=1.38s rss=12172KB host_cpu=6.41s host_irq=0.93s sender_cpu=3.45s sender_irq=0.27s udp_drops=0
+run4_embrquicgso wall=0:05.66 sec=5.66 gbps=1.52 user=4.19s sys=1.27s rss=12132KB host_cpu=6.44s host_irq=1.04s sender_cpu=2.81s sender_irq=0.42s udp_drops=0
+run4_embrquicsmgso wall=0:05.81 sec=5.81 gbps=1.48 user=4.06s sys=1.56s rss=12220KB host_cpu=6.26s host_irq=0.90s sender_cpu=2.70s sender_irq=0.23s udp_drops=0
+run4_embrtcp wall=0:04.00 sec=4 gbps=2.15 user=2.60s sys=0.73s rss=9660KB host_cpu=3.80s host_irq=0.54s sender_cpu=0.76s sender_irq=0.52s udp_drops=0
+[bench 03:28:18] === run5 (5/12) ===
+run5_embrquic wall=0:05.73 sec=5.73 gbps=1.50 user=4.21s sys=1.32s rss=12004KB host_cpu=6.28s host_irq=0.93s sender_cpu=3.74s sender_irq=0.46s udp_drops=0
+run5_embrquicsm wall=0:05.74 sec=5.74 gbps=1.50 user=4.20s sys=1.37s rss=12200KB host_cpu=6.46s host_irq=1.01s sender_cpu=3.54s sender_irq=0.18s udp_drops=0
+run5_embrquicgso wall=0:05.72 sec=5.72 gbps=1.50 user=4.15s sys=1.40s rss=12188KB host_cpu=6.17s host_irq=0.85s sender_cpu=2.65s sender_irq=0.40s udp_drops=0
+run5_embrquicsmgso wall=0:05.67 sec=5.67 gbps=1.51 user=4.14s sys=1.35s rss=12196KB host_cpu=6.71s host_irq=1.23s sender_cpu=2.93s sender_irq=0.35s udp_drops=0
+run5_embrtcp wall=0:04.44 sec=4.44 gbps=1.93 user=2.67s sys=0.73s rss=9660KB host_cpu=3.91s host_irq=0.59s sender_cpu=0.53s sender_irq=0.18s udp_drops=0
+[bench 03:29:09] === run6 (6/12) ===
+run6_embrquic wall=0:05.76 sec=5.76 gbps=1.49 user=4.36s sys=1.22s rss=12104KB host_cpu=6.59s host_irq=1.15s sender_cpu=3.65s sender_irq=0.54s udp_drops=0
+run6_embrquicsm wall=0:05.80 sec=5.8 gbps=1.48 user=4.14s sys=1.46s rss=12180KB host_cpu=6.85s host_irq=1.33s sender_cpu=3.35s sender_irq=0.18s udp_drops=0
+run6_embrquicgso wall=0:05.78 sec=5.78 gbps=1.49 user=4.19s sys=1.41s rss=12048KB host_cpu=6.60s host_irq=1.12s sender_cpu=2.62s sender_irq=0.22s udp_drops=0
+run6_embrquicsmgso wall=0:05.73 sec=5.73 gbps=1.50 user=4.21s sys=1.33s rss=12260KB host_cpu=6.33s host_irq=0.90s sender_cpu=2.53s sender_irq=0.30s udp_drops=0
+run6_embrtcp wall=0:04.41 sec=4.41 gbps=1.95 user=2.57s sys=0.75s rss=9612KB host_cpu=4.05s host_irq=0.67s sender_cpu=0.57s sender_irq=0.19s udp_drops=0
+[bench 03:30:01] === run7 (7/12) ===
+run7_embrquic wall=0:05.81 sec=5.81 gbps=1.48 user=4.24s sys=1.39s rss=12188KB host_cpu=6.37s host_irq=0.96s sender_cpu=4.14s sender_irq=0.70s udp_drops=0
+run7_embrquicsm wall=0:05.73 sec=5.73 gbps=1.50 user=4.20s sys=1.34s rss=12232KB host_cpu=6.61s host_irq=1.17s sender_cpu=3.36s sender_irq=0.20s udp_drops=0
+run7_embrquicgso wall=0:05.84 sec=5.84 gbps=1.47 user=4.06s sys=1.59s rss=12208KB host_cpu=6.32s host_irq=0.98s sender_cpu=2.87s sender_irq=0.36s udp_drops=0
+run7_embrquicsmgso wall=0:05.71 sec=5.71 gbps=1.50 user=4.14s sys=1.38s rss=12000KB host_cpu=6.22s host_irq=0.93s sender_cpu=2.29s sender_irq=0.21s udp_drops=0
+run7_embrtcp wall=0:04.61 sec=4.61 gbps=1.86 user=2.56s sys=0.84s rss=9692KB host_cpu=3.88s host_irq=0.57s sender_cpu=0.64s sender_irq=0.16s udp_drops=0
+[bench 03:30:52] === run8 (8/12) ===
+run8_embrquic wall=0:05.67 sec=5.67 gbps=1.51 user=4.08s sys=1.41s rss=12288KB host_cpu=6.37s host_irq=0.96s sender_cpu=4.20s sender_irq=0.76s udp_drops=0
+run8_embrquicsm wall=0:05.78 sec=5.78 gbps=1.49 user=4.20s sys=1.40s rss=12144KB host_cpu=6.60s host_irq=1.09s sender_cpu=3.65s sender_irq=0.23s udp_drops=0
+run8_embrquicgso wall=0:05.68 sec=5.68 gbps=1.51 user=4.15s sys=1.35s rss=12164KB host_cpu=6.37s host_irq=1.02s sender_cpu=2.74s sender_irq=0.49s udp_drops=0
+run8_embrquicsmgso wall=0:05.76 sec=5.76 gbps=1.49 user=4.20s sys=1.36s rss=12196KB host_cpu=6.65s host_irq=1.12s sender_cpu=2.62s sender_irq=0.18s udp_drops=0
+run8_embrtcp wall=0:04.55 sec=4.55 gbps=1.89 user=2.66s sys=0.71s rss=9692KB host_cpu=3.96s host_irq=0.69s sender_cpu=0.56s sender_irq=0.33s udp_drops=0
+[bench 03:31:43] === run9 (9/12) ===
+run9_embrquic wall=0:05.74 sec=5.74 gbps=1.50 user=4.15s sys=1.39s rss=11900KB host_cpu=6.44s host_irq=1.05s sender_cpu=4.63s sender_irq=1.10s udp_drops=0
+run9_embrquicsm wall=0:05.81 sec=5.81 gbps=1.48 user=4.42s sys=1.21s rss=11884KB host_cpu=6.85s host_irq=1.28s sender_cpu=3.30s sender_irq=0.15s udp_drops=0
+run9_embrquicgso wall=0:05.83 sec=5.83 gbps=1.47 user=3.87s sys=1.76s rss=11876KB host_cpu=6.06s host_irq=0.82s sender_cpu=2.77s sender_irq=0.33s udp_drops=0
+run9_embrquicsmgso wall=0:05.85 sec=5.85 gbps=1.47 user=4.19s sys=1.47s rss=12240KB host_cpu=6.59s host_irq=0.98s sender_cpu=2.54s sender_irq=0.26s udp_drops=0
+run9_embrtcp wall=0:04.13 sec=4.13 gbps=2.08 user=2.71s sys=0.64s rss=9768KB host_cpu=3.62s host_irq=0.41s sender_cpu=0.54s sender_irq=0.19s udp_drops=0
+[bench 03:32:35] === run10 (10/12) ===
+run10_embrquic wall=0:05.73 sec=5.73 gbps=1.50 user=4.15s sys=1.39s rss=12228KB host_cpu=6.62s host_irq=1.16s sender_cpu=3.47s sender_irq=0.45s udp_drops=0
+run10_embrquicsm wall=0:05.75 sec=5.75 gbps=1.49 user=4.06s sys=1.51s rss=12260KB host_cpu=6.63s host_irq=1.14s sender_cpu=3.42s sender_irq=0.30s udp_drops=0
+run10_embrquicgso wall=0:05.74 sec=5.74 gbps=1.50 user=3.97s sys=1.60s rss=12176KB host_cpu=6.13s host_irq=0.80s sender_cpu=2.74s sender_irq=0.38s udp_drops=0
+run10_embrquicsmgso wall=0:05.91 sec=5.91 gbps=1.45 user=4.03s sys=1.69s rss=12176KB host_cpu=6.09s host_irq=0.84s sender_cpu=2.71s sender_irq=0.20s udp_drops=0
+run10_embrtcp wall=0:04.52 sec=4.52 gbps=1.90 user=2.74s sys=0.63s rss=9768KB host_cpu=4.08s host_irq=0.72s sender_cpu=0.60s sender_irq=0.38s udp_drops=0
+[bench 03:33:26] === run11 (11/12) ===
+run11_embrquic wall=0:05.67 sec=5.67 gbps=1.51 user=4.03s sys=1.45s rss=12008KB host_cpu=6.45s host_irq=1.08s sender_cpu=4.22s sender_irq=0.83s udp_drops=0
+run11_embrquicsm wall=0:05.75 sec=5.75 gbps=1.49 user=3.97s sys=1.59s rss=12188KB host_cpu=6.32s host_irq=0.98s sender_cpu=3.42s sender_irq=0.28s udp_drops=0
+run11_embrquicgso wall=0:05.76 sec=5.76 gbps=1.49 user=3.96s sys=1.60s rss=12016KB host_cpu=6.04s host_irq=0.81s sender_cpu=2.40s sender_irq=0.17s udp_drops=0
+run11_embrquicsmgso wall=0:05.75 sec=5.75 gbps=1.49 user=4.26s sys=1.29s rss=12220KB host_cpu=6.56s host_irq=1.06s sender_cpu=2.67s sender_irq=0.27s udp_drops=0
+run11_embrtcp wall=0:04.31 sec=4.31 gbps=1.99 user=2.67s sys=0.67s rss=9664KB host_cpu=3.81s host_irq=0.57s sender_cpu=0.52s sender_irq=0.15s udp_drops=0
+[bench 03:34:17] === run12 (12/12) ===
+run12_embrquic wall=0:05.71 sec=5.71 gbps=1.50 user=4.17s sys=1.34s rss=12280KB host_cpu=6.69s host_irq=1.23s sender_cpu=3.45s sender_irq=0.37s udp_drops=0
+run12_embrquicsm wall=0:05.87 sec=5.87 gbps=1.46 user=4.14s sys=1.55s rss=20388KB host_cpu=6.70s host_irq=1.06s sender_cpu=3.41s sender_irq=0.17s udp_drops=0
+run12_embrquicgso wall=0:05.80 sec=5.8 gbps=1.48 user=3.82s sys=1.79s rss=12180KB host_cpu=6.17s host_irq=0.86s sender_cpu=2.49s sender_irq=0.20s udp_drops=0
+run12_embrquicsmgso wall=0:05.65 sec=5.65 gbps=1.52 user=4.09s sys=1.38s rss=12188KB host_cpu=6.71s host_irq=1.26s sender_cpu=2.77s sender_irq=0.31s udp_drops=0
+run12_embrtcp wall=0:04.52 sec=4.52 gbps=1.90 user=2.66s sys=0.74s rss=9692KB host_cpu=4.07s host_irq=0.65s sender_cpu=0.55s sender_irq=0.37s udp_drops=0
+[bench 03:35:08] === raw results ===
+# bench wan-receiver Sun Nov 22 03:24:54 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp   ack_thresh=2   gro=0
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquic wall=0:06.15 sec=6.15 gbps=1.40 user=4.54s sys=1.44s rss=12048KB host_cpu=8.24s host_irq=1.04s sender_cpu=3.96s sender_irq=0.74s udp_drops=0
+warmup1_embrquicsm wall=0:05.81 sec=5.81 gbps=1.48 user=4.17s sys=1.45s rss=19376KB host_cpu=6.60s host_irq=1.19s sender_cpu=3.46s sender_irq=0.35s udp_drops=0
+warmup1_embrquicgso wall=0:05.69 sec=5.69 gbps=1.51 user=4.24s sys=1.25s rss=12044KB host_cpu=6.62s host_irq=1.14s sender_cpu=2.76s sender_irq=0.37s udp_drops=0
+warmup1_embrquicsmgso wall=0:05.77 sec=5.77 gbps=1.49 user=4.20s sys=1.38s rss=12188KB host_cpu=6.40s host_irq=0.96s sender_cpu=2.59s sender_irq=0.13s udp_drops=0
+warmup1_embrtcp wall=0:04.47 sec=4.47 gbps=1.92 user=2.58s sys=0.81s rss=9700KB host_cpu=3.86s host_irq=0.68s sender_cpu=0.63s sender_irq=0.25s udp_drops=0
+
+warmup2_embrquic wall=0:05.77 sec=5.77 gbps=1.49 user=3.90s sys=1.66s rss=12188KB host_cpu=6.36s host_irq=0.99s sender_cpu=4.32s sender_irq=0.97s udp_drops=0
+warmup2_embrquicsm wall=0:05.78 sec=5.78 gbps=1.49 user=4.13s sys=1.46s rss=12140KB host_cpu=6.79s host_irq=1.23s sender_cpu=3.51s sender_irq=0.23s udp_drops=0
+warmup2_embrquicgso wall=0:05.78 sec=5.78 gbps=1.49 user=3.92s sys=1.66s rss=12140KB host_cpu=6.21s host_irq=0.91s sender_cpu=2.81s sender_irq=0.50s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.80 sec=5.8 gbps=1.48 user=3.98s sys=1.63s rss=12124KB host_cpu=6.56s host_irq=1.05s sender_cpu=2.78s sender_irq=0.36s udp_drops=0
+warmup2_embrtcp wall=0:04.45 sec=4.45 gbps=1.93 user=2.59s sys=0.80s rss=9704KB host_cpu=3.82s host_irq=0.64s sender_cpu=0.63s sender_irq=0.18s udp_drops=0
+
+run3_embrquic wall=0:05.77 sec=5.77 gbps=1.49 user=4.14s sys=1.44s rss=12232KB host_cpu=6.31s host_irq=0.91s sender_cpu=4.34s sender_irq=0.94s udp_drops=0
+run3_embrquicsm wall=0:05.76 sec=5.76 gbps=1.49 user=4.07s sys=1.51s rss=12112KB host_cpu=6.68s host_irq=1.17s sender_cpu=3.48s sender_irq=0.27s udp_drops=0
+run3_embrquicgso wall=0:05.71 sec=5.71 gbps=1.50 user=3.93s sys=1.58s rss=12280KB host_cpu=6.46s host_irq=1.17s sender_cpu=2.42s sender_irq=0.23s udp_drops=0
+run3_embrquicsmgso wall=0:05.71 sec=5.71 gbps=1.50 user=4.27s sys=1.25s rss=12164KB host_cpu=6.39s host_irq=0.97s sender_cpu=2.56s sender_irq=0.28s udp_drops=0
+run3_embrtcp wall=0:04.10 sec=4.1 gbps=2.10 user=2.72s sys=0.63s rss=9692KB host_cpu=3.95s host_irq=0.54s sender_cpu=0.44s sender_irq=0.29s udp_drops=0
+
+run4_embrquic wall=0:05.74 sec=5.74 gbps=1.50 user=4.14s sys=1.41s rss=12060KB host_cpu=6.45s host_irq=1.06s sender_cpu=3.98s sender_irq=0.56s udp_drops=0
+run4_embrquicsm wall=0:05.73 sec=5.73 gbps=1.50 user=4.18s sys=1.38s rss=12172KB host_cpu=6.41s host_irq=0.93s sender_cpu=3.45s sender_irq=0.27s udp_drops=0
+run4_embrquicgso wall=0:05.66 sec=5.66 gbps=1.52 user=4.19s sys=1.27s rss=12132KB host_cpu=6.44s host_irq=1.04s sender_cpu=2.81s sender_irq=0.42s udp_drops=0
+run4_embrquicsmgso wall=0:05.81 sec=5.81 gbps=1.48 user=4.06s sys=1.56s rss=12220KB host_cpu=6.26s host_irq=0.90s sender_cpu=2.70s sender_irq=0.23s udp_drops=0
+run4_embrtcp wall=0:04.00 sec=4 gbps=2.15 user=2.60s sys=0.73s rss=9660KB host_cpu=3.80s host_irq=0.54s sender_cpu=0.76s sender_irq=0.52s udp_drops=0
+
+run5_embrquic wall=0:05.73 sec=5.73 gbps=1.50 user=4.21s sys=1.32s rss=12004KB host_cpu=6.28s host_irq=0.93s sender_cpu=3.74s sender_irq=0.46s udp_drops=0
+run5_embrquicsm wall=0:05.74 sec=5.74 gbps=1.50 user=4.20s sys=1.37s rss=12200KB host_cpu=6.46s host_irq=1.01s sender_cpu=3.54s sender_irq=0.18s udp_drops=0
+run5_embrquicgso wall=0:05.72 sec=5.72 gbps=1.50 user=4.15s sys=1.40s rss=12188KB host_cpu=6.17s host_irq=0.85s sender_cpu=2.65s sender_irq=0.40s udp_drops=0
+run5_embrquicsmgso wall=0:05.67 sec=5.67 gbps=1.51 user=4.14s sys=1.35s rss=12196KB host_cpu=6.71s host_irq=1.23s sender_cpu=2.93s sender_irq=0.35s udp_drops=0
+run5_embrtcp wall=0:04.44 sec=4.44 gbps=1.93 user=2.67s sys=0.73s rss=9660KB host_cpu=3.91s host_irq=0.59s sender_cpu=0.53s sender_irq=0.18s udp_drops=0
+
+run6_embrquic wall=0:05.76 sec=5.76 gbps=1.49 user=4.36s sys=1.22s rss=12104KB host_cpu=6.59s host_irq=1.15s sender_cpu=3.65s sender_irq=0.54s udp_drops=0
+run6_embrquicsm wall=0:05.80 sec=5.8 gbps=1.48 user=4.14s sys=1.46s rss=12180KB host_cpu=6.85s host_irq=1.33s sender_cpu=3.35s sender_irq=0.18s udp_drops=0
+run6_embrquicgso wall=0:05.78 sec=5.78 gbps=1.49 user=4.19s sys=1.41s rss=12048KB host_cpu=6.60s host_irq=1.12s sender_cpu=2.62s sender_irq=0.22s udp_drops=0
+run6_embrquicsmgso wall=0:05.73 sec=5.73 gbps=1.50 user=4.21s sys=1.33s rss=12260KB host_cpu=6.33s host_irq=0.90s sender_cpu=2.53s sender_irq=0.30s udp_drops=0
+run6_embrtcp wall=0:04.41 sec=4.41 gbps=1.95 user=2.57s sys=0.75s rss=9612KB host_cpu=4.05s host_irq=0.67s sender_cpu=0.57s sender_irq=0.19s udp_drops=0
+
+run7_embrquic wall=0:05.81 sec=5.81 gbps=1.48 user=4.24s sys=1.39s rss=12188KB host_cpu=6.37s host_irq=0.96s sender_cpu=4.14s sender_irq=0.70s udp_drops=0
+run7_embrquicsm wall=0:05.73 sec=5.73 gbps=1.50 user=4.20s sys=1.34s rss=12232KB host_cpu=6.61s host_irq=1.17s sender_cpu=3.36s sender_irq=0.20s udp_drops=0
+run7_embrquicgso wall=0:05.84 sec=5.84 gbps=1.47 user=4.06s sys=1.59s rss=12208KB host_cpu=6.32s host_irq=0.98s sender_cpu=2.87s sender_irq=0.36s udp_drops=0
+run7_embrquicsmgso wall=0:05.71 sec=5.71 gbps=1.50 user=4.14s sys=1.38s rss=12000KB host_cpu=6.22s host_irq=0.93s sender_cpu=2.29s sender_irq=0.21s udp_drops=0
+run7_embrtcp wall=0:04.61 sec=4.61 gbps=1.86 user=2.56s sys=0.84s rss=9692KB host_cpu=3.88s host_irq=0.57s sender_cpu=0.64s sender_irq=0.16s udp_drops=0
+
+run8_embrquic wall=0:05.67 sec=5.67 gbps=1.51 user=4.08s sys=1.41s rss=12288KB host_cpu=6.37s host_irq=0.96s sender_cpu=4.20s sender_irq=0.76s udp_drops=0
+run8_embrquicsm wall=0:05.78 sec=5.78 gbps=1.49 user=4.20s sys=1.40s rss=12144KB host_cpu=6.60s host_irq=1.09s sender_cpu=3.65s sender_irq=0.23s udp_drops=0
+run8_embrquicgso wall=0:05.68 sec=5.68 gbps=1.51 user=4.15s sys=1.35s rss=12164KB host_cpu=6.37s host_irq=1.02s sender_cpu=2.74s sender_irq=0.49s udp_drops=0
+run8_embrquicsmgso wall=0:05.76 sec=5.76 gbps=1.49 user=4.20s sys=1.36s rss=12196KB host_cpu=6.65s host_irq=1.12s sender_cpu=2.62s sender_irq=0.18s udp_drops=0
+run8_embrtcp wall=0:04.55 sec=4.55 gbps=1.89 user=2.66s sys=0.71s rss=9692KB host_cpu=3.96s host_irq=0.69s sender_cpu=0.56s sender_irq=0.33s udp_drops=0
+
+run9_embrquic wall=0:05.74 sec=5.74 gbps=1.50 user=4.15s sys=1.39s rss=11900KB host_cpu=6.44s host_irq=1.05s sender_cpu=4.63s sender_irq=1.10s udp_drops=0
+run9_embrquicsm wall=0:05.81 sec=5.81 gbps=1.48 user=4.42s sys=1.21s rss=11884KB host_cpu=6.85s host_irq=1.28s sender_cpu=3.30s sender_irq=0.15s udp_drops=0
+run9_embrquicgso wall=0:05.83 sec=5.83 gbps=1.47 user=3.87s sys=1.76s rss=11876KB host_cpu=6.06s host_irq=0.82s sender_cpu=2.77s sender_irq=0.33s udp_drops=0
+run9_embrquicsmgso wall=0:05.85 sec=5.85 gbps=1.47 user=4.19s sys=1.47s rss=12240KB host_cpu=6.59s host_irq=0.98s sender_cpu=2.54s sender_irq=0.26s udp_drops=0
+run9_embrtcp wall=0:04.13 sec=4.13 gbps=2.08 user=2.71s sys=0.64s rss=9768KB host_cpu=3.62s host_irq=0.41s sender_cpu=0.54s sender_irq=0.19s udp_drops=0
+
+run10_embrquic wall=0:05.73 sec=5.73 gbps=1.50 user=4.15s sys=1.39s rss=12228KB host_cpu=6.62s host_irq=1.16s sender_cpu=3.47s sender_irq=0.45s udp_drops=0
+run10_embrquicsm wall=0:05.75 sec=5.75 gbps=1.49 user=4.06s sys=1.51s rss=12260KB host_cpu=6.63s host_irq=1.14s sender_cpu=3.42s sender_irq=0.30s udp_drops=0
+run10_embrquicgso wall=0:05.74 sec=5.74 gbps=1.50 user=3.97s sys=1.60s rss=12176KB host_cpu=6.13s host_irq=0.80s sender_cpu=2.74s sender_irq=0.38s udp_drops=0
+run10_embrquicsmgso wall=0:05.91 sec=5.91 gbps=1.45 user=4.03s sys=1.69s rss=12176KB host_cpu=6.09s host_irq=0.84s sender_cpu=2.71s sender_irq=0.20s udp_drops=0
+run10_embrtcp wall=0:04.52 sec=4.52 gbps=1.90 user=2.74s sys=0.63s rss=9768KB host_cpu=4.08s host_irq=0.72s sender_cpu=0.60s sender_irq=0.38s udp_drops=0
+
+run11_embrquic wall=0:05.67 sec=5.67 gbps=1.51 user=4.03s sys=1.45s rss=12008KB host_cpu=6.45s host_irq=1.08s sender_cpu=4.22s sender_irq=0.83s udp_drops=0
+run11_embrquicsm wall=0:05.75 sec=5.75 gbps=1.49 user=3.97s sys=1.59s rss=12188KB host_cpu=6.32s host_irq=0.98s sender_cpu=3.42s sender_irq=0.28s udp_drops=0
+run11_embrquicgso wall=0:05.76 sec=5.76 gbps=1.49 user=3.96s sys=1.60s rss=12016KB host_cpu=6.04s host_irq=0.81s sender_cpu=2.40s sender_irq=0.17s udp_drops=0
+run11_embrquicsmgso wall=0:05.75 sec=5.75 gbps=1.49 user=4.26s sys=1.29s rss=12220KB host_cpu=6.56s host_irq=1.06s sender_cpu=2.67s sender_irq=0.27s udp_drops=0
+run11_embrtcp wall=0:04.31 sec=4.31 gbps=1.99 user=2.67s sys=0.67s rss=9664KB host_cpu=3.81s host_irq=0.57s sender_cpu=0.52s sender_irq=0.15s udp_drops=0
+
+run12_embrquic wall=0:05.71 sec=5.71 gbps=1.50 user=4.17s sys=1.34s rss=12280KB host_cpu=6.69s host_irq=1.23s sender_cpu=3.45s sender_irq=0.37s udp_drops=0
+run12_embrquicsm wall=0:05.87 sec=5.87 gbps=1.46 user=4.14s sys=1.55s rss=20388KB host_cpu=6.70s host_irq=1.06s sender_cpu=3.41s sender_irq=0.17s udp_drops=0
+run12_embrquicgso wall=0:05.80 sec=5.8 gbps=1.48 user=3.82s sys=1.79s rss=12180KB host_cpu=6.17s host_irq=0.86s sender_cpu=2.49s sender_irq=0.20s udp_drops=0
+run12_embrquicsmgso wall=0:05.65 sec=5.65 gbps=1.52 user=4.09s sys=1.38s rss=12188KB host_cpu=6.71s host_irq=1.26s sender_cpu=2.77s sender_irq=0.31s udp_drops=0
+run12_embrtcp wall=0:04.52 sec=4.52 gbps=1.90 user=2.66s sys=0.74s rss=9692KB host_cpu=4.07s host_irq=0.65s sender_cpu=0.55s sender_irq=0.37s udp_drops=0
+
+[bench 03:35:08] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.5000  [1.48 1.51] | 5.7350  [5.67 5.81] | 4.1500   | 1.3900  
+embrquicsm    | 1.4900  [1.46 1.50] | 5.7550  [5.73 5.87] | 4.1600   | 1.4300  
+embrquicgso   | 1.4950  [1.47 1.52] | 5.7500  [5.66 5.84] | 4.0150   | 1.5850  
+embrquicsmgso | 1.4950  [1.45 1.52] | 5.7400  [5.65 5.91] | 4.1650   | 1.3700  
+embrtcp       | 1.9400  [1.86 2.15] | 4.4250  [4 4.61] | 2.6650   | 0.7200  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 6.4450     | 1.0550     | 4.0600     | 0.6300    
+embrquicsm    | 6.6200     | 1.1150     | 3.4200     | 0.2150    
+embrquicgso   | 6.2450     | 0.9200     | 2.6950     | 0.3450    
+embrquicsmgso | 6.4750     | 0.9750     | 2.6450     | 0.2650    
+embrtcp       | 3.9300     | 0.5800     | 0.5550     | 0.2400    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicsm=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=0 datagrams=9923318 reads=9923318 bytes=13351976363 (1.0 datagrams per read)
+embrquicsm ingress over 12 connections: gro=0 datagrams=9924015 reads=9924015 bytes=13352010947 (1.0 datagrams per read)
+embrquicgso ingress over 12 connections: gro=0 datagrams=9933453 reads=9933453 bytes=13352391044 (1.0 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=0 datagrams=9932226 reads=9932226 bytes=13352334313 (1.0 datagrams per read)
+[bench 03:35:09] raw results in /home/ec2-user/embr-wan/2026-11-22-0310/gro-off/results.txt
+[bench 03:35:09] read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C.
+[bench 03:35:09]       host_* is this host, sender_* the sender, whole machine: compare rows on these, since
+[bench 03:35:09]       softirq packet work is in no process's user/sys
+[bench 03:35:09]       embrquic vs embrquicsm = SEND_ZC vs sendmsg; embrquic vs scp = encrypted vs encrypted;
+[bench 03:35:09]       embrtcp vs nc = plaintext vs plaintext
+[wan 03:35:10] pass gro-off, receiver: udp InDatagrams+39713063 InErrors+0 OutDatagrams+720871 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:35:10] pass gro-off, sender: udp InDatagrams+658410 InErrors+0 OutDatagrams+21187900 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+4562 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:35:10] === pass ack10: rows [embrquic embrquicsm embrquicgso embrquicsmgso embrtcp]  receiver env [EMBR_QUIC_ACK_THRESH=10]  sender env [none] ===
+[bench 03:35:14] ssh ok: ec2-user@SENDER
+[bench 03:35:14] tcp port ok: 10007 (embrtcp)
+[bench 03:35:14] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:35:15] remote sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:35:15] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:35:16] remote sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:35:16] RECEIVER — ec2-user@SENDER — fetching source size+hash...
+[bench 03:35:19] expected 1073741824 bytes  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:35:19] === warmup1 (1/12) ===
+warmup1_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.57s sys=1.23s rss=12200KB host_cpu=5.19s host_irq=0.58s sender_cpu=3.29s sender_irq=0.44s udp_drops=0
+warmup1_embrquicsm wall=0:04.96 sec=4.96 gbps=1.73 user=3.79s sys=0.99s rss=12200KB host_cpu=5.27s host_irq=0.66s sender_cpu=3.75s sender_irq=0.29s udp_drops=0
+warmup1_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.72s sys=1.08s rss=12268KB host_cpu=5.28s host_irq=0.65s sender_cpu=2.71s sender_irq=0.39s udp_drops=0
+warmup1_embrquicsmgso wall=0:05.00 sec=5 gbps=1.72 user=3.68s sys=1.13s rss=12296KB host_cpu=5.38s host_irq=0.63s sender_cpu=2.71s sender_irq=0.26s udp_drops=0
+warmup1_embrtcp wall=0:04.27 sec=4.27 gbps=2.01 user=2.76s sys=0.64s rss=9768KB host_cpu=3.93s host_irq=0.53s sender_cpu=0.46s sender_irq=0.18s udp_drops=0
+[bench 03:36:08] === warmup2 (2/12) ===
+warmup2_embrquic wall=0:05.04 sec=5.04 gbps=1.70 user=3.69s sys=1.10s rss=12212KB host_cpu=5.35s host_irq=0.61s sender_cpu=3.58s sender_irq=0.43s udp_drops=0
+warmup2_embrquicsm wall=0:05.04 sec=5.04 gbps=1.70 user=3.49s sys=1.30s rss=12188KB host_cpu=5.32s host_irq=0.66s sender_cpu=3.39s sender_irq=0.22s udp_drops=0
+warmup2_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.66s sys=1.17s rss=12200KB host_cpu=5.22s host_irq=0.50s sender_cpu=2.38s sender_irq=0.28s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.09 sec=5.09 gbps=1.69 user=3.59s sys=1.30s rss=12212KB host_cpu=5.21s host_irq=0.42s sender_cpu=2.52s sender_irq=0.17s udp_drops=0
+warmup2_embrtcp wall=0:04.24 sec=4.24 gbps=2.03 user=2.67s sys=0.71s rss=9768KB host_cpu=3.95s host_irq=0.67s sender_cpu=0.37s sender_irq=0.10s udp_drops=0
+[bench 03:36:56] === run3 (3/12) ===
+run3_embrquic wall=0:05.07 sec=5.07 gbps=1.69 user=3.71s sys=1.14s rss=12340KB host_cpu=5.27s host_irq=0.54s sender_cpu=3.61s sender_irq=0.38s udp_drops=0
+run3_embrquicsm wall=0:05.10 sec=5.1 gbps=1.68 user=3.53s sys=1.35s rss=12232KB host_cpu=5.28s host_irq=0.67s sender_cpu=3.28s sender_irq=0.20s udp_drops=0
+run3_embrquicgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.65s sys=1.22s rss=12240KB host_cpu=5.15s host_irq=0.58s sender_cpu=2.53s sender_irq=0.24s udp_drops=0
+run3_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.76s sys=1.10s rss=12140KB host_cpu=5.42s host_irq=0.62s sender_cpu=2.37s sender_irq=0.09s udp_drops=0
+run3_embrtcp wall=0:04.36 sec=4.36 gbps=1.97 user=2.64s sys=0.68s rss=9780KB host_cpu=3.85s host_irq=0.51s sender_cpu=0.63s sender_irq=0.41s udp_drops=0
+[bench 03:37:44] === run4 (4/12) ===
+run4_embrquic wall=0:05.07 sec=5.07 gbps=1.69 user=3.66s sys=1.20s rss=12200KB host_cpu=5.47s host_irq=0.72s sender_cpu=4.43s sender_irq=0.85s udp_drops=0
+run4_embrquicsm wall=0:05.06 sec=5.06 gbps=1.70 user=3.68s sys=1.15s rss=20376KB host_cpu=5.32s host_irq=0.58s sender_cpu=3.53s sender_irq=0.19s udp_drops=0
+run4_embrquicgso wall=0:04.97 sec=4.97 gbps=1.73 user=3.72s sys=1.05s rss=12012KB host_cpu=5.29s host_irq=0.64s sender_cpu=2.46s sender_irq=0.27s udp_drops=0
+run4_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.63s sys=1.14s rss=12260KB host_cpu=5.39s host_irq=0.63s sender_cpu=2.66s sender_irq=0.34s udp_drops=0
+run4_embrtcp wall=0:04.52 sec=4.52 gbps=1.90 user=2.39s sys=0.95s rss=9568KB host_cpu=3.88s host_irq=0.59s sender_cpu=0.72s sender_irq=0.21s udp_drops=0
+[bench 03:38:33] === run5 (5/12) ===
+run5_embrquic wall=0:04.97 sec=4.97 gbps=1.73 user=3.63s sys=1.14s rss=12196KB host_cpu=5.35s host_irq=0.65s sender_cpu=4.41s sender_irq=0.78s udp_drops=0
+run5_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.64s sys=1.20s rss=12204KB host_cpu=5.28s host_irq=0.62s sender_cpu=3.37s sender_irq=0.22s udp_drops=0
+run5_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.63s sys=1.17s rss=12156KB host_cpu=5.26s host_irq=0.52s sender_cpu=2.32s sender_irq=0.25s udp_drops=0
+run5_embrquicsmgso wall=0:04.93 sec=4.93 gbps=1.74 user=3.60s sys=1.15s rss=12200KB host_cpu=5.34s host_irq=0.58s sender_cpu=2.79s sender_irq=0.37s udp_drops=0
+run5_embrtcp wall=0:04.54 sec=4.54 gbps=1.89 user=2.47s sys=0.85s rss=9684KB host_cpu=3.83s host_irq=0.55s sender_cpu=0.67s sender_irq=0.38s udp_drops=0
+[bench 03:39:21] === run6 (6/12) ===
+run6_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.53s sys=1.27s rss=12140KB host_cpu=5.17s host_irq=0.58s sender_cpu=3.52s sender_irq=0.36s udp_drops=0
+run6_embrquicsm wall=0:05.02 sec=5.02 gbps=1.71 user=3.59s sys=1.22s rss=12200KB host_cpu=5.30s host_irq=0.61s sender_cpu=3.58s sender_irq=0.27s udp_drops=0
+run6_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.69s sys=1.13s rss=12080KB host_cpu=5.39s host_irq=0.69s sender_cpu=2.44s sender_irq=0.23s udp_drops=0
+run6_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.57s sys=1.18s rss=12212KB host_cpu=5.37s host_irq=0.67s sender_cpu=2.96s sender_irq=0.17s udp_drops=0
+run6_embrtcp wall=0:04.50 sec=4.5 gbps=1.91 user=2.74s sys=0.61s rss=9752KB host_cpu=3.87s host_irq=0.57s sender_cpu=0.39s sender_irq=0.13s udp_drops=0
+[bench 03:40:09] === run7 (7/12) ===
+run7_embrquic wall=0:05.02 sec=5.02 gbps=1.71 user=3.52s sys=1.25s rss=12224KB host_cpu=5.27s host_irq=0.63s sender_cpu=3.60s sender_irq=0.52s udp_drops=0
+run7_embrquicsm wall=0:04.96 sec=4.96 gbps=1.73 user=3.66s sys=1.12s rss=12108KB host_cpu=5.29s host_irq=0.61s sender_cpu=3.51s sender_irq=0.44s udp_drops=0
+run7_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.75s sys=1.05s rss=12200KB host_cpu=5.42s host_irq=0.71s sender_cpu=2.24s sender_irq=0.31s udp_drops=0
+run7_embrquicsmgso wall=0:05.00 sec=5 gbps=1.72 user=3.63s sys=1.17s rss=12084KB host_cpu=5.23s host_irq=0.54s sender_cpu=2.38s sender_irq=0.29s udp_drops=0
+run7_embrtcp wall=0:04.54 sec=4.54 gbps=1.89 user=2.67s sys=0.73s rss=9768KB host_cpu=3.93s host_irq=0.62s sender_cpu=0.71s sender_irq=0.49s udp_drops=0
+[bench 03:40:58] === run8 (8/12) ===
+run8_embrquic wall=0:04.97 sec=4.97 gbps=1.73 user=3.69s sys=1.10s rss=12212KB host_cpu=5.43s host_irq=0.71s sender_cpu=4.27s sender_irq=0.78s udp_drops=0
+run8_embrquicsm wall=0:05.09 sec=5.09 gbps=1.69 user=3.80s sys=1.11s rss=12272KB host_cpu=5.30s host_irq=0.66s sender_cpu=3.68s sender_irq=0.17s udp_drops=0
+run8_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.46s sys=1.34s rss=12188KB host_cpu=5.21s host_irq=0.56s sender_cpu=2.57s sender_irq=0.26s udp_drops=0
+run8_embrquicsmgso wall=0:05.08 sec=5.08 gbps=1.69 user=3.54s sys=1.35s rss=12196KB host_cpu=5.04s host_irq=0.34s sender_cpu=2.63s sender_irq=0.27s udp_drops=0
+run8_embrtcp wall=0:04.14 sec=4.14 gbps=2.07 user=2.62s sys=0.77s rss=9620KB host_cpu=3.90s host_irq=0.53s sender_cpu=0.72s sender_irq=0.33s udp_drops=0
+[bench 03:41:46] === run9 (9/12) ===
+run9_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.79s sys=1.03s rss=12140KB host_cpu=5.30s host_irq=0.63s sender_cpu=3.77s sender_irq=0.55s udp_drops=0
+run9_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.77s sys=1.08s rss=12272KB host_cpu=5.34s host_irq=0.61s sender_cpu=3.71s sender_irq=0.25s udp_drops=0
+run9_embrquicgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.65s sys=1.15s rss=12192KB host_cpu=5.28s host_irq=0.58s sender_cpu=2.51s sender_irq=0.23s udp_drops=0
+run9_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.66s sys=1.19s rss=11992KB host_cpu=5.25s host_irq=0.55s sender_cpu=2.61s sender_irq=0.35s udp_drops=0
+run9_embrtcp wall=0:04.50 sec=4.5 gbps=1.91 user=2.63s sys=0.71s rss=9772KB host_cpu=3.91s host_irq=0.60s sender_cpu=0.62s sender_irq=0.33s udp_drops=0
+[bench 03:42:34] === run10 (10/12) ===
+run10_embrquic wall=0:05.12 sec=5.12 gbps=1.68 user=3.63s sys=1.28s rss=12204KB host_cpu=5.25s host_irq=0.56s sender_cpu=3.33s sender_irq=0.39s udp_drops=0
+run10_embrquicsm wall=0:05.06 sec=5.06 gbps=1.70 user=3.53s sys=1.28s rss=12196KB host_cpu=5.28s host_irq=0.57s sender_cpu=3.14s sender_irq=0.33s udp_drops=0
+run10_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.74s sys=1.08s rss=12172KB host_cpu=5.33s host_irq=0.59s sender_cpu=2.40s sender_irq=0.29s udp_drops=0
+run10_embrquicsmgso wall=0:04.95 sec=4.95 gbps=1.74 user=3.77s sys=1.00s rss=12200KB host_cpu=5.39s host_irq=0.70s sender_cpu=2.35s sender_irq=0.17s udp_drops=0
+run10_embrtcp wall=0:04.13 sec=4.13 gbps=2.08 user=2.64s sys=0.71s rss=9652KB host_cpu=3.94s host_irq=0.64s sender_cpu=0.54s sender_irq=0.17s udp_drops=0
+[bench 03:43:22] === run11 (11/12) ===
+run11_embrquic wall=0:04.96 sec=4.96 gbps=1.73 user=3.60s sys=1.17s rss=12196KB host_cpu=5.28s host_irq=0.57s sender_cpu=4.19s sender_irq=0.77s udp_drops=0
+run11_embrquicsm wall=0:05.02 sec=5.02 gbps=1.71 user=3.71s sys=1.13s rss=12260KB host_cpu=5.32s host_irq=0.53s sender_cpu=3.28s sender_irq=0.18s udp_drops=0
+run11_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.66s sys=1.17s rss=12280KB host_cpu=5.29s host_irq=0.61s sender_cpu=2.36s sender_irq=0.31s udp_drops=0
+run11_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.68s sys=1.11s rss=12212KB host_cpu=5.37s host_irq=0.64s sender_cpu=3.02s sender_irq=0.41s udp_drops=0
+run11_embrtcp wall=0:04.59 sec=4.59 gbps=1.87 user=2.61s sys=0.80s rss=9672KB host_cpu=3.96s host_irq=0.63s sender_cpu=0.36s sender_irq=0.10s udp_drops=0
+[bench 03:44:10] === run12 (12/12) ===
+run12_embrquic wall=0:04.94 sec=4.94 gbps=1.74 user=3.56s sys=1.20s rss=12200KB host_cpu=5.43s host_irq=0.69s sender_cpu=4.37s sender_irq=0.89s udp_drops=0
+run12_embrquicsm wall=0:05.00 sec=5 gbps=1.72 user=3.71s sys=1.07s rss=12292KB host_cpu=5.39s host_irq=0.63s sender_cpu=3.40s sender_irq=0.23s udp_drops=0
+run12_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.68s sys=1.15s rss=12232KB host_cpu=5.14s host_irq=0.44s sender_cpu=2.87s sender_irq=0.36s udp_drops=0
+run12_embrquicsmgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.61s sys=1.21s rss=12232KB host_cpu=5.25s host_irq=0.60s sender_cpu=2.61s sender_irq=0.31s udp_drops=0
+run12_embrtcp wall=0:04.04 sec=4.04 gbps=2.13 user=2.57s sys=0.83s rss=9612KB host_cpu=4.36s host_irq=1.03s sender_cpu=0.72s sender_irq=0.46s udp_drops=0
+[bench 03:44:58] === raw results ===
+# bench wan-receiver Sun Nov 22 03:35:19 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp   ack_thresh=10   gro=1
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.57s sys=1.23s rss=12200KB host_cpu=5.19s host_irq=0.58s sender_cpu=3.29s sender_irq=0.44s udp_drops=0
+warmup1_embrquicsm wall=0:04.96 sec=4.96 gbps=1.73 user=3.79s sys=0.99s rss=12200KB host_cpu=5.27s host_irq=0.66s sender_cpu=3.75s sender_irq=0.29s udp_drops=0
+warmup1_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.72s sys=1.08s rss=12268KB host_cpu=5.28s host_irq=0.65s sender_cpu=2.71s sender_irq=0.39s udp_drops=0
+warmup1_embrquicsmgso wall=0:05.00 sec=5 gbps=1.72 user=3.68s sys=1.13s rss=12296KB host_cpu=5.38s host_irq=0.63s sender_cpu=2.71s sender_irq=0.26s udp_drops=0
+warmup1_embrtcp wall=0:04.27 sec=4.27 gbps=2.01 user=2.76s sys=0.64s rss=9768KB host_cpu=3.93s host_irq=0.53s sender_cpu=0.46s sender_irq=0.18s udp_drops=0
+
+warmup2_embrquic wall=0:05.04 sec=5.04 gbps=1.70 user=3.69s sys=1.10s rss=12212KB host_cpu=5.35s host_irq=0.61s sender_cpu=3.58s sender_irq=0.43s udp_drops=0
+warmup2_embrquicsm wall=0:05.04 sec=5.04 gbps=1.70 user=3.49s sys=1.30s rss=12188KB host_cpu=5.32s host_irq=0.66s sender_cpu=3.39s sender_irq=0.22s udp_drops=0
+warmup2_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.66s sys=1.17s rss=12200KB host_cpu=5.22s host_irq=0.50s sender_cpu=2.38s sender_irq=0.28s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.09 sec=5.09 gbps=1.69 user=3.59s sys=1.30s rss=12212KB host_cpu=5.21s host_irq=0.42s sender_cpu=2.52s sender_irq=0.17s udp_drops=0
+warmup2_embrtcp wall=0:04.24 sec=4.24 gbps=2.03 user=2.67s sys=0.71s rss=9768KB host_cpu=3.95s host_irq=0.67s sender_cpu=0.37s sender_irq=0.10s udp_drops=0
+
+run3_embrquic wall=0:05.07 sec=5.07 gbps=1.69 user=3.71s sys=1.14s rss=12340KB host_cpu=5.27s host_irq=0.54s sender_cpu=3.61s sender_irq=0.38s udp_drops=0
+run3_embrquicsm wall=0:05.10 sec=5.1 gbps=1.68 user=3.53s sys=1.35s rss=12232KB host_cpu=5.28s host_irq=0.67s sender_cpu=3.28s sender_irq=0.20s udp_drops=0
+run3_embrquicgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.65s sys=1.22s rss=12240KB host_cpu=5.15s host_irq=0.58s sender_cpu=2.53s sender_irq=0.24s udp_drops=0
+run3_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.76s sys=1.10s rss=12140KB host_cpu=5.42s host_irq=0.62s sender_cpu=2.37s sender_irq=0.09s udp_drops=0
+run3_embrtcp wall=0:04.36 sec=4.36 gbps=1.97 user=2.64s sys=0.68s rss=9780KB host_cpu=3.85s host_irq=0.51s sender_cpu=0.63s sender_irq=0.41s udp_drops=0
+
+run4_embrquic wall=0:05.07 sec=5.07 gbps=1.69 user=3.66s sys=1.20s rss=12200KB host_cpu=5.47s host_irq=0.72s sender_cpu=4.43s sender_irq=0.85s udp_drops=0
+run4_embrquicsm wall=0:05.06 sec=5.06 gbps=1.70 user=3.68s sys=1.15s rss=20376KB host_cpu=5.32s host_irq=0.58s sender_cpu=3.53s sender_irq=0.19s udp_drops=0
+run4_embrquicgso wall=0:04.97 sec=4.97 gbps=1.73 user=3.72s sys=1.05s rss=12012KB host_cpu=5.29s host_irq=0.64s sender_cpu=2.46s sender_irq=0.27s udp_drops=0
+run4_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.63s sys=1.14s rss=12260KB host_cpu=5.39s host_irq=0.63s sender_cpu=2.66s sender_irq=0.34s udp_drops=0
+run4_embrtcp wall=0:04.52 sec=4.52 gbps=1.90 user=2.39s sys=0.95s rss=9568KB host_cpu=3.88s host_irq=0.59s sender_cpu=0.72s sender_irq=0.21s udp_drops=0
+
+run5_embrquic wall=0:04.97 sec=4.97 gbps=1.73 user=3.63s sys=1.14s rss=12196KB host_cpu=5.35s host_irq=0.65s sender_cpu=4.41s sender_irq=0.78s udp_drops=0
+run5_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.64s sys=1.20s rss=12204KB host_cpu=5.28s host_irq=0.62s sender_cpu=3.37s sender_irq=0.22s udp_drops=0
+run5_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.63s sys=1.17s rss=12156KB host_cpu=5.26s host_irq=0.52s sender_cpu=2.32s sender_irq=0.25s udp_drops=0
+run5_embrquicsmgso wall=0:04.93 sec=4.93 gbps=1.74 user=3.60s sys=1.15s rss=12200KB host_cpu=5.34s host_irq=0.58s sender_cpu=2.79s sender_irq=0.37s udp_drops=0
+run5_embrtcp wall=0:04.54 sec=4.54 gbps=1.89 user=2.47s sys=0.85s rss=9684KB host_cpu=3.83s host_irq=0.55s sender_cpu=0.67s sender_irq=0.38s udp_drops=0
+
+run6_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.53s sys=1.27s rss=12140KB host_cpu=5.17s host_irq=0.58s sender_cpu=3.52s sender_irq=0.36s udp_drops=0
+run6_embrquicsm wall=0:05.02 sec=5.02 gbps=1.71 user=3.59s sys=1.22s rss=12200KB host_cpu=5.30s host_irq=0.61s sender_cpu=3.58s sender_irq=0.27s udp_drops=0
+run6_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.69s sys=1.13s rss=12080KB host_cpu=5.39s host_irq=0.69s sender_cpu=2.44s sender_irq=0.23s udp_drops=0
+run6_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.57s sys=1.18s rss=12212KB host_cpu=5.37s host_irq=0.67s sender_cpu=2.96s sender_irq=0.17s udp_drops=0
+run6_embrtcp wall=0:04.50 sec=4.5 gbps=1.91 user=2.74s sys=0.61s rss=9752KB host_cpu=3.87s host_irq=0.57s sender_cpu=0.39s sender_irq=0.13s udp_drops=0
+
+run7_embrquic wall=0:05.02 sec=5.02 gbps=1.71 user=3.52s sys=1.25s rss=12224KB host_cpu=5.27s host_irq=0.63s sender_cpu=3.60s sender_irq=0.52s udp_drops=0
+run7_embrquicsm wall=0:04.96 sec=4.96 gbps=1.73 user=3.66s sys=1.12s rss=12108KB host_cpu=5.29s host_irq=0.61s sender_cpu=3.51s sender_irq=0.44s udp_drops=0
+run7_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.75s sys=1.05s rss=12200KB host_cpu=5.42s host_irq=0.71s sender_cpu=2.24s sender_irq=0.31s udp_drops=0
+run7_embrquicsmgso wall=0:05.00 sec=5 gbps=1.72 user=3.63s sys=1.17s rss=12084KB host_cpu=5.23s host_irq=0.54s sender_cpu=2.38s sender_irq=0.29s udp_drops=0
+run7_embrtcp wall=0:04.54 sec=4.54 gbps=1.89 user=2.67s sys=0.73s rss=9768KB host_cpu=3.93s host_irq=0.62s sender_cpu=0.71s sender_irq=0.49s udp_drops=0
+
+run8_embrquic wall=0:04.97 sec=4.97 gbps=1.73 user=3.69s sys=1.10s rss=12212KB host_cpu=5.43s host_irq=0.71s sender_cpu=4.27s sender_irq=0.78s udp_drops=0
+run8_embrquicsm wall=0:05.09 sec=5.09 gbps=1.69 user=3.80s sys=1.11s rss=12272KB host_cpu=5.30s host_irq=0.66s sender_cpu=3.68s sender_irq=0.17s udp_drops=0
+run8_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.46s sys=1.34s rss=12188KB host_cpu=5.21s host_irq=0.56s sender_cpu=2.57s sender_irq=0.26s udp_drops=0
+run8_embrquicsmgso wall=0:05.08 sec=5.08 gbps=1.69 user=3.54s sys=1.35s rss=12196KB host_cpu=5.04s host_irq=0.34s sender_cpu=2.63s sender_irq=0.27s udp_drops=0
+run8_embrtcp wall=0:04.14 sec=4.14 gbps=2.07 user=2.62s sys=0.77s rss=9620KB host_cpu=3.90s host_irq=0.53s sender_cpu=0.72s sender_irq=0.33s udp_drops=0
+
+run9_embrquic wall=0:05.01 sec=5.01 gbps=1.71 user=3.79s sys=1.03s rss=12140KB host_cpu=5.30s host_irq=0.63s sender_cpu=3.77s sender_irq=0.55s udp_drops=0
+run9_embrquicsm wall=0:05.03 sec=5.03 gbps=1.71 user=3.77s sys=1.08s rss=12272KB host_cpu=5.34s host_irq=0.61s sender_cpu=3.71s sender_irq=0.25s udp_drops=0
+run9_embrquicgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.65s sys=1.15s rss=12192KB host_cpu=5.28s host_irq=0.58s sender_cpu=2.51s sender_irq=0.23s udp_drops=0
+run9_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.66s sys=1.19s rss=11992KB host_cpu=5.25s host_irq=0.55s sender_cpu=2.61s sender_irq=0.35s udp_drops=0
+run9_embrtcp wall=0:04.50 sec=4.5 gbps=1.91 user=2.63s sys=0.71s rss=9772KB host_cpu=3.91s host_irq=0.60s sender_cpu=0.62s sender_irq=0.33s udp_drops=0
+
+run10_embrquic wall=0:05.12 sec=5.12 gbps=1.68 user=3.63s sys=1.28s rss=12204KB host_cpu=5.25s host_irq=0.56s sender_cpu=3.33s sender_irq=0.39s udp_drops=0
+run10_embrquicsm wall=0:05.06 sec=5.06 gbps=1.70 user=3.53s sys=1.28s rss=12196KB host_cpu=5.28s host_irq=0.57s sender_cpu=3.14s sender_irq=0.33s udp_drops=0
+run10_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.74s sys=1.08s rss=12172KB host_cpu=5.33s host_irq=0.59s sender_cpu=2.40s sender_irq=0.29s udp_drops=0
+run10_embrquicsmgso wall=0:04.95 sec=4.95 gbps=1.74 user=3.77s sys=1.00s rss=12200KB host_cpu=5.39s host_irq=0.70s sender_cpu=2.35s sender_irq=0.17s udp_drops=0
+run10_embrtcp wall=0:04.13 sec=4.13 gbps=2.08 user=2.64s sys=0.71s rss=9652KB host_cpu=3.94s host_irq=0.64s sender_cpu=0.54s sender_irq=0.17s udp_drops=0
+
+run11_embrquic wall=0:04.96 sec=4.96 gbps=1.73 user=3.60s sys=1.17s rss=12196KB host_cpu=5.28s host_irq=0.57s sender_cpu=4.19s sender_irq=0.77s udp_drops=0
+run11_embrquicsm wall=0:05.02 sec=5.02 gbps=1.71 user=3.71s sys=1.13s rss=12260KB host_cpu=5.32s host_irq=0.53s sender_cpu=3.28s sender_irq=0.18s udp_drops=0
+run11_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.66s sys=1.17s rss=12280KB host_cpu=5.29s host_irq=0.61s sender_cpu=2.36s sender_irq=0.31s udp_drops=0
+run11_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.68s sys=1.11s rss=12212KB host_cpu=5.37s host_irq=0.64s sender_cpu=3.02s sender_irq=0.41s udp_drops=0
+run11_embrtcp wall=0:04.59 sec=4.59 gbps=1.87 user=2.61s sys=0.80s rss=9672KB host_cpu=3.96s host_irq=0.63s sender_cpu=0.36s sender_irq=0.10s udp_drops=0
+
+run12_embrquic wall=0:04.94 sec=4.94 gbps=1.74 user=3.56s sys=1.20s rss=12200KB host_cpu=5.43s host_irq=0.69s sender_cpu=4.37s sender_irq=0.89s udp_drops=0
+run12_embrquicsm wall=0:05.00 sec=5 gbps=1.72 user=3.71s sys=1.07s rss=12292KB host_cpu=5.39s host_irq=0.63s sender_cpu=3.40s sender_irq=0.23s udp_drops=0
+run12_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.68s sys=1.15s rss=12232KB host_cpu=5.14s host_irq=0.44s sender_cpu=2.87s sender_irq=0.36s udp_drops=0
+run12_embrquicsmgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.61s sys=1.21s rss=12232KB host_cpu=5.25s host_irq=0.60s sender_cpu=2.61s sender_irq=0.31s udp_drops=0
+run12_embrtcp wall=0:04.04 sec=4.04 gbps=2.13 user=2.57s sys=0.83s rss=9612KB host_cpu=4.36s host_irq=1.03s sender_cpu=0.72s sender_irq=0.46s udp_drops=0
+
+[bench 03:44:58] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.7100  [1.68 1.74] | 5.0150  [4.94 5.12] | 3.6300   | 1.1850  
+embrquicsm    | 1.7100  [1.68 1.73] | 5.0300  [4.96 5.1] | 3.6700   | 1.1400  
+embrquicgso   | 1.7100  [1.69 1.73] | 5.0200  [4.97 5.07] | 3.6700   | 1.1500  
+embrquicsmgso | 1.7200  [1.69 1.74] | 4.9900  [4.93 5.08] | 3.6300   | 1.1600  
+embrtcp       | 1.9100  [1.87 2.13] | 4.5000  [4.04 4.59] | 2.6250   | 0.7500  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 5.2900     | 0.6300     | 3.9800     | 0.6600    
+embrquicsm    | 5.3000     | 0.6100     | 3.4550     | 0.2250    
+embrquicgso   | 5.2850     | 0.5850     | 2.4500     | 0.2650    
+embrquicsmgso | 5.3550     | 0.6100     | 2.6200     | 0.3000    
+embrtcp       | 3.9050     | 0.5950     | 0.6500     | 0.3300    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicsm=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=1 datagrams=9925388 reads=489640 bytes=13352064158 (20.3 datagrams per read)
+embrquicsm ingress over 12 connections: gro=1 datagrams=9925567 reads=568957 bytes=13352067051 (17.4 datagrams per read)
+embrquicgso ingress over 12 connections: gro=1 datagrams=9926925 reads=806504 bytes=13352142078 (12.3 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=1 datagrams=9926150 reads=783149 bytes=13352103273 (12.7 datagrams per read)
+[bench 03:44:59] raw results in /home/ec2-user/embr-wan/2026-11-22-0310/ack10/results.txt
+[bench 03:44:59] read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C.
+[bench 03:44:59]       host_* is this host, sender_* the sender, whole machine: compare rows on these, since
+[bench 03:44:59]       softirq packet work is in no process's user/sys
+[bench 03:44:59]       embrquic vs embrquicsm = SEND_ZC vs sendmsg; embrquic vs scp = encrypted vs encrypted;
+[bench 03:44:59]       embrtcp vs nc = plaintext vs plaintext
+[wan 03:45:00] pass ack10, receiver: udp InDatagrams+2648294 InErrors+0 OutDatagrams+676386 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:45:00] pass ack10, sender: udp InDatagrams+603565 InErrors+0 OutDatagrams+21174124 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+5931 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:45:00] === pass slots128: rows [embrquic embrquicgso embrquicsmgso embrtcp]  receiver env [none]  sender env [EMBR_QUIC_ZC_SLOTS=128] ===
+[bench 03:45:04] ssh ok: ec2-user@SENDER
+[bench 03:45:04] tcp port ok: 10007 (embrtcp)
+[bench 03:45:04] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:45:05] remote sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:45:05] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:45:06] remote sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:45:06] RECEIVER — ec2-user@SENDER — fetching source size+hash...
+[bench 03:45:09] expected 1073741824 bytes  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:45:09] === warmup1 (1/12) ===
+warmup1_embrquic wall=0:05.10 sec=5.1 gbps=1.68 user=3.63s sys=1.12s rss=12188KB host_cpu=5.16s host_irq=0.56s sender_cpu=4.23s sender_irq=0.70s udp_drops=0
+warmup1_embrquicgso wall=0:04.95 sec=4.95 gbps=1.74 user=3.64s sys=1.12s rss=12212KB host_cpu=5.34s host_irq=0.60s sender_cpu=2.46s sender_irq=0.19s udp_drops=0
+warmup1_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.62s sys=1.25s rss=12184KB host_cpu=5.26s host_irq=0.63s sender_cpu=2.40s sender_irq=0.35s udp_drops=0
+warmup1_embrtcp wall=0:04.26 sec=4.26 gbps=2.02 user=2.66s sys=0.72s rss=9688KB host_cpu=3.88s host_irq=0.65s sender_cpu=0.76s sender_irq=0.37s udp_drops=0
+[bench 03:45:48] === warmup2 (2/12) ===
+warmup2_embrquic wall=0:05.00 sec=5 gbps=1.72 user=3.72s sys=1.06s rss=12212KB host_cpu=5.28s host_irq=0.55s sender_cpu=3.91s sender_irq=0.46s udp_drops=0
+warmup2_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.75s sys=1.06s rss=12016KB host_cpu=5.27s host_irq=0.55s sender_cpu=2.65s sender_irq=0.24s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.64s sys=1.18s rss=12212KB host_cpu=5.22s host_irq=0.50s sender_cpu=2.61s sender_irq=0.33s udp_drops=0
+warmup2_embrtcp wall=0:04.38 sec=4.38 gbps=1.96 user=2.52s sys=0.84s rss=9692KB host_cpu=3.94s host_irq=0.63s sender_cpu=0.53s sender_irq=0.20s udp_drops=0
+[bench 03:46:27] === run3 (3/12) ===
+run3_embrquic wall=0:05.08 sec=5.08 gbps=1.69 user=3.65s sys=1.23s rss=12240KB host_cpu=5.20s host_irq=0.44s sender_cpu=4.35s sender_irq=0.87s udp_drops=0
+run3_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.74s sys=1.06s rss=12152KB host_cpu=5.24s host_irq=0.54s sender_cpu=2.60s sender_irq=0.31s udp_drops=0
+run3_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.61s sys=1.17s rss=12060KB host_cpu=5.35s host_irq=0.62s sender_cpu=2.52s sender_irq=0.22s udp_drops=0
+run3_embrtcp wall=0:04.35 sec=4.35 gbps=1.97 user=2.50s sys=0.84s rss=9736KB host_cpu=3.74s host_irq=0.51s sender_cpu=0.57s sender_irq=0.29s udp_drops=0
+[bench 03:47:06] === run4 (4/12) ===
+run4_embrquic wall=0:04.95 sec=4.95 gbps=1.74 user=3.53s sys=1.22s rss=12260KB host_cpu=5.20s host_irq=0.57s sender_cpu=3.67s sender_irq=0.42s udp_drops=0
+run4_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.68s sys=1.11s rss=12212KB host_cpu=5.33s host_irq=0.57s sender_cpu=2.89s sender_irq=0.31s udp_drops=0
+run4_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.61s sys=1.26s rss=12056KB host_cpu=5.12s host_irq=0.46s sender_cpu=2.94s sender_irq=0.25s udp_drops=0
+run4_embrtcp wall=0:04.65 sec=4.65 gbps=1.85 user=2.78s sys=0.64s rss=9652KB host_cpu=3.95s host_irq=0.62s sender_cpu=0.61s sender_irq=0.41s udp_drops=0
+[bench 03:47:45] === run5 (5/12) ===
+run5_embrquic wall=0:04.99 sec=4.99 gbps=1.72 user=3.65s sys=1.13s rss=19388KB host_cpu=5.24s host_irq=0.48s sender_cpu=4.32s sender_irq=0.86s udp_drops=0
+run5_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.53s sys=1.27s rss=12240KB host_cpu=5.26s host_irq=0.66s sender_cpu=2.52s sender_irq=0.27s udp_drops=0
+run5_embrquicsmgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.69s sys=1.14s rss=12160KB host_cpu=5.18s host_irq=0.50s sender_cpu=3.01s sender_irq=0.35s udp_drops=0
+run5_embrtcp wall=0:04.48 sec=4.48 gbps=1.92 user=2.50s sys=0.93s rss=9628KB host_cpu=3.93s host_irq=0.61s sender_cpu=0.80s sender_irq=0.33s udp_drops=0
+[bench 03:48:24] === run6 (6/12) ===
+run6_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.74s sys=1.11s rss=12164KB host_cpu=5.18s host_irq=0.46s sender_cpu=4.13s sender_irq=0.87s udp_drops=0
+run6_embrquicgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.51s sys=1.26s rss=12220KB host_cpu=5.25s host_irq=0.53s sender_cpu=2.36s sender_irq=0.34s udp_drops=0
+run6_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.40s sys=1.47s rss=12240KB host_cpu=5.20s host_irq=0.63s sender_cpu=2.58s sender_irq=0.30s udp_drops=0
+run6_embrtcp wall=0:04.19 sec=4.19 gbps=2.05 user=2.51s sys=0.85s rss=9696KB host_cpu=3.74s host_irq=0.46s sender_cpu=0.45s sender_irq=0.17s udp_drops=0
+[bench 03:49:03] === run7 (7/12) ===
+run7_embrquic wall=0:04.94 sec=4.94 gbps=1.74 user=3.71s sys=1.01s rss=12144KB host_cpu=5.42s host_irq=0.74s sender_cpu=4.08s sender_irq=0.76s udp_drops=0
+run7_embrquicgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.72s sys=1.07s rss=12280KB host_cpu=5.31s host_irq=0.68s sender_cpu=2.78s sender_irq=0.40s udp_drops=0
+run7_embrquicsmgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.65s sys=1.20s rss=11996KB host_cpu=5.23s host_irq=0.54s sender_cpu=2.02s sender_irq=0.21s udp_drops=0
+run7_embrtcp wall=0:04.42 sec=4.42 gbps=1.94 user=2.59s sys=0.73s rss=9688KB host_cpu=3.76s host_irq=0.51s sender_cpu=0.31s sender_irq=0.06s udp_drops=0
+[bench 03:49:42] === run8 (8/12) ===
+run8_embrquic wall=0:04.99 sec=4.99 gbps=1.72 user=3.69s sys=1.08s rss=12208KB host_cpu=5.30s host_irq=0.56s sender_cpu=4.20s sender_irq=0.76s udp_drops=0
+run8_embrquicgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.68s sys=1.09s rss=12260KB host_cpu=5.23s host_irq=0.50s sender_cpu=2.87s sender_irq=0.41s udp_drops=0
+run8_embrquicsmgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.65s sys=1.19s rss=12288KB host_cpu=5.30s host_irq=0.60s sender_cpu=2.41s sender_irq=0.17s udp_drops=0
+run8_embrtcp wall=0:04.54 sec=4.54 gbps=1.89 user=2.55s sys=0.85s rss=9668KB host_cpu=3.86s host_irq=0.58s sender_cpu=0.61s sender_irq=0.35s udp_drops=0
+[bench 03:50:21] === run9 (9/12) ===
+run9_embrquic wall=0:04.95 sec=4.95 gbps=1.74 user=3.56s sys=1.19s rss=12340KB host_cpu=5.42s host_irq=0.69s sender_cpu=3.59s sender_irq=0.52s udp_drops=0
+run9_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.53s sys=1.34s rss=12224KB host_cpu=5.14s host_irq=0.48s sender_cpu=2.38s sender_irq=0.37s udp_drops=0
+run9_embrquicsmgso wall=0:05.09 sec=5.09 gbps=1.69 user=3.63s sys=1.27s rss=12200KB host_cpu=5.31s host_irq=0.60s sender_cpu=2.65s sender_irq=0.16s udp_drops=0
+run9_embrtcp wall=0:04.62 sec=4.62 gbps=1.86 user=2.57s sys=0.89s rss=9764KB host_cpu=3.79s host_irq=0.54s sender_cpu=0.45s sender_irq=0.19s udp_drops=0
+[bench 03:51:00] === run10 (10/12) ===
+run10_embrquic wall=0:04.93 sec=4.93 gbps=1.74 user=3.68s sys=1.07s rss=12172KB host_cpu=5.32s host_irq=0.58s sender_cpu=3.38s sender_irq=0.48s udp_drops=0
+run10_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.42s sys=1.41s rss=12024KB host_cpu=5.26s host_irq=0.64s sender_cpu=2.35s sender_irq=0.18s udp_drops=0
+run10_embrquicsmgso wall=0:05.00 sec=5 gbps=1.72 user=3.71s sys=1.10s rss=12268KB host_cpu=5.24s host_irq=0.57s sender_cpu=2.72s sender_irq=0.29s udp_drops=0
+run10_embrtcp wall=0:04.61 sec=4.61 gbps=1.86 user=2.61s sys=0.80s rss=9672KB host_cpu=3.95s host_irq=0.62s sender_cpu=0.64s sender_irq=0.15s udp_drops=0
+[bench 03:51:39] === run11 (11/12) ===
+run11_embrquic wall=0:04.98 sec=4.98 gbps=1.72 user=3.61s sys=1.13s rss=12056KB host_cpu=5.35s host_irq=0.68s sender_cpu=3.91s sender_irq=0.59s udp_drops=0
+run11_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.58s sys=1.23s rss=12196KB host_cpu=5.25s host_irq=0.51s sender_cpu=2.52s sender_irq=0.31s udp_drops=0
+run11_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.71s sys=1.15s rss=19804KB host_cpu=5.10s host_irq=0.33s sender_cpu=2.94s sender_irq=0.30s udp_drops=0
+run11_embrtcp wall=0:04.44 sec=4.44 gbps=1.93 user=2.65s sys=0.68s rss=9772KB host_cpu=3.80s host_irq=0.46s sender_cpu=0.56s sender_irq=0.25s udp_drops=0
+[bench 03:52:18] === run12 (12/12) ===
+run12_embrquic wall=0:04.96 sec=4.96 gbps=1.73 user=3.67s sys=1.09s rss=12132KB host_cpu=5.35s host_irq=0.71s sender_cpu=3.86s sender_irq=0.63s udp_drops=0
+run12_embrquicgso wall=0:05.09 sec=5.09 gbps=1.69 user=3.58s sys=1.30s rss=12188KB host_cpu=5.23s host_irq=0.51s sender_cpu=2.71s sender_irq=0.34s udp_drops=0
+run12_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.72s sys=1.04s rss=12252KB host_cpu=5.40s host_irq=0.67s sender_cpu=2.71s sender_irq=0.24s udp_drops=0
+run12_embrtcp wall=0:04.48 sec=4.48 gbps=1.92 user=2.43s sys=1.00s rss=9768KB host_cpu=3.96s host_irq=0.68s sender_cpu=0.67s sender_irq=0.45s udp_drops=0
+[bench 03:52:57] === raw results ===
+# bench wan-receiver Sun Nov 22 03:45:09 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: embrquic embrquicgso embrquicsmgso embrtcp   ack_thresh=2   gro=1
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquic wall=0:05.10 sec=5.1 gbps=1.68 user=3.63s sys=1.12s rss=12188KB host_cpu=5.16s host_irq=0.56s sender_cpu=4.23s sender_irq=0.70s udp_drops=0
+warmup1_embrquicgso wall=0:04.95 sec=4.95 gbps=1.74 user=3.64s sys=1.12s rss=12212KB host_cpu=5.34s host_irq=0.60s sender_cpu=2.46s sender_irq=0.19s udp_drops=0
+warmup1_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.62s sys=1.25s rss=12184KB host_cpu=5.26s host_irq=0.63s sender_cpu=2.40s sender_irq=0.35s udp_drops=0
+warmup1_embrtcp wall=0:04.26 sec=4.26 gbps=2.02 user=2.66s sys=0.72s rss=9688KB host_cpu=3.88s host_irq=0.65s sender_cpu=0.76s sender_irq=0.37s udp_drops=0
+
+warmup2_embrquic wall=0:05.00 sec=5 gbps=1.72 user=3.72s sys=1.06s rss=12212KB host_cpu=5.28s host_irq=0.55s sender_cpu=3.91s sender_irq=0.46s udp_drops=0
+warmup2_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.75s sys=1.06s rss=12016KB host_cpu=5.27s host_irq=0.55s sender_cpu=2.65s sender_irq=0.24s udp_drops=0
+warmup2_embrquicsmgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.64s sys=1.18s rss=12212KB host_cpu=5.22s host_irq=0.50s sender_cpu=2.61s sender_irq=0.33s udp_drops=0
+warmup2_embrtcp wall=0:04.38 sec=4.38 gbps=1.96 user=2.52s sys=0.84s rss=9692KB host_cpu=3.94s host_irq=0.63s sender_cpu=0.53s sender_irq=0.20s udp_drops=0
+
+run3_embrquic wall=0:05.08 sec=5.08 gbps=1.69 user=3.65s sys=1.23s rss=12240KB host_cpu=5.20s host_irq=0.44s sender_cpu=4.35s sender_irq=0.87s udp_drops=0
+run3_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.74s sys=1.06s rss=12152KB host_cpu=5.24s host_irq=0.54s sender_cpu=2.60s sender_irq=0.31s udp_drops=0
+run3_embrquicsmgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.61s sys=1.17s rss=12060KB host_cpu=5.35s host_irq=0.62s sender_cpu=2.52s sender_irq=0.22s udp_drops=0
+run3_embrtcp wall=0:04.35 sec=4.35 gbps=1.97 user=2.50s sys=0.84s rss=9736KB host_cpu=3.74s host_irq=0.51s sender_cpu=0.57s sender_irq=0.29s udp_drops=0
+
+run4_embrquic wall=0:04.95 sec=4.95 gbps=1.74 user=3.53s sys=1.22s rss=12260KB host_cpu=5.20s host_irq=0.57s sender_cpu=3.67s sender_irq=0.42s udp_drops=0
+run4_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.68s sys=1.11s rss=12212KB host_cpu=5.33s host_irq=0.57s sender_cpu=2.89s sender_irq=0.31s udp_drops=0
+run4_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.61s sys=1.26s rss=12056KB host_cpu=5.12s host_irq=0.46s sender_cpu=2.94s sender_irq=0.25s udp_drops=0
+run4_embrtcp wall=0:04.65 sec=4.65 gbps=1.85 user=2.78s sys=0.64s rss=9652KB host_cpu=3.95s host_irq=0.62s sender_cpu=0.61s sender_irq=0.41s udp_drops=0
+
+run5_embrquic wall=0:04.99 sec=4.99 gbps=1.72 user=3.65s sys=1.13s rss=19388KB host_cpu=5.24s host_irq=0.48s sender_cpu=4.32s sender_irq=0.86s udp_drops=0
+run5_embrquicgso wall=0:05.00 sec=5 gbps=1.72 user=3.53s sys=1.27s rss=12240KB host_cpu=5.26s host_irq=0.66s sender_cpu=2.52s sender_irq=0.27s udp_drops=0
+run5_embrquicsmgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.69s sys=1.14s rss=12160KB host_cpu=5.18s host_irq=0.50s sender_cpu=3.01s sender_irq=0.35s udp_drops=0
+run5_embrtcp wall=0:04.48 sec=4.48 gbps=1.92 user=2.50s sys=0.93s rss=9628KB host_cpu=3.93s host_irq=0.61s sender_cpu=0.80s sender_irq=0.33s udp_drops=0
+
+run6_embrquic wall=0:05.03 sec=5.03 gbps=1.71 user=3.74s sys=1.11s rss=12164KB host_cpu=5.18s host_irq=0.46s sender_cpu=4.13s sender_irq=0.87s udp_drops=0
+run6_embrquicgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.51s sys=1.26s rss=12220KB host_cpu=5.25s host_irq=0.53s sender_cpu=2.36s sender_irq=0.34s udp_drops=0
+run6_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.40s sys=1.47s rss=12240KB host_cpu=5.20s host_irq=0.63s sender_cpu=2.58s sender_irq=0.30s udp_drops=0
+run6_embrtcp wall=0:04.19 sec=4.19 gbps=2.05 user=2.51s sys=0.85s rss=9696KB host_cpu=3.74s host_irq=0.46s sender_cpu=0.45s sender_irq=0.17s udp_drops=0
+
+run7_embrquic wall=0:04.94 sec=4.94 gbps=1.74 user=3.71s sys=1.01s rss=12144KB host_cpu=5.42s host_irq=0.74s sender_cpu=4.08s sender_irq=0.76s udp_drops=0
+run7_embrquicgso wall=0:04.98 sec=4.98 gbps=1.72 user=3.72s sys=1.07s rss=12280KB host_cpu=5.31s host_irq=0.68s sender_cpu=2.78s sender_irq=0.40s udp_drops=0
+run7_embrquicsmgso wall=0:05.05 sec=5.05 gbps=1.70 user=3.65s sys=1.20s rss=11996KB host_cpu=5.23s host_irq=0.54s sender_cpu=2.02s sender_irq=0.21s udp_drops=0
+run7_embrtcp wall=0:04.42 sec=4.42 gbps=1.94 user=2.59s sys=0.73s rss=9688KB host_cpu=3.76s host_irq=0.51s sender_cpu=0.31s sender_irq=0.06s udp_drops=0
+
+run8_embrquic wall=0:04.99 sec=4.99 gbps=1.72 user=3.69s sys=1.08s rss=12208KB host_cpu=5.30s host_irq=0.56s sender_cpu=4.20s sender_irq=0.76s udp_drops=0
+run8_embrquicgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.68s sys=1.09s rss=12260KB host_cpu=5.23s host_irq=0.50s sender_cpu=2.87s sender_irq=0.41s udp_drops=0
+run8_embrquicsmgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.65s sys=1.19s rss=12288KB host_cpu=5.30s host_irq=0.60s sender_cpu=2.41s sender_irq=0.17s udp_drops=0
+run8_embrtcp wall=0:04.54 sec=4.54 gbps=1.89 user=2.55s sys=0.85s rss=9668KB host_cpu=3.86s host_irq=0.58s sender_cpu=0.61s sender_irq=0.35s udp_drops=0
+
+run9_embrquic wall=0:04.95 sec=4.95 gbps=1.74 user=3.56s sys=1.19s rss=12340KB host_cpu=5.42s host_irq=0.69s sender_cpu=3.59s sender_irq=0.52s udp_drops=0
+run9_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.53s sys=1.34s rss=12224KB host_cpu=5.14s host_irq=0.48s sender_cpu=2.38s sender_irq=0.37s udp_drops=0
+run9_embrquicsmgso wall=0:05.09 sec=5.09 gbps=1.69 user=3.63s sys=1.27s rss=12200KB host_cpu=5.31s host_irq=0.60s sender_cpu=2.65s sender_irq=0.16s udp_drops=0
+run9_embrtcp wall=0:04.62 sec=4.62 gbps=1.86 user=2.57s sys=0.89s rss=9764KB host_cpu=3.79s host_irq=0.54s sender_cpu=0.45s sender_irq=0.19s udp_drops=0
+
+run10_embrquic wall=0:04.93 sec=4.93 gbps=1.74 user=3.68s sys=1.07s rss=12172KB host_cpu=5.32s host_irq=0.58s sender_cpu=3.38s sender_irq=0.48s udp_drops=0
+run10_embrquicgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.42s sys=1.41s rss=12024KB host_cpu=5.26s host_irq=0.64s sender_cpu=2.35s sender_irq=0.18s udp_drops=0
+run10_embrquicsmgso wall=0:05.00 sec=5 gbps=1.72 user=3.71s sys=1.10s rss=12268KB host_cpu=5.24s host_irq=0.57s sender_cpu=2.72s sender_irq=0.29s udp_drops=0
+run10_embrtcp wall=0:04.61 sec=4.61 gbps=1.86 user=2.61s sys=0.80s rss=9672KB host_cpu=3.95s host_irq=0.62s sender_cpu=0.64s sender_irq=0.15s udp_drops=0
+
+run11_embrquic wall=0:04.98 sec=4.98 gbps=1.72 user=3.61s sys=1.13s rss=12056KB host_cpu=5.35s host_irq=0.68s sender_cpu=3.91s sender_irq=0.59s udp_drops=0
+run11_embrquicgso wall=0:04.99 sec=4.99 gbps=1.72 user=3.58s sys=1.23s rss=12196KB host_cpu=5.25s host_irq=0.51s sender_cpu=2.52s sender_irq=0.31s udp_drops=0
+run11_embrquicsmgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.71s sys=1.15s rss=19804KB host_cpu=5.10s host_irq=0.33s sender_cpu=2.94s sender_irq=0.30s udp_drops=0
+run11_embrtcp wall=0:04.44 sec=4.44 gbps=1.93 user=2.65s sys=0.68s rss=9772KB host_cpu=3.80s host_irq=0.46s sender_cpu=0.56s sender_irq=0.25s udp_drops=0
+
+run12_embrquic wall=0:04.96 sec=4.96 gbps=1.73 user=3.67s sys=1.09s rss=12132KB host_cpu=5.35s host_irq=0.71s sender_cpu=3.86s sender_irq=0.63s udp_drops=0
+run12_embrquicgso wall=0:05.09 sec=5.09 gbps=1.69 user=3.58s sys=1.30s rss=12188KB host_cpu=5.23s host_irq=0.51s sender_cpu=2.71s sender_irq=0.34s udp_drops=0
+run12_embrquicsmgso wall=0:04.96 sec=4.96 gbps=1.73 user=3.72s sys=1.04s rss=12252KB host_cpu=5.40s host_irq=0.67s sender_cpu=2.71s sender_irq=0.24s udp_drops=0
+run12_embrtcp wall=0:04.48 sec=4.48 gbps=1.92 user=2.43s sys=1.00s rss=9768KB host_cpu=3.96s host_irq=0.68s sender_cpu=0.67s sender_irq=0.45s udp_drops=0
+
+[bench 03:52:57] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.7250  [1.69 1.74] | 4.9700  [4.93 5.08] | 3.6600   | 1.1200  
+embrquicgso   | 1.7200  [1.69 1.73] | 4.9950  [4.96 5.09] | 3.5800   | 1.2450  
+embrquicsmgso | 1.7000  [1.69 1.73] | 5.0500  [4.96 5.09] | 3.6500   | 1.1800  
+embrtcp       | 1.9200  [1.85 2.05] | 4.4800  [4.19 4.65] | 2.5600   | 0.8450  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 5.3100     | 0.5750     | 3.9950     | 0.6950    
+embrquicgso   | 5.2500     | 0.5350     | 2.5600     | 0.3250    
+embrquicsmgso | 5.2350     | 0.5850     | 2.6800     | 0.2450    
+embrtcp       | 3.8300     | 0.5600     | 0.5900     | 0.2700    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=1 datagrams=9925876 reads=438652 bytes=13352087415 (22.6 datagrams per read)
+embrquicgso ingress over 12 connections: gro=1 datagrams=9932325 reads=835032 bytes=13352345491 (11.9 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=1 datagrams=9926606 reads=801248 bytes=13352127408 (12.4 datagrams per read)
+[bench 03:52:57] raw results in /home/ec2-user/embr-wan/2026-11-22-0310/slots128/results.txt
+[bench 03:52:57] read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C.
+[bench 03:52:57]       host_* is this host, sender_* the sender, whole machine: compare rows on these, since
+[bench 03:52:57]       softirq packet work is in no process's user/sys
+[bench 03:52:57]       embrquic vs embrquicsm = SEND_ZC vs sendmsg; embrquic vs scp = encrypted vs encrypted;
+[bench 03:52:57]       embrtcp vs nc = plaintext vs plaintext
+[wan 03:52:59] pass slots128, receiver: udp InDatagrams+2074967 InErrors+0 OutDatagrams+514482 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:52:59] pass slots128, sender: udp InDatagrams+458230 InErrors+0 OutDatagrams+11255358 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+62718 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:52:59] === recap: each pass's summary as bench.sh printed it ===
+
+######## pass default — receiver env: none sender env: none 
+[bench 03:24:42] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.7100  [1.65 1.74] | 5.0100  [4.93 5.2] | 3.6250   | 1.1650  
+embrquicsm    | 1.7100  [1.68 1.72] | 5.0300  [4.98 5.11] | 3.6600   | 1.1600  
+embrquicgso   | 1.7100  [1.69 1.72] | 5.0150  [4.98 5.07] | 3.7200   | 1.1050  
+embrquicsmgso | 1.7100  [1.68 1.73] | 5.0100  [4.96 5.11] | 3.6000   | 1.2250  
+embrtcp       | 1.9650  [1.88 2.09] | 4.3650  [4.11 4.57] | 2.5800   | 0.7850  
+nc            | 2.2100  [2.13 2.40] | 3.8850  [3.58 4.03] | 0.2150   | 1.0750  
+scp           | 1.1900  [1.15 1.25] | 7.1950  [6.88 7.49] | 0.9100   | 1.8850  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 5.3350     | 0.6100     | 4.0650     | 0.7050    
+embrquicsm    | 5.3500     | 0.6000     | 3.4350     | 0.2550    
+embrquicgso   | 5.2750     | 0.5800     | 2.5950     | 0.2900    
+embrquicsmgso | 5.3050     | 0.6200     | 2.5750     | 0.2650    
+embrtcp       | 3.9900     | 0.6600     | 0.5400     | 0.2300    
+nc            | 1.7700     | 0.5750     | 1.6950     | 0.4950    
+scp           | 3.1450     | 0.6750     | 3.0250     | 0.6000    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicsm=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=1 datagrams=9926001 reads=501181 bytes=13352095937 (19.8 datagrams per read)
+embrquicsm ingress over 12 connections: gro=1 datagrams=9926167 reads=528715 bytes=13352772456 (18.8 datagrams per read)
+embrquicgso ingress over 12 connections: gro=1 datagrams=9926409 reads=791910 bytes=13352114963 (12.5 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=1 datagrams=9925865 reads=792421 bytes=13352089298 (12.5 datagrams per read)
+[bench 03:24:43] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | 10     | 1.5100   | 1.8850  
+embrquicsm    | 10     | 1.6750   | 1.4900  
+embrquicgso   | 10     | 1.3900   | 0.8850  
+embrquicsmgso | 10     | 1.4600   | 0.8750  
+embrtcp       | 10     | 0.0100   | 0.2050  
+
+embrquic egress over 12 connections: datagrams=9926029 sends=9926029 bytes=13352097203 notifs=9926028 copied=0 fallback=0 errors=0 waits=8637 (1.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicsm egress over 12 connections: datagrams=9926199 sends=9926199 bytes=13352773910 (1.0 datagrams per send, 1345 bytes per datagram)
+embrquicgso egress over 12 connections: datagrams=9926435 sends=661567 bytes=13352116146 notifs=661567 copied=0 fallback=0 errors=0 waits=21166 (15.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicsmgso egress over 12 connections: datagrams=9925896 sends=660824 bytes=13352090701 (15.0 datagrams per send, 1345 bytes per datagram)
+[wan 03:24:44] pass default, receiver: udp InDatagrams+2614306 InErrors+0 OutDatagrams+685962 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:24:44] pass default, sender: udp InDatagrams+601543 InErrors+0 OutDatagrams+21174755 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+6585 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+
+######## pass gro-off — receiver env: EMBR_QUIC_GRO=0 sender env: none 
+[bench 03:35:08] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.5000  [1.48 1.51] | 5.7350  [5.67 5.81] | 4.1500   | 1.3900  
+embrquicsm    | 1.4900  [1.46 1.50] | 5.7550  [5.73 5.87] | 4.1600   | 1.4300  
+embrquicgso   | 1.4950  [1.47 1.52] | 5.7500  [5.66 5.84] | 4.0150   | 1.5850  
+embrquicsmgso | 1.4950  [1.45 1.52] | 5.7400  [5.65 5.91] | 4.1650   | 1.3700  
+embrtcp       | 1.9400  [1.86 2.15] | 4.4250  [4 4.61] | 2.6650   | 0.7200  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 6.4450     | 1.0550     | 4.0600     | 0.6300    
+embrquicsm    | 6.6200     | 1.1150     | 3.4200     | 0.2150    
+embrquicgso   | 6.2450     | 0.9200     | 2.6950     | 0.3450    
+embrquicsmgso | 6.4750     | 0.9750     | 2.6450     | 0.2650    
+embrtcp       | 3.9300     | 0.5800     | 0.5550     | 0.2400    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicsm=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=0 datagrams=9923318 reads=9923318 bytes=13351976363 (1.0 datagrams per read)
+embrquicsm ingress over 12 connections: gro=0 datagrams=9924015 reads=9924015 bytes=13352010947 (1.0 datagrams per read)
+embrquicgso ingress over 12 connections: gro=0 datagrams=9933453 reads=9933453 bytes=13352391044 (1.0 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=0 datagrams=9932226 reads=9932226 bytes=13352334313 (1.0 datagrams per read)
+[bench 03:35:10] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | 10     | 1.4800   | 1.8800  
+embrquicsm    | 10     | 1.6550   | 1.4900  
+embrquicgso   | 10     | 1.4200   | 0.8800  
+embrquicsmgso | 10     | 1.4350   | 0.9100  
+embrtcp       | 10     | 0.0100   | 0.2250  
+
+embrquic egress over 12 connections: datagrams=9923346 sends=9923346 bytes=13351977632 notifs=9923342 copied=0 fallback=0 errors=0 waits=8035 (1.0 datagrams per send, copied 0.0%, 1346 bytes per datagram)
+embrquicsm egress over 12 connections: datagrams=9924065 sends=9924065 bytes=13352045833 (1.0 datagrams per send, 1345 bytes per datagram)
+embrquicgso egress over 12 connections: datagrams=9933484 sends=671000 bytes=13352392451 notifs=671000 copied=0 fallback=0 errors=0 waits=18450 (14.8 datagrams per send, copied 0.0%, 1344 bytes per datagram)
+embrquicsmgso egress over 12 connections: datagrams=9932259 sends=669386 bytes=13352335814 (14.8 datagrams per send, 1344 bytes per datagram)
+[wan 03:35:10] pass gro-off, receiver: udp InDatagrams+39713063 InErrors+0 OutDatagrams+720871 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:35:10] pass gro-off, sender: udp InDatagrams+658410 InErrors+0 OutDatagrams+21187900 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+4562 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+
+######## pass ack10 — receiver env: EMBR_QUIC_ACK_THRESH=10 sender env: none 
+[bench 03:44:58] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.7100  [1.68 1.74] | 5.0150  [4.94 5.12] | 3.6300   | 1.1850  
+embrquicsm    | 1.7100  [1.68 1.73] | 5.0300  [4.96 5.1] | 3.6700   | 1.1400  
+embrquicgso   | 1.7100  [1.69 1.73] | 5.0200  [4.97 5.07] | 3.6700   | 1.1500  
+embrquicsmgso | 1.7200  [1.69 1.74] | 4.9900  [4.93 5.08] | 3.6300   | 1.1600  
+embrtcp       | 1.9100  [1.87 2.13] | 4.5000  [4.04 4.59] | 2.6250   | 0.7500  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 5.2900     | 0.6300     | 3.9800     | 0.6600    
+embrquicsm    | 5.3000     | 0.6100     | 3.4550     | 0.2250    
+embrquicgso   | 5.2850     | 0.5850     | 2.4500     | 0.2650    
+embrquicsmgso | 5.3550     | 0.6100     | 2.6200     | 0.3000    
+embrtcp       | 3.9050     | 0.5950     | 0.6500     | 0.3300    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicsm=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=1 datagrams=9925388 reads=489640 bytes=13352064158 (20.3 datagrams per read)
+embrquicsm ingress over 12 connections: gro=1 datagrams=9925567 reads=568957 bytes=13352067051 (17.4 datagrams per read)
+embrquicgso ingress over 12 connections: gro=1 datagrams=9926925 reads=806504 bytes=13352142078 (12.3 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=1 datagrams=9926150 reads=783149 bytes=13352103273 (12.7 datagrams per read)
+[bench 03:45:00] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | 10     | 1.4450   | 1.8100  
+embrquicsm    | 10     | 1.6950   | 1.4600  
+embrquicgso   | 10     | 1.3950   | 0.8700  
+embrquicsmgso | 10     | 1.3750   | 0.9250  
+embrtcp       | 10     | 0.0000   | 0.1850  
+
+embrquic egress over 12 connections: datagrams=9925419 sends=9925419 bytes=13352065562 notifs=9925415 copied=0 fallback=0 errors=0 waits=9280 (1.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicsm egress over 12 connections: datagrams=9925609 sends=9925609 bytes=13352084609 (1.0 datagrams per send, 1345 bytes per datagram)
+embrquicgso egress over 12 connections: datagrams=9926960 sends=661943 bytes=13352143670 notifs=661939 copied=0 fallback=0 errors=0 waits=21060 (15.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicsmgso egress over 12 connections: datagrams=9926182 sends=661066 bytes=13352104724 (15.0 datagrams per send, 1345 bytes per datagram)
+[wan 03:45:00] pass ack10, receiver: udp InDatagrams+2648294 InErrors+0 OutDatagrams+676386 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:45:00] pass ack10, sender: udp InDatagrams+603565 InErrors+0 OutDatagrams+21174124 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+5931 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+
+######## pass slots128 — receiver env: none sender env: EMBR_QUIC_ZC_SLOTS=128 
+[bench 03:52:57] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquic      | 1.7250  [1.69 1.74] | 4.9700  [4.93 5.08] | 3.6600   | 1.1200  
+embrquicgso   | 1.7200  [1.69 1.73] | 4.9950  [4.96 5.09] | 3.5800   | 1.2450  
+embrquicsmgso | 1.7000  [1.69 1.73] | 5.0500  [4.96 5.09] | 3.6500   | 1.1800  
+embrtcp       | 1.9200  [1.85 2.05] | 4.4800  [4.19 4.65] | 2.5600   | 0.8450  
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquic      | 5.3100     | 0.5750     | 3.9950     | 0.6950    
+embrquicgso   | 5.2500     | 0.5350     | 2.5600     | 0.3250    
+embrquicsmgso | 5.2350     | 0.5850     | 2.6800     | 0.2450    
+embrtcp       | 3.8300     | 0.5600     | 0.5900     | 0.2700    
+
+UDP receive-buffer drops on this host per transfer (median): embrquic=0.0000 embrquicgso=0.0000 embrquicsmgso=0.0000
+
+embrquic ingress over 12 connections: gro=1 datagrams=9925876 reads=438652 bytes=13352087415 (22.6 datagrams per read)
+embrquicgso ingress over 12 connections: gro=1 datagrams=9932325 reads=835032 bytes=13352345491 (11.9 datagrams per read)
+embrquicsmgso ingress over 12 connections: gro=1 datagrams=9926606 reads=801248 bytes=13352127408 (12.4 datagrams per read)
+[bench 03:52:58] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | 10     | 1.4150   | 1.9100  
+embrquicgso   | 10     | 1.3800   | 0.9400  
+embrquicsmgso | 10     | 1.3800   | 0.9400  
+embrtcp       | 10     | 0.0100   | 0.1950  
+
+embrquic egress over 12 connections: datagrams=9926094 sends=9926094 bytes=13352339809 notifs=9926090 copied=0 fallback=0 errors=0 waits=1646 (1.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicgso egress over 12 connections: datagrams=9932354 sends=667610 bytes=13352346807 notifs=667609 copied=0 fallback=0 errors=0 waits=0 (14.9 datagrams per send, copied 0.0%, 1344 bytes per datagram)
+embrquicsmgso egress over 12 connections: datagrams=9926681 sends=661578 bytes=13352192128 (15.0 datagrams per send, 1345 bytes per datagram)
+[wan 03:52:59] pass slots128, receiver: udp InDatagrams+2074967 InErrors+0 OutDatagrams+514482 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:52:59] pass slots128, sender: udp InDatagrams+458230 InErrors+0 OutDatagrams+11255358 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+62718 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:52:59] passes run: default gro-off ack10 slots128

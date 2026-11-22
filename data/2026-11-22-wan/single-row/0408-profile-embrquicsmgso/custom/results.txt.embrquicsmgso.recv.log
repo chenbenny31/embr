@@ -1,0 +1,4 @@
+[quic-ingress] gro=1 datagrams=826987 reads=66376 bytes=1112665189
+[quic-ingress] gro=1 datagrams=827113 reads=63657 bytes=1112672643
+[quic-ingress] gro=1 datagrams=827029 reads=65585 bytes=1112668116
+[quic-ingress] gro=1 datagrams=827157 reads=65247 bytes=1112674111

@@ -1,0 +1,7 @@
+pass: gro-off
+rows: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp
+receiver env: EMBR_QUIC_GRO=0
+sender env: none
+runs: 10  warmup: 2  file_size_gb: 1
+started: 2026-11-22T03:24:44Z
+finished: 2026-11-22T03:35:10Z  receiver exit status: 0

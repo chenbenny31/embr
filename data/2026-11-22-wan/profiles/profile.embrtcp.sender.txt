@@ -1,0 +1,42 @@
+# system-wide cpu-clock profile at 499 Hz, flat, over one wan.sh pass of 1 warmup + 3 runs of one row (embrtcp)
+# 6.18.62-127.179.amzn2023.x86_64, 2 CPUs, 2026-11-22T04:14:29Z. The whole pass is sampled, so idle time, the gaps between
+# transfers and the script checks (sha256sum, openssl speed) are in it. Every percentage is of all samples:
+# divide by the sum of the embr lines to get shares of embr.
+
+## every sample, by command and object
+# Samples: 71K of event 'cpu-clock'
+# Event count (approx.): 142400800464
+    90.57%  swapper          [kernel.kallsyms]
+     3.50%  sha256sum        libcrypto.so.3.5.8
+     2.10%  openssl          libcrypto.so.3.5.8
+     0.70%  embr             [kernel.kallsyms]
+     0.44%  sshd-session     libc.so.6
+     0.43%  sshd-session     [kernel.kallsyms]
+     0.23%  sha256sum        [kernel.kallsyms]
+     0.22%  bash             [kernel.kallsyms]
+     0.14%  tee              [kernel.kallsyms]
+     0.13%  sshd-session     sshd-session
+     0.08%  sudo             libc.so.6
+     0.07%  bash             libc.so.6
+     0.06%  systemd          [kernel.kallsyms]
+     0.06%  sshd-session     ld-linux-x86-64.so.2
+     0.05%  systemd-journal  [kernel.kallsyms]
+     0.05%  bash             bash
+     0.05%  grep             [kernel.kallsyms]
+     0.05%  sudo             [kernel.kallsyms]
+     0.04%  grepconf.sh      [kernel.kallsyms]
+     0.04%  sshd-session     libcrypto.so.3.5.8
+     0.04%  systemd-journal  libsystemd-shared-252.23-15.amzn2023.so
+     0.03%  systemd          libsystemd-shared-252.23-15.amzn2023.so
+     0.03%  cat              [kernel.kallsyms]
+     0.03%  systemd          libc.so.6
+
+## embr, by symbol
+     0.05%  [kernel.kallsyms]    [k] native_queued_spin_lock_slowpath                      -      -
+     0.04%  [kernel.kallsyms]    [k] skb_segment                                           -      -
+
+## interrupt-side work outside embr: swapper and ksoftirqd, idle loop left out
+     0.16%  swapper      [k] handle_softirqs
+     0.10%  swapper      [k] memcpy_orig
+     0.08%  swapper      [k] ena_clean_tx_irq
+     0.05%  swapper      [k] ena_start_xmit

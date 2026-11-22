@@ -1,0 +1,2 @@
+[wan 04:08:22] pass custom, receiver: udp InDatagrams+267729 InErrors+0 OutDatagrams+59631 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 04:08:22] pass custom, sender: udp InDatagrams+51145 InErrors+0 OutDatagrams+220467 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+1686 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0

@@ -1,0 +1,7 @@
+pass: custom
+rows: embrquicsmgso
+receiver env: none
+sender env: none
+runs: 3  warmup: 1  file_size_gb: 1
+started: 2026-11-22T03:57:06Z
+finished: 2026-11-22T03:58:03Z  receiver exit status: 0

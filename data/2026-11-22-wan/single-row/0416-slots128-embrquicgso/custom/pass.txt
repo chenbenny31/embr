@@ -1,0 +1,7 @@
+pass: custom
+rows: embrquicgso
+receiver env: none
+sender env: EMBR_QUIC_ZC_SLOTS=128
+runs: 3  warmup: 1  file_size_gb: 1
+started: 2026-11-22T04:16:15Z
+finished: 2026-11-22T04:17:12Z  receiver exit status: 0

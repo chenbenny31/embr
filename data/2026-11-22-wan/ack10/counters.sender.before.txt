@@ -1,0 +1,178 @@
+# 2026-11-22T03:35:14Z dev=ens5 load=0.50 0.36 0.42
+## /proc/net/snmp
+Ip: Forwarding DefaultTTL InReceives InHdrErrors InAddrErrors ForwDatagrams InUnknownProtos InDiscards InDelivers OutRequests OutDiscards OutNoRoutes ReasmTimeout ReasmReqds ReasmOKs ReasmFails FragOKs FragFails FragCreates OutTransmits
+Ip: 2 127 2939937 0 4 0 0 0 2939933 47360134 0 0 0 0 0 0 0 0 0 47360134
+Tcp: RtoAlgorithm RtoMin RtoMax MaxConn ActiveOpens PassiveOpens AttemptFails EstabResets CurrEstab InSegs OutSegs RetransSegs InErrs OutRsts InCsumErrors
+Tcp: 1 200 120000 -1 365 683 0 2 1 1576509 40336642 3925 0 81 0
+Udp: InDatagrams NoPorts InErrors OutDatagrams RcvbufErrors SndbufErrors InCsumErrors IgnoredMulti MemErrors
+Udp: 1363692 118 0 45893623 0 0 0 0 0
+## /proc/net/netstat
+TcpExt: SyncookiesSent SyncookiesRecv SyncookiesFailed EmbryonicRsts PruneCalled RcvPruned OfoPruned OutOfWindowIcmps LockDroppedIcmps ArpFilter TW TWRecycled TWKilled PAWSActive PAWSEstab BeyondWindow TSEcrRejected PAWSOldAck PAWSTimewait DelayedACKs DelayedACKLocked DelayedACKLost ListenOverflows ListenDrops TCPHPHits TCPPureAcks TCPHPAcks TCPRenoRecovery TCPSackRecovery TCPSACKReneging TCPSACKReorder TCPRenoReorder TCPTSReorder TCPFullUndo TCPPartialUndo TCPDSACKUndo TCPLossUndo TCPLostRetransmit TCPRenoFailures TCPSackFailures TCPLossFailures TCPFastRetrans TCPSlowStartRetrans TCPTimeouts TCPLossProbes TCPLossProbeRecovery TCPRenoRecoveryFail TCPSackRecoveryFail TCPRcvCollapsed TCPBacklogCoalesce TCPDSACKOldSent TCPDSACKOfoSent TCPDSACKRecv TCPDSACKOfoRecv TCPAbortOnData TCPAbortOnClose TCPAbortOnMemory TCPAbortOnTimeout TCPAbortOnLinger TCPAbortFailed TCPMemoryPressures TCPMemoryPressuresChrono TCPSACKDiscard TCPDSACKIgnoredOld TCPDSACKIgnoredNoUndo TCPSpuriousRTOs TCPMD5NotFound TCPMD5Unexpected TCPMD5Failure TCPSackShifted TCPSackMerged TCPSackShiftFallback TCPBacklogDrop PFMemallocDrop TCPMinTTLDrop TCPDeferAcceptDrop IPReversePathFilter TCPTimeWaitOverflow TCPReqQFullDoCookies TCPReqQFullDrop TCPRetransFail TCPRcvCoalesce TCPOFOQueue TCPOFODrop TCPOFOMerge TCPChallengeACK TCPSYNChallenge TCPFastOpenActive TCPFastOpenActiveFail TCPFastOpenPassive TCPFastOpenPassiveFail TCPFastOpenListenOverflow TCPFastOpenCookieReqd TCPFastOpenBlackhole TCPSpuriousRtxHostQueues BusyPollRxPackets TCPAutoCorking TCPFromZeroWindowAdv TCPToZeroWindowAdv TCPWantZeroWindowAdv TCPSynRetrans TCPOrigDataSent TCPHystartTrainDetect TCPHystartTrainCwnd TCPHystartDelayDetect TCPHystartDelayCwnd TCPACKSkippedSynRecv TCPACKSkippedPAWS TCPACKSkippedSeq TCPACKSkippedFinWait2 TCPACKSkippedTimeWait TCPACKSkippedChallenge TCPWinProbe TCPKeepAlive TCPMTUPFail TCPMTUPSuccess TCPDelivered TCPDeliveredCE TCPAckCompressed TCPZeroWindowDrop TCPRcvQDrop TCPWqueueTooBig TCPFastOpenPassiveAltKey TcpTimeoutRehash TcpDuplicateDataRehash TCPDSACKRecvSegs TCPDSACKIgnoredDubious TCPMigrateReqSuccess TCPMigrateReqFailure TCPPLBRehash TCPAORequired TCPAOBad TCPAOKeyNotFound TCPAOGood TCPAODroppedIcmps
+TcpExt: 0 0 0 0 9 0 0 0 0 0 155 0 0 0 0 0 0 0 0 1493 0 14 0 0 122812 827352 359633 0 14 0 0 0 0 0 0 0 0 0 0 0 0 3920 0 0 5 0 0 0 0 159167 14 1 5 0 27 0 0 0 0 0 0 0 0 0 5 0 0 0 0 38 194 856 0 0 0 0 0 0 0 0 0 33794 24 0 1 0 0 0 0 0 0 0 0 0 0 0 659116 732 732 103 0 40275657 38 160202 0 0 0 0 0 0 0 0 0 3 0 0 40275944 0 1 0 0 0 0 0 0 5 0 0 0 0 0 0 0 0 0
+IpExt: InNoRoutes InTruncatedPkts InMcastPkts OutMcastPkts InBcastPkts OutBcastPkts InOctets OutOctets InMcastOctets OutMcastOctets InBcastOctets OutBcastOctets InCsumErrors InNoECTPkts InECT1Pkts InECT0Pkts InCEPkts ReasmOverlaps
+IpExt: 0 0 0 0 0 0 1642271655 175106545459 0 0 0 0 0 3910240 0 0 0 0
+## ethtool -S ens5
+NIC statistics:
+     total_resets: 0
+     reset_fail: 0
+     tx_timeout: 0
+     wd_expired: 0
+     admin_q_pause: 0
+     bad_tx_req_id: 0
+     bad_rx_req_id: 0
+     bad_rx_desc_num: 0
+     missing_intr: 0
+     suspected_poll_starvation: 0
+     missing_tx_cmpl: 0
+     rx_desc_malformed: 0
+     tx_desc_malformed: 0
+     invalid_state: 0
+     os_netdev_wd: 0
+     missing_admin_interrupt: 0
+     admin_to: 0
+     device_request_reset: 0
+     missing_first_intr: 0
+     suspend: 0
+     resume: 0
+     interface_down: 0
+     interface_up: 1
+     bw_in_allowance_exceeded: 0
+     bw_out_allowance_exceeded: 11988
+     pps_allowance_exceeded: 0
+     conntrack_allowance_exceeded: 0
+     linklocal_allowance_exceeded: 0
+     conntrack_allowance_available: 136778
+     ena_admin_q_aborted_cmd: 0
+     ena_admin_q_submitted_cmd: 38
+     ena_admin_q_completed_cmd: 38
+     ena_admin_q_out_of_space: 0
+     ena_admin_q_no_completion: 0
+     num_of_active_io_queues: 2
+     queue_0_tx_tx_poll: 3423294
+     queue_0_tx_doorbells: 25040939
+     queue_0_tx_unmask_interrupt: 3423273
+     queue_0_tx_lost_interrupt: 0
+     queue_0_tx_cnt: 59406403
+     queue_0_tx_bytes: 84380632175
+     queue_0_tx_queue_stop: 0
+     queue_0_tx_queue_wakeup: 0
+     queue_0_tx_dma_mapping_err: 0
+     queue_0_tx_linearize: 0
+     queue_0_tx_linearize_failed: 0
+     queue_0_tx_napi_comp: 3423274
+     queue_0_tx_prepare_ctx_err: 0
+     queue_0_tx_bad_req_id: 0
+     queue_0_tx_llq_buffer_copy: 48646731
+     queue_0_tx_missed_tx: 0
+     queue_0_tx_pending_timedout_pkt: 0
+     queue_0_tx_xsk_cnt: 0
+     queue_0_tx_xsk_bytes: 0
+     queue_0_tx_xsk_need_wakeup_set: 0
+     queue_0_tx_xsk_wakeup_request: 0
+     queue_0_rx_cnt: 1549792
+     queue_0_rx_bytes: 245116221
+     queue_0_rx_rx_copybreak_pkt: 1514691
+     queue_0_rx_csum_good: 1547671
+     queue_0_rx_refil_partial: 0
+     queue_0_rx_csum_bad: 0
+     queue_0_rx_page_alloc_fail: 0
+     queue_0_rx_skb_alloc_fail: 0
+     queue_0_rx_dma_mapping_err: 0
+     queue_0_rx_bad_desc_num: 0
+     queue_0_rx_bp_invocations_cnt: 0
+     queue_0_rx_bad_req_id: 0
+     queue_0_rx_empty_rx_ring: 0
+     queue_0_rx_csum_unchecked: 1763
+     queue_0_rx_xdp_aborted: 0
+     queue_0_rx_xdp_drop: 0
+     queue_0_rx_xdp_pass: 0
+     queue_0_rx_xdp_tx: 0
+     queue_0_rx_xdp_invalid: 0
+     queue_0_rx_xdp_redirect: 0
+     queue_0_rx_pp_alloc_fast: 34905
+     queue_0_rx_pp_alloc_slow: 25
+     queue_0_rx_pp_alloc_slow_hi_ord: 0
+     queue_0_rx_pp_alloc_empty: 25
+     queue_0_rx_pp_alloc_refill: 403
+     queue_0_rx_pp_alloc_waive: 0
+     queue_0_rx_pp_cached: 8373
+     queue_0_rx_pp_cache_full: 1650
+     queue_0_rx_pp_ring: 25945
+     queue_0_rx_pp_ring_full: 0
+     queue_0_rx_pp_released_ref: 0
+     queue_0_rx_xsk_need_wakeup_set: 0
+     queue_0_rx_zc_queue_pkt_copy: 0
+     queue_1_tx_tx_poll: 3688893
+     queue_1_tx_doorbells: 22317139
+     queue_1_tx_unmask_interrupt: 3688719
+     queue_1_tx_lost_interrupt: 0
+     queue_1_tx_cnt: 66969487
+     queue_1_tx_bytes: 95625212518
+     queue_1_tx_queue_stop: 0
+     queue_1_tx_queue_wakeup: 0
+     queue_1_tx_dma_mapping_err: 0
+     queue_1_tx_linearize: 0
+     queue_1_tx_linearize_failed: 0
+     queue_1_tx_napi_comp: 3688719
+     queue_1_tx_prepare_ctx_err: 0
+     queue_1_tx_bad_req_id: 0
+     queue_1_tx_llq_buffer_copy: 56162384
+     queue_1_tx_missed_tx: 0
+     queue_1_tx_pending_timedout_pkt: 0
+     queue_1_tx_xsk_cnt: 0
+     queue_1_tx_xsk_bytes: 0
+     queue_1_tx_xsk_need_wakeup_set: 0
+     queue_1_tx_xsk_wakeup_request: 0
+     queue_1_rx_cnt: 2354939
+     queue_1_rx_bytes: 1482756962
+     queue_1_rx_rx_copybreak_pkt: 1505599
+     queue_1_rx_csum_good: 2354939
+     queue_1_rx_refil_partial: 0
+     queue_1_rx_csum_bad: 0
+     queue_1_rx_page_alloc_fail: 0
+     queue_1_rx_skb_alloc_fail: 0
+     queue_1_rx_dma_mapping_err: 0
+     queue_1_rx_bad_desc_num: 0
+     queue_1_rx_bp_invocations_cnt: 0
+     queue_1_rx_bad_req_id: 0
+     queue_1_rx_empty_rx_ring: 0
+     queue_1_rx_csum_unchecked: 0
+     queue_1_rx_xdp_aborted: 0
+     queue_1_rx_xdp_drop: 0
+     queue_1_rx_xdp_pass: 0
+     queue_1_rx_xdp_tx: 0
+     queue_1_rx_xdp_invalid: 0
+     queue_1_rx_xdp_redirect: 0
+     queue_1_rx_pp_alloc_fast: 451998
+     queue_1_rx_pp_alloc_slow: 23
+     queue_1_rx_pp_alloc_slow_hi_ord: 0
+     queue_1_rx_pp_alloc_empty: 23
+     queue_1_rx_pp_alloc_refill: 2595
+     queue_1_rx_pp_alloc_waive: 0
+     queue_1_rx_pp_cached: 287533
+     queue_1_rx_pp_cache_full: 9653
+     queue_1_rx_pp_ring: 166071
+     queue_1_rx_pp_ring_full: 0
+     queue_1_rx_pp_released_ref: 0
+     queue_1_rx_xsk_need_wakeup_set: 0
+     queue_1_rx_zc_queue_pkt_copy: 0
+## ip -s link show dev ens5
+2: ens5: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 9001 qdisc mq state UP mode DEFAULT group default qlen 1000
+    RX:    bytes   packets errors dropped  missed   mcast           
+      1727873183   3904731      0       0       0       0 
+    TX:    bytes   packets errors dropped carrier collsns           
+    180005849653 126375894      0       0       0       0 
+    altname enp0s5
+    altname device-number-0.0
+## /proc/net/softnet_stat
+00164631 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000
+00169624 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000000 00000001 00000000 00000000
+## /proc/interrupts, ens5
+           CPU0       CPU1       
+ 27:       1205       1135 PCI-MSIX-0000:00:05.0   0-edge      ena-mgmnt@pci:0000:00:05.0
+ 28:    3421740       1533 PCI-MSIX-0000:00:05.0   1-edge      ens5-Tx-Rx-0
+ 29:       4096    3684624 PCI-MSIX-0000:00:05.0   2-edge      ens5-Tx-Rx-1
+## /proc/softirqs
+                    CPU0       CPU1       
+      NET_TX:          0          1
+      NET_RX:    3426458    3687692

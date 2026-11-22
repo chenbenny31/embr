@@ -1,0 +1,2 @@
+[bench 03:05:28] ssh ok: ec2-user@SENDER
+[bench 03:05:28] FATAL: TCP 10007 on SENDER not reachable — sender not started, or port missing from its security group

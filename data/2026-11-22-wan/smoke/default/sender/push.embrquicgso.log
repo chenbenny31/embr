@@ -1,0 +1,4 @@
+[quic-egress] mode=zc gso=1 datagrams=827178 sends=55120 bytes=1112675590 notifs=55120 copied=0 fallback=0 errors=0 waits=1752 registered=1
+[quic-ingress] gro=1 datagrams=14903 reads=14033 bytes=1017041
+[quic-egress] mode=zc gso=1 datagrams=827397 sends=55323 bytes=1112686994 notifs=55323 copied=0 fallback=0 errors=0 waits=1833 registered=1
+[quic-ingress] gro=1 datagrams=14895 reads=13328 bytes=1127229

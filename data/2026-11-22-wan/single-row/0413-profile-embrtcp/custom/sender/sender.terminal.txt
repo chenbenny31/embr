@@ -1,0 +1,9 @@
+[bench 04:13:30] file 1.0G  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 04:13:30] serving: embrtcp — tcp:10007 nc:9999 quic udp: (pids 94051) zc_slots=default
+[bench 04:13:30] Ctrl-C when the receiver is done — the sender summary prints on exit
+[bench 04:14:18] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrtcp       | 3      | 0.00     | 0.23    
+
+[bench 04:14:18] raw per-push lines in /home/ec2-user/embr-wan/2026-11-22-0413/custom/push.<row>; embrquic sys vs embrquicsm sys = SEND_ZC saving per GiB

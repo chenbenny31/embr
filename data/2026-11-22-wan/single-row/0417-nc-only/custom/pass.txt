@@ -1,0 +1,7 @@
+pass: custom
+rows: nc
+receiver env: none
+sender env: none
+runs: 3  warmup: 1  file_size_gb: 1
+started: 2026-11-22T04:17:29Z
+finished: 2026-11-22T04:18:19Z  receiver exit status: 0

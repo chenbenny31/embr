@@ -12,11 +12,12 @@ holds what they were computed from.
 - Each results file starts with its date, kernel, commit and settings. Local paths are
   replaced by `$SCRATCH` (a build directory outside the repo) and `$REPO`.
 - A run made on a commit marked `-dirty` names in the table below what was uncommitted.
-- Notes that are not measurements go in a `.md` file at this level: `send-zc-boundary.md`, `receive-path.md`, `batch-size-and-slots.md`.
+- Notes that are not measurements go in a `.md` file at this level: `send-zc-boundary.md`, `receive-path.md`, `batch-size-and-slots.md`, `wan-2026-11-22.md`.
 
 ## Machine
 
-Fedora desktop, kernel 7.3.3-300.fc45, AMD Ryzen 9 9900X (12 cores, L1d 48 KiB and L2 1 MiB
+The AWS hosts of `2026-11-22-wan/` are described in its `env.sender.txt` and `env.receiver.txt`.
+Everything else: Fedora desktop, kernel 7.3.3-300.fc45, AMD Ryzen 9 9900X (12 cores, L1d 48 KiB and L2 1 MiB
 per core, L3 64 MiB), `ulimit -l` 8192 KiB, `rmem_max`/`wmem_max` 4 MiB. Release build,
 wolfSSL 5.9.2, ngtcp2 1.26.0.
 
@@ -24,6 +25,7 @@ wolfSSL 5.9.2, ngtcp2 1.26.0.
 
 | Directory | What | Backs | Command |
 |---|---|---|---|
+| `2026-11-22-wan/` | WAN run on AWS, us-east-1 → us-east-2, two c5n.large, kernel 6.18.62: four passes of `bench/wan.sh` (default with all seven rows, `gro-off`, `ack10`, `slots128`; 1 GiB, n = 10, both hosts' files, host records and NIC counters per pass), the smoke run, 16 single-row passes for the shaper counter, flat perf profiles of both hosts for six rows (`profiles/`), one and two plaintext streams (`path-ceiling-streams.txt`) and one and two embr transfers at once (`two-at-once.txt`). `1bfdaf8` plus the sender's wait for its ports in `bench/bench.sh`; network interface identifiers removed. `harness/`: the launch and teardown script, the follow-up passes, the two-at-once test and the table script | [`wan-2026-11-22.md`](wan-2026-11-22.md); bench.md §2 when it is updated | `SENDER_IP=<ip> SSH_KEY=<key> bash bench/wan.sh` on the receiver; `PASSES=custom CUSTOM='<row>\|\|' RUNS=3 WARMUP=1` for a single row |
 | `2026-11-18-gso-cap-and-slots/` | Packets per send (cap 16, 24, 32, 48) × read burst × `SEND_ZC` slots: loopback transfers (1 GiB, n = 5), veth runs, send-only cost with packets held 100 µs at 4–64 slots, and a probe of how `RLIMIT_MEMLOCK` is counted for io_uring buffers. The tree with the receive-path change, plus two experiment switches (`harness/experiment-switches.patch`) | `batch-size-and-slots.md` | `harness/tune.sh`, `harness/run.sh` |
 | `2026-11-18-receive-path-applied/` | The receive-path change as applied to the tree: every loopback row (1 GiB, n = 5), the two GSO rows with `EMBR_QUIC_GRO=0`, and 10% loss on loopback, 24 per mode. `bec6371` plus the wait counter and the receive-path change | a future bench.md section | `bash bench/bench.sh loopback`; `EMBR_QUIC_GRO=0 ROWS="embrquicgso embrquicsmgso" bash bench/bench.sh loopback` |
 | `2026-11-17-receive-path/` | Receive-path prototype: batched reads and UDP GRO against the current tree. Loopback variants `a`–`k` (1 GiB, n = 5), receiver perf profile before and after, veth runs where packets arrive one by one (unshaped, rate-limited, loss at 20 ms round trip), 10% loss on loopback, the patch measured (`harness/prototype-final.patch`) and the scripts. `bec6371` plus the wait counter, with the patch applied in a scratch tree | `receive-path.md` | `harness/all.sh`, `harness/vethall.sh`, `harness/lossv.sh` |
@@ -58,5 +60,6 @@ One send of 2 packets, dummy device (nothing copied), nanoseconds of CPU, median
 | Packets freed at once | 522 | 372 |
 | Packets held 100 µs, 8 slots | 986, and 12.9 µs of wall time per send | 555, wall 0.6 µs |
 
-Not measured yet: a real NIC with GSO on. September's WAN run (no GSO, 1200-byte packets)
-showed 0 datagrams copied and no sender CPU saving.
+On a real NIC with GSO on (2026-11-22, [`wan-2026-11-22.md`](wan-2026-11-22.md)): 0 datagrams copied, and the two
+break even at 15 packets per send, 2.27 s (`SEND_ZC`) against 2.33 s (`sendmsg`) of sender CPU per GiB.
+September's WAN run (no GSO, 1200-byte packets) showed 0 copied and no sender CPU saving.

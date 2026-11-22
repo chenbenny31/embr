@@ -1,0 +1,81 @@
+# N embr transfers of the same 1 GiB file at once, each its own push/pull pair on its own port; sender us-east-1 -> receiver us-east-2,
+# c5n.large (2 CPUs) both ends, commit 1bfdaf8, 2026-11-22T04:21:09Z. QUIC rows: sendmsg egress with GSO. Receiver page cache dropped before each line group.
+# pull/push lines: process CPU seconds from /usr/bin/time; total_gbps = N GiB over the wall time until the last pull ended.
+
+## quic 1
+pull port=10010 wall=5.01 user=3.55 sys=1.28 exit=0
+[quic-ingress] gro=1 datagrams=827168 reads=64592 bytes=1112673969
+quic connections=1 wall=5.021 total_gbps=1.710 sizes=1073741824 
+push port=10010 user=1.51 sys=0.78 exit=0
+[quic-egress] mode=sendmsg gso=1 datagrams=827170 sends=55092 bytes=1112674060
+
+## quic 2
+pull port=10010 wall=8.40 user=6.09 sys=2.12 exit=0
+pull port=10011 wall=8.35 user=6.23 sys=1.93 exit=0
+[quic-ingress] gro=1 datagrams=827714 reads=67267 bytes=1112695697
+[quic-ingress] gro=1 datagrams=827591 reads=68224 bytes=1112689942
+quic connections=2 wall=8.411 total_gbps=2.042 sizes=1073741824 1073741824 
+push port=10010 user=1.69 sys=1.14 exit=0
+push port=10011 user=1.69 sys=1.19 exit=0
+[quic-egress] mode=sendmsg gso=1 datagrams=827716 sends=55610 bytes=1112695788
+[quic-egress] mode=sendmsg gso=1 datagrams=827592 sends=55499 bytes=1112689987
+
+## quic 2
+pull port=10010 wall=8.50 user=5.91 sys=2.40 exit=0
+pull port=10011 wall=7.68 user=6.04 sys=1.46 exit=0
+[quic-ingress] gro=1 datagrams=827538 reads=68763 bytes=1112687708
+[quic-ingress] gro=1 datagrams=827683 reads=68269 bytes=1112696942
+quic connections=2 wall=8.505 total_gbps=2.019 sizes=1073741824 1073741824 
+push port=10010 user=1.75 sys=1.05 exit=0
+push port=10011 user=1.59 sys=1.26 exit=0
+[quic-egress] mode=sendmsg gso=1 datagrams=827541 sends=55432 bytes=1112687845
+[quic-egress] mode=sendmsg gso=1 datagrams=827685 sends=55574 bytes=1112697033
+
+## quic 2
+pull port=10010 wall=8.48 user=6.05 sys=2.23 exit=0
+pull port=10011 wall=8.48 user=6.29 sys=1.99 exit=0
+[quic-ingress] gro=1 datagrams=827657 reads=65886 bytes=1112693399
+[quic-ingress] gro=1 datagrams=827774 reads=67578 bytes=1112698920
+quic connections=2 wall=8.487 total_gbps=2.024 sizes=1073741824 1073741824 
+push port=10010 user=1.71 sys=1.15 exit=0
+push port=10011 user=1.87 sys=1.03 exit=0
+[quic-egress] mode=sendmsg gso=1 datagrams=827658 sends=55559 bytes=1112693445
+[quic-egress] mode=sendmsg gso=1 datagrams=827775 sends=55669 bytes=1112698965
+
+## quic 1
+pull port=10010 wall=5.01 user=3.83 sys=0.97 exit=0
+[quic-ingress] gro=1 datagrams=827136 reads=66391 bytes=1112673214
+quic connections=1 wall=5.015 total_gbps=1.712 sizes=1073741824 
+push port=10010 user=1.45 sys=0.87 exit=0
+[quic-egress] mode=sendmsg gso=1 datagrams=827139 sends=55049 bytes=1112673350
+
+## tcp 1
+pull port=10007 wall=4.19 user=2.62 sys=0.77 exit=0
+tcp connections=1 wall=4.196 total_gbps=2.046 sizes=1073741824 
+push port=10007 user=0.00 sys=0.25 exit=0
+
+## tcp 2
+pull port=10007 wall=6.11 user=4.42 sys=1.51 exit=0
+pull port=9999 wall=6.15 user=4.39 sys=1.57 exit=0
+tcp connections=2 wall=6.157 total_gbps=2.789 sizes=1073741824 1073741824 
+push port=10007 user=0.01 sys=0.13 exit=0
+push port=9999 user=0.00 sys=0.14 exit=0
+
+## tcp 2
+pull port=10007 wall=6.37 user=3.97 sys=2.05 exit=0
+pull port=9999 wall=5.36 user=4.38 sys=0.80 exit=0
+tcp connections=2 wall=6.377 total_gbps=2.693 sizes=1073741824 1073741824 
+push port=10007 user=0.00 sys=0.18 exit=0
+push port=9999 user=0.00 sys=0.14 exit=0
+
+## tcp 2
+pull port=10007 wall=6.10 user=4.29 sys=1.62 exit=0
+pull port=9999 wall=6.10 user=4.21 sys=1.70 exit=0
+tcp connections=2 wall=6.113 total_gbps=2.810 sizes=1073741824 1073741824 
+push port=10007 user=0.02 sys=0.11 exit=0
+push port=9999 user=0.03 sys=0.09 exit=0
+
+## tcp 1
+pull port=10007 wall=4.35 user=2.57 sys=0.79 exit=0
+tcp connections=1 wall=4.360 total_gbps=1.970 sizes=1073741824 
+push port=10007 user=0.00 sys=0.25 exit=0

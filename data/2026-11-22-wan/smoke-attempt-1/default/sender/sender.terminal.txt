@@ -1,0 +1,21 @@
+[bench 03:05:21] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:05:21] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:05:21] generating 1GB random file -> /tmp/bench_wan.bin
+333447168 bytes (333 MB, 318 MiB) copied, 1 s, 333 MB/s682622976 bytes (683 MB, 651 MiB) copied, 2 s, 341 MB/s1032847360 bytes (1.0 GB, 985 MiB) copied, 3 s, 344 MB/s
+1024+0 records in
+1024+0 records out
+1073741824 bytes (1.1 GB, 1.0 GiB) copied, 3.11964 s, 344 MB/s
+[bench 03:05:27] file 1.0G  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:05:27] serving: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp — tcp:10007 nc:9999 quic udp: 10008 10009 10010 10011 (pids 49020 49023 49030 49034 49042 49051) zc_slots=default
+[bench 03:05:27] Ctrl-C when the receiver is done — the sender summary prints on exit
+Terminated
+[bench 03:05:30] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | (no data)
+embrquicsm    | (no data)
+embrquicgso   | (no data)
+embrquicsmgso | (no data)
+embrtcp       | (no data)
+
+[bench 03:05:30] raw per-push lines in /home/ec2-user/embr-wan/2026-11-22-0305/default/push.<row>; embrquic sys vs embrquicsm sys = SEND_ZC saving per GiB

@@ -1,0 +1,66 @@
+# system-wide cpu-clock profile at 499 Hz, flat, over one wan.sh pass of 1 warmup + 3 runs of one row (embrquicsm)
+# 6.18.62-127.179.amzn2023.x86_64, 2 CPUs, 2026-11-22T04:13:08Z. The whole pass is sampled, so idle time, the gaps between
+# transfers and the script checks (sha256sum, openssl speed) are in it. Every percentage is of all samples:
+# divide by the sum of the embr lines to get shares of embr.
+
+## every sample, by command and object
+# Samples: 75K of event 'cpu-clock'
+# Event count (approx.): 150829658112
+    76.82%  swapper          [kernel.kallsyms]
+     6.74%  embr             libcrypto.so.3.5.8
+     6.46%  sha256sum        libcrypto.so.3.5.8
+     3.18%  embr             [kernel.kallsyms]
+     1.99%  openssl          libcrypto.so.3.5.8
+     1.54%  embr             libwolfssl.so.45.0.0
+     0.77%  embr             libngtcp2.so.16.12.0
+     0.48%  embr             libc.so.6
+     0.39%  sha256sum        [kernel.kallsyms]
+     0.19%  rm               [kernel.kallsyms]
+     0.15%  bash             [kernel.kallsyms]
+     0.14%  ssh              ssh
+     0.07%  embr             embr
+     0.06%  embr             [vdso]
+     0.06%  ssh              [kernel.kallsyms]
+     0.06%  sudo             libc.so.6
+     0.05%  sudo             [kernel.kallsyms]
+     0.04%  awk              [kernel.kallsyms]
+     0.04%  bash             bash
+     0.03%  ssh              libc.so.6
+     0.03%  sshd-session     libc.so.6
+     0.03%  awk              ld-linux-x86-64.so.2
+     0.03%  bash             libc.so.6
+
+## embr, by symbol
+     0.71%  libwolfssl.so.45.0.0               [.] L_AES_GCM_decrypt_update_avx2_ghash_128                                                            
+     0.45%  [kernel.kallsyms]                  [k] shmem_get_folio_gfp                                                                                
+     0.36%  [kernel.kallsyms]                  [k] eth_type_trans                                                                                     
+     0.12%  libngtcp2.so.16.12.0               [.] conn_recv_pkt                                                                                      
+     0.09%  libwolfssl.so.45.0.0               [.] L_AES_GCM_init_avx2_iv_12                                                                          
+     0.08%  libwolfssl.so.45.0.0               [.] L_AES_GCM_decrypt_update_avx2_aesenc_128_ghash_avx_done                                            
+     0.08%  libcrypto.so.3.5.8                 [.] 0x000000000042f25e                                                                                 
+     0.07%  libcrypto.so.3.5.8                 [.] 0x000000000042f29b                                                                                 
+     0.07%  [kernel.kallsyms]                  [k] ena_clean_rx_irq                                                                                   
+     0.06%  [kernel.kallsyms]                  [k] skb_gro_receive                                                                                    
+     0.06%  libwolfssl.so.45.0.0               [.] AES_GCM_ghash_block_avx2                                                                           
+     0.06%  libngtcp2.so.16.12.0               [.] ngtcp2_ksl_range_exclusive_search                                                                  
+     0.06%  libcrypto.so.3.5.8                 [.] 0x000000000042f0b4                                                                                 
+     0.06%  libcrypto.so.3.5.8                 [.] 0x000000000042f0c4                                                                                 
+     0.05%  libwolfssl.so.45.0.0               [.] AES_GCM_decrypt_update_avx2                                                                        
+     0.05%  libwolfssl.so.45.0.0               [.] wolfSSL_EVP_CipherUpdate                                                                           
+     0.05%  [kernel.kallsyms]                  [k] _copy_to_iter                                                                                      
+     0.05%  libcrypto.so.3.5.8                 [.] 0x000000000042dfe3                                                                                 
+     0.05%  libcrypto.so.3.5.8                 [.] 0x000000000042f018                                                                                 
+     0.05%  libwolfssl.so.45.0.0               [.] wc_AesGcmDecryptUpdate                                                                             
+     0.05%  libcrypto.so.3.5.8                 [.] 0x000000000042f052                                                                                 
+     0.05%  libwolfssl.so.45.0.0               [.] wolfSSL_EVP_CipherInit                                                                             
+     0.04%  [kernel.kallsyms]                  [k] irqentry_exit_to_user_mode                                                                         
+     0.04%  libcrypto.so.3.5.8                 [.] 0x000000000042f071                                                                                 
+     0.04%  libwolfssl.so.45.0.0               [.] wc_AesGcmInit                                                                                      
+
+## interrupt-side work outside embr: swapper and ksoftirqd, idle loop left out
+     0.25%  swapper      [k] eth_type_trans
+     0.21%  swapper      [k] handle_softirqs
+     0.05%  swapper      [k] ena_com_cdesc_rx_pkt_get.constprop.0
+     0.05%  swapper      [k] ena_clean_rx_irq
+     0.05%  swapper      [k] inet_gro_receive
+     0.05%  swapper      [k] skb_gro_receive

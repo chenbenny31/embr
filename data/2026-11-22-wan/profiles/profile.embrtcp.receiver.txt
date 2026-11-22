@@ -1,0 +1,49 @@
+# system-wide cpu-clock profile at 499 Hz, flat, over one wan.sh pass of 1 warmup + 3 runs of one row (embrtcp)
+# 6.18.62-127.179.amzn2023.x86_64, 2 CPUs, 2026-11-22T04:14:33Z. The whole pass is sampled, so idle time, the gaps between
+# transfers and the script checks (sha256sum, openssl speed) are in it. Every percentage is of all samples:
+# divide by the sum of the embr lines to get shares of embr.
+
+## every sample, by command and object
+# Samples: 71K of event 'cpu-clock'
+# Event count (approx.): 142390780424
+    79.52%  swapper          [kernel.kallsyms]
+     7.37%  embr             libcrypto.so.3.5.8
+     6.87%  sha256sum        libcrypto.so.3.5.8
+     2.10%  openssl          libcrypto.so.3.5.8
+     2.07%  embr             [kernel.kallsyms]
+     0.37%  sha256sum        [kernel.kallsyms]
+     0.21%  rm               [kernel.kallsyms]
+     0.19%  bash             [kernel.kallsyms]
+     0.10%  ssh              ssh
+     0.08%  ssh              [kernel.kallsyms]
+     0.06%  sudo             libc.so.6
+     0.05%  sudo             [kernel.kallsyms]
+     0.05%  awk              [kernel.kallsyms]
+     0.04%  sha256sum        libc.so.6
+     0.04%  setup-policy-ro  [kernel.kallsyms]
+     0.03%  bash             bash
+     0.03%  sshd-session     [kernel.kallsyms]
+     0.03%  ssh              libcrypto.so.3.5.8
+
+## embr, by symbol
+     0.32%  [kernel.kallsyms]    [k] tcp_gro_receive                               -      -
+     0.26%  [kernel.kallsyms]    [k] rep_movs_alternative                          -      -
+     0.07%  [kernel.kallsyms]    [k] ena_clean_rx_irq                              -      -
+     0.06%  libcrypto.so.3.5.8   [.] 0x000000000042f179                            -      -
+     0.06%  libcrypto.so.3.5.8   [.] 0x000000000042f25e                            -      -
+     0.06%  libcrypto.so.3.5.8   [.] 0x000000000042f19c                            -      -
+     0.05%  libcrypto.so.3.5.8   [.] 0x000000000042f05f                            -      -
+     0.05%  [kernel.kallsyms]    [k] xas_load                                      -      -
+     0.04%  [kernel.kallsyms]    [k] __splice_segment.part.0                       -      -
+     0.04%  [kernel.kallsyms]    [k] generic_pipe_buf_release                      -      -
+     0.04%  libcrypto.so.3.5.8   [.] 0x000000000042f226                            -      -
+
+## interrupt-side work outside embr: swapper and ksoftirqd, idle loop left out
+     0.27%  swapper      [k] tcp_gro_receive
+     0.13%  swapper      [k] handle_softirqs
+     0.13%  swapper      [k] eth_type_trans
+     0.07%  swapper      [k] ena_rx_skb
+     0.06%  swapper      [k] ena_clean_rx_irq
+     0.05%  swapper      [k] napi_build_skb
+     0.05%  swapper      [k] ena_com_cdesc_rx_pkt_get.constprop.0
+     0.04%  swapper      [k] inet_gro_receive

@@ -1,0 +1,2 @@
+[wan 03:52:59] pass slots128, receiver: udp InDatagrams+2074967 InErrors+0 OutDatagrams+514482 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:52:59] pass slots128, sender: udp InDatagrams+458230 InErrors+0 OutDatagrams+11255358 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+62718 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0

@@ -1,0 +1,4 @@
+run: 2026-11-22-0310
+passes: default gro-off ack10 slots128
+runs: 10  warmup: 2  file_size_gb: 1
+commit: 1bfdaf8-dirty

@@ -1,0 +1,2 @@
+[wan 03:10:15] pass default, receiver: udp InDatagrams+440006 InErrors+0 OutDatagrams+111908 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:10:15] pass default, sender: udp InDatagrams+101236 InErrors+0 OutDatagrams+3529162 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+841 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0

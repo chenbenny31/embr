@@ -1,0 +1,7 @@
+pass: default
+rows: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp
+receiver env: none
+sender env: none
+runs: 1  warmup: 1  file_size_gb: 1
+started: 2026-11-22T03:05:20Z
+finished: 2026-11-22T03:05:30Z  receiver exit status: 1

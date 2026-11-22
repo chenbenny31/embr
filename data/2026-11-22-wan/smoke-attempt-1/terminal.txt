@@ -1,0 +1,28 @@
+[wan 03:05:10] run 2026-11-22-0305: passes [default]  runs=1 warmup=1 file=1GiB  sender ec2-user@<sender>:~/embr
+ninja: no work to do.
+ninja: no work to do.
+[wan 03:05:12] commit 1bfdaf8 on both hosts, built
+[wan 03:05:20] receiver: Linux 6.18.62-127.179.amzn2023.x86_64 x86_64;c5n.large us-east-2a;Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz, 2 cpus, 2 threads per core;
+[wan 03:05:20] sender:   Linux 6.18.62-127.179.amzn2023.x86_64 x86_64;c5n.large us-east-1a;Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz, 2 cpus, 2 threads per core;
+[wan 03:05:20] round trip: 15.7 15.9 16.2 13.3 15.4 ms (tcp connect)
+[wan 03:05:20] === pass default: rows [embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp]  receiver env [none]  sender env [none] ===
+[bench 03:05:28] ssh ok: ec2-user@SENDER
+[bench 03:05:28] FATAL: TCP 10007 on SENDER not reachable — sender not started, or port missing from its security group
+[wan 03:05:30] pass default, receiver: udp InDatagrams+0 InErrors+0 OutDatagrams+0 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:05:30] pass default, sender: udp InDatagrams+0 InErrors+0 OutDatagrams+0 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:05:30] pass default FAILED (receiver exit status 1) — the next pass still runs
+[wan 03:05:30] === recap: each pass's summary as bench.sh printed it ===
+
+######## pass default — receiver env: none sender env: none 
+[bench 03:05:30] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | (no data)
+embrquicsm    | (no data)
+embrquicgso   | (no data)
+embrquicsmgso | (no data)
+embrtcp       | (no data)
+
+[wan 03:05:30] pass default, receiver: udp InDatagrams+0 InErrors+0 OutDatagrams+0 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:05:30] pass default, sender: udp InDatagrams+0 InErrors+0 OutDatagrams+0 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:05:30] passes run: default — FAILED: default

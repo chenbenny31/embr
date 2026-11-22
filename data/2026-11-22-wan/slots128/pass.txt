@@ -1,0 +1,7 @@
+pass: slots128
+rows: embrquic embrquicgso embrquicsmgso embrtcp
+receiver env: none
+sender env: EMBR_QUIC_ZC_SLOTS=128
+runs: 10  warmup: 2  file_size_gb: 1
+started: 2026-11-22T03:45:00Z
+finished: 2026-11-22T03:52:59Z  receiver exit status: 0

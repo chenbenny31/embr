@@ -1,0 +1,87 @@
+[wan 03:56:55] run 2026-11-22-0356: passes [custom]  runs=3 warmup=1 file=1GiB  sender ec2-user@<sender>:~/embr
+ninja: no work to do.
+ninja: no work to do.
+[wan 03:56:57] WARNING: uncommitted changes (here: dirty, sender: dirty) — the results header will say -dirty
+[wan 03:56:57] commit 1bfdaf8 on both hosts, built
+[wan 03:57:06] receiver: Linux 6.18.62-127.179.amzn2023.x86_64 x86_64;c5n.large us-east-2a;Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz, 2 cpus, 2 threads per core;
+[wan 03:57:06] sender:   Linux 6.18.62-127.179.amzn2023.x86_64 x86_64;c5n.large us-east-1a;Intel(R) Xeon(R) Platinum 8124M CPU @ 3.00GHz, 2 cpus, 2 threads per core;
+[wan 03:57:06] round trip: 17.2 17.1 16.2 16.4 15.5 ms (tcp connect)
+[wan 03:57:06] === pass custom: rows [embrquicsmgso]  receiver env [none]  sender env [none] ===
+[bench 03:57:10] ssh ok: ec2-user@SENDER
+[bench 03:57:10] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:57:11] remote sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:57:11] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:57:12] remote sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:57:12] RECEIVER — ec2-user@SENDER — fetching source size+hash...
+[bench 03:57:15] expected 1073741824 bytes  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:57:15] === warmup1 (1/4) ===
+warmup1_embrquicsmgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.82s sys=1.03s rss=12212KB host_cpu=5.28s host_irq=0.63s sender_cpu=2.84s sender_irq=0.28s udp_drops=0
+[bench 03:57:27] === run2 (2/4) ===
+run2_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.66s sys=1.16s rss=12100KB host_cpu=5.40s host_irq=0.64s sender_cpu=2.70s sender_irq=0.25s udp_drops=0
+[bench 03:57:38] === run3 (3/4) ===
+run3_embrquicsmgso wall=0:05.08 sec=5.08 gbps=1.69 user=3.77s sys=1.14s rss=12008KB host_cpu=5.28s host_irq=0.54s sender_cpu=2.46s sender_irq=0.17s udp_drops=0
+[bench 03:57:50] === run4 (4/4) ===
+run4_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.58s sys=1.28s rss=12200KB host_cpu=5.31s host_irq=0.59s sender_cpu=2.41s sender_irq=0.16s udp_drops=0
+[bench 03:58:01] === raw results ===
+# bench wan-receiver Sun Nov 22 03:57:15 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: embrquicsmgso   ack_thresh=2   gro=1
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquicsmgso wall=0:05.02 sec=5.02 gbps=1.71 user=3.82s sys=1.03s rss=12212KB host_cpu=5.28s host_irq=0.63s sender_cpu=2.84s sender_irq=0.28s udp_drops=0
+
+run2_embrquicsmgso wall=0:05.01 sec=5.01 gbps=1.71 user=3.66s sys=1.16s rss=12100KB host_cpu=5.40s host_irq=0.64s sender_cpu=2.70s sender_irq=0.25s udp_drops=0
+
+run3_embrquicsmgso wall=0:05.08 sec=5.08 gbps=1.69 user=3.77s sys=1.14s rss=12008KB host_cpu=5.28s host_irq=0.54s sender_cpu=2.46s sender_irq=0.17s udp_drops=0
+
+run4_embrquicsmgso wall=0:05.06 sec=5.06 gbps=1.70 user=3.58s sys=1.28s rss=12200KB host_cpu=5.31s host_irq=0.59s sender_cpu=2.41s sender_irq=0.16s udp_drops=0
+
+[bench 03:58:01] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquicsmgso | 1.70    [1.69 1.71] | 5.06    [5.01 5.08] | 3.66     | 1.16    
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquicsmgso | 5.31       | 0.59       | 2.46       | 0.17      
+
+UDP receive-buffer drops on this host per transfer (median): embrquicsmgso=0
+
+embrquicsmgso ingress over 4 connections: gro=1 datagrams=3308361 reads=262007 bytes=4450683847 (12.6 datagrams per read)
+[bench 03:58:01] raw results in /home/ec2-user/embr-wan/2026-11-22-0356/custom/results.txt
+[bench 03:58:01] read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C.
+[bench 03:58:01]       host_* is this host, sender_* the sender, whole machine: compare rows on these, since
+[bench 03:58:01]       softirq packet work is in no process's user/sys
+[bench 03:58:01]       embrquic vs embrquicsm = SEND_ZC vs sendmsg; embrquic vs scp = encrypted vs encrypted;
+[bench 03:58:01]       embrtcp vs nc = plaintext vs plaintext
+[wan 03:58:03] pass custom, receiver: udp InDatagrams+262010 InErrors+0 OutDatagrams+59594 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:58:03] pass custom, sender: udp InDatagrams+51450 InErrors+0 OutDatagrams+220033 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:58:03] === recap: each pass's summary as bench.sh printed it ===
+
+######## pass custom — receiver env: none sender env: none 
+[bench 03:58:01] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquicsmgso | 1.70    [1.69 1.71] | 5.06    [5.01 5.08] | 3.66     | 1.16    
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquicsmgso | 5.31       | 0.59       | 2.46       | 0.17      
+
+UDP receive-buffer drops on this host per transfer (median): embrquicsmgso=0
+
+embrquicsmgso ingress over 4 connections: gro=1 datagrams=3308361 reads=262007 bytes=4450683847 (12.6 datagrams per read)
+[bench 03:58:02] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquicsmgso | 3      | 1.52     | 0.84    
+
+embrquicsmgso egress over 4 connections: datagrams=3308369 sends=220025 bytes=4450684209 (15.0 datagrams per send, 1345 bytes per datagram)
+[wan 03:58:03] pass custom, receiver: udp InDatagrams+262010 InErrors+0 OutDatagrams+59594 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:58:03] pass custom, sender: udp InDatagrams+51450 InErrors+0 OutDatagrams+220033 RcvbufErrors+0 SndbufErrors+0  nic bw_in_allowance_exceeded+0 bw_out_allowance_exceeded+0 pps_allowance_exceeded+0 conntrack_allowance_exceeded+0 linklocal_allowance_exceeded+0
+[wan 03:58:03] passes run: custom

@@ -1,0 +1,7 @@
+pass: custom
+rows: embrtcp
+receiver env: none
+sender env: none
+runs: 3  warmup: 1  file_size_gb: 1
+started: 2026-11-22T04:13:27Z
+finished: 2026-11-22T04:14:19Z  receiver exit status: 0

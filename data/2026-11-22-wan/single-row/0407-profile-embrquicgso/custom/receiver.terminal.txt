@@ -1,0 +1,51 @@
+[bench 04:07:29] ssh ok: ec2-user@SENDER
+[bench 04:07:29] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 04:07:30] remote sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 04:07:30] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 04:07:31] remote sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 04:07:31] RECEIVER — ec2-user@SENDER — fetching source size+hash...
+[bench 04:07:34] expected 1073741824 bytes  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 04:07:34] === warmup1 (1/4) ===
+warmup1_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.66s sys=1.19s rss=12200KB host_cpu=5.35s host_irq=0.63s sender_cpu=2.44s sender_irq=0.32s udp_drops=0
+[bench 04:07:46] === run2 (2/4) ===
+run2_embrquicgso wall=0:05.13 sec=5.13 gbps=1.67 user=3.72s sys=1.23s rss=12316KB host_cpu=5.16s host_irq=0.41s sender_cpu=2.36s sender_irq=0.22s udp_drops=0
+[bench 04:07:57] === run3 (3/4) ===
+run3_embrquicgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.67s sys=1.20s rss=12176KB host_cpu=5.38s host_irq=0.59s sender_cpu=2.47s sender_irq=0.29s udp_drops=0
+[bench 04:08:09] === run4 (4/4) ===
+run4_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.62s sys=1.23s rss=12188KB host_cpu=5.43s host_irq=0.65s sender_cpu=2.37s sender_irq=0.11s udp_drops=0
+[bench 04:08:20] === raw results ===
+# bench wan-receiver Sun Nov 22 04:07:34 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: embrquicgso   ack_thresh=2   gro=1
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.66s sys=1.19s rss=12200KB host_cpu=5.35s host_irq=0.63s sender_cpu=2.44s sender_irq=0.32s udp_drops=0
+
+run2_embrquicgso wall=0:05.13 sec=5.13 gbps=1.67 user=3.72s sys=1.23s rss=12316KB host_cpu=5.16s host_irq=0.41s sender_cpu=2.36s sender_irq=0.22s udp_drops=0
+
+run3_embrquicgso wall=0:05.07 sec=5.07 gbps=1.69 user=3.67s sys=1.20s rss=12176KB host_cpu=5.38s host_irq=0.59s sender_cpu=2.47s sender_irq=0.29s udp_drops=0
+
+run4_embrquicgso wall=0:05.04 sec=5.04 gbps=1.70 user=3.62s sys=1.23s rss=12188KB host_cpu=5.43s host_irq=0.65s sender_cpu=2.37s sender_irq=0.11s udp_drops=0
+
+[bench 04:08:20] === summary (warmup excluded) — median [min max] ===
+
+row           | throughput Gbps    | wall sec           | user s   | sys s   
+--------------+--------------------+--------------------+----------+---------
+embrquicgso   | 1.69    [1.67 1.70] | 5.07    [5.04 5.13] | 3.67     | 1.23    
+
+whole-host CPU seconds per transfer (softirq packet work included; irq = irq+softirq part)
+row           | host_cpu   | host_irq   | sender_cpu | sender_irq
+embrquicgso   | 5.38       | 0.59       | 2.37       | 0.22      
+
+UDP receive-buffer drops on this host per transfer (median): embrquicgso=0
+
+embrquicgso ingress over 4 connections: gro=1 datagrams=3308764 reads=267726 bytes=4450703934 (12.4 datagrams per read)
+[bench 04:08:20] raw results in /home/ec2-user/embr-wan/2026-11-22-0407/custom/results.txt
+[bench 04:08:20] read: user/sys here are the receiver's; the sender's CPU per push prints on the sender at Ctrl-C.
+[bench 04:08:20]       host_* is this host, sender_* the sender, whole machine: compare rows on these, since
+[bench 04:08:20]       softirq packet work is in no process's user/sys
+[bench 04:08:20]       embrquic vs embrquicsm = SEND_ZC vs sendmsg; embrquic vs scp = encrypted vs encrypted;
+[bench 04:08:20]       embrtcp vs nc = plaintext vs plaintext

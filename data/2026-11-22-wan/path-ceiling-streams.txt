@@ -1,0 +1,12 @@
+# path ceiling: N plaintext nc transfers of the same 1 GiB file at once, sender us-east-1 -> receiver us-east-2, c5n.large, 2026-11-22T03:54:24Z
+# sender: ncat -l <port> --send-only < file   receiver: ncat --recv-only SENDER <port> | wc -c   (page cache dropped on the receiver first)
+stream port=9999 bytes=1073741824 seconds=4.0232
+streams=1 wall=4.0361 total_gbps=2.128
+stream port=10007 bytes=1073741824 seconds=4.1566
+stream port=9999 bytes=1073741824 seconds=4.3578
+streams=2 wall=4.3637 total_gbps=3.936
+stream port=9999 bytes=1073741824 seconds=3.9570
+streams=1 wall=3.9700 total_gbps=2.163
+stream port=9999 bytes=1073741824 seconds=3.9872
+stream port=10007 bytes=1073741824 seconds=4.0025
+streams=2 wall=4.0085 total_gbps=4.285

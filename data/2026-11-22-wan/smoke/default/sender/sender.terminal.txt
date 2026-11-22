@@ -1,0 +1,19 @@
+[bench 03:07:36] local sockbuf ok: rmem_max=16777216 wmem_max=16777216
+[bench 03:07:36] local sendzc ok: kernel=6.18.62-127.179.amzn2023.x86_64 memlock=unlimitedKiB
+[bench 03:07:39] file 1.0G  sha256=40cd444f0fb0113fcc6f1c64faa188607ba84437039ad09d51c9468275cdb73c
+[bench 03:07:50] serving: embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp — tcp:10007 nc:9999 quic udp: 10008 10009 10010 10011 (pids 49891 49895 49901 49907 49913 49927) zc_slots=default
+[bench 03:07:50] Ctrl-C when the receiver is done — the sender summary prints on exit
+[bench 03:10:14] === sender summary (median over completed pushes, warmups excluded) ===
+
+row           | n      | user s   | sys s   
+embrquic      | 1      | 1.61     | 1.78    
+embrquicsm    | 1      | 1.71     | 1.51    
+embrquicgso   | 1      | 1.42     | 0.83    
+embrquicsmgso | 1      | 1.39     | 0.93    
+embrtcp       | 1      | 0.03     | 0.22    
+
+embrquic egress over 2 connections: datagrams=1654153 sends=1654153 bytes=2225340348 notifs=1654153 copied=0 fallback=0 errors=0 waits=1627 (1.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicsm egress over 2 connections: datagrams=1654164 sends=1654164 bytes=2225339082 (1.0 datagrams per send, 1345 bytes per datagram)
+embrquicgso egress over 2 connections: datagrams=1654575 sends=110443 bytes=2225362584 notifs=110443 copied=0 fallback=0 errors=0 waits=3585 (15.0 datagrams per send, copied 0.0%, 1345 bytes per datagram)
+embrquicsmgso egress over 2 connections: datagrams=1654581 sends=110377 bytes=2225362765 (15.0 datagrams per send, 1345 bytes per datagram)
+[bench 03:10:14] raw per-push lines in /home/ec2-user/embr-wan/2026-11-22-0307/default/push.<row>; embrquic sys vs embrquicsm sys = SEND_ZC saving per GiB

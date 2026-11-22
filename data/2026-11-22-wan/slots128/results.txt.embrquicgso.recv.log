@@ -1,0 +1,12 @@
+[quic-ingress] gro=1 datagrams=827616 reads=72073 bytes=1112692470
+[quic-ingress] gro=1 datagrams=827786 reads=69741 bytes=1112700430
+[quic-ingress] gro=1 datagrams=827679 reads=69693 bytes=1112696272
+[quic-ingress] gro=1 datagrams=828164 reads=69493 bytes=1112716506
+[quic-ingress] gro=1 datagrams=827787 reads=69303 bytes=1112699938
+[quic-ingress] gro=1 datagrams=827706 reads=69423 bytes=1112696154
+[quic-ingress] gro=1 datagrams=827477 reads=68958 bytes=1112685109
+[quic-ingress] gro=1 datagrams=827653 reads=69049 bytes=1112694060
+[quic-ingress] gro=1 datagrams=827714 reads=70884 bytes=1112696345
+[quic-ingress] gro=1 datagrams=827585 reads=68825 bytes=1112689254
+[quic-ingress] gro=1 datagrams=827544 reads=68853 bytes=1112687938
+[quic-ingress] gro=1 datagrams=827614 reads=68737 bytes=1112691015

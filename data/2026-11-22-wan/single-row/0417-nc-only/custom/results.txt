@@ -1,0 +1,16 @@
+# bench wan-receiver Sun Nov 22 04:17:37 UTC 2026
+# commit=1bfdaf8-dirty build=./build cache=drop bytes=1073741824
+# rows: nc   ack_thresh=2   gro=1
+# sender=SENDER kernel local=6.18.62-127.179.amzn2023.x86_64 remote=6.18.62-127.179.amzn2023.x86_64
+# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress.
+# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off.
+# nc: plaintext floor.  scp: encrypted reference.
+
+warmup1_nc wall=0:03.55 sec=3.55 gbps=2.42 user=0.21s sys=1.15s rss=9776KB host_cpu=1.71s host_irq=0.67s sender_cpu=1.69s sender_irq=0.51s udp_drops=0
+
+run2_nc wall=0:03.59 sec=3.59 gbps=2.39 user=0.18s sys=1.10s rss=9676KB host_cpu=1.80s host_irq=0.54s sender_cpu=1.32s sender_irq=0.28s udp_drops=0
+
+run3_nc wall=0:04.08 sec=4.08 gbps=2.11 user=0.26s sys=1.10s rss=9808KB host_cpu=1.99s host_irq=0.58s sender_cpu=1.75s sender_irq=0.43s udp_drops=0
+
+run4_nc wall=0:03.99 sec=3.99 gbps=2.15 user=0.22s sys=1.10s rss=9804KB host_cpu=1.90s host_irq=0.64s sender_cpu=1.55s sender_irq=0.48s udp_drops=0
+

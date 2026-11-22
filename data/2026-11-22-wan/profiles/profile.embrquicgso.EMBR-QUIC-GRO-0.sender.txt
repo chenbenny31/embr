@@ -1,0 +1,63 @@
+# system-wide cpu-clock profile at 499 Hz, flat, over one wan.sh pass of 1 warmup + 3 runs of one row (embrquicgso.EMBR-QUIC-GRO-0)
+# 6.18.62-127.179.amzn2023.x86_64, 2 CPUs, 2026-11-22T04:16:00Z. The whole pass is sampled, so idle time, the gaps between
+# transfers and the script checks (sha256sum, openssl speed) are in it. Every percentage is of all samples:
+# divide by the sum of the embr lines to get shares of embr.
+
+## every sample, by command and object
+# Samples: 78K of event 'cpu-clock'
+# Event count (approx.): 156737473696
+    85.89%  swapper          [kernel.kallsyms]
+     3.18%  sha256sum        libcrypto.so.3.5.8
+     2.41%  embr             [kernel.kallsyms]
+     1.91%  openssl          libcrypto.so.3.5.8
+     1.44%  embr             libwolfssl.so.45.0.0
+     1.16%  embr             libngtcp2.so.16.12.0
+     0.78%  embr             libc.so.6
+     0.45%  sshd-session     libc.so.6
+     0.45%  sshd-session     [kernel.kallsyms]
+     0.20%  bash             [kernel.kallsyms]
+     0.18%  sha256sum        [kernel.kallsyms]
+     0.12%  sshd-session     sshd-session
+     0.12%  tee              [kernel.kallsyms]
+     0.07%  embr             embr
+     0.06%  sudo             libc.so.6
+     0.06%  sshd-session     ld-linux-x86-64.so.2
+     0.05%  systemd          [kernel.kallsyms]
+     0.05%  embr             [vdso]
+     0.05%  bash             bash
+     0.05%  systemd          libsystemd-shared-252.23-15.amzn2023.so
+     0.05%  grepconf.sh      [kernel.kallsyms]
+     0.05%  embr             libngtcp2_crypto_wolfssl.so.5.4.2
+     0.05%  sshd-session     libcrypto.so.3.5.8
+     0.04%  systemd          libc.so.6
+     0.04%  bash             libc.so.6
+     0.04%  systemd-journal  libsystemd-shared-252.23-15.amzn2023.so
+     0.04%  grep             [kernel.kallsyms]
+     0.04%  grep             ld-linux-x86-64.so.2
+     0.04%  sudo             [kernel.kallsyms]
+     0.03%  setup-policy-ro  [kernel.kallsyms]
+
+## embr, by symbol
+     0.74%  libwolfssl.so.45.0.0               [.] AES_GCM_encrypt_update_avx2                           -      -
+     0.19%  [kernel.kallsyms]                  [k] ena_start_xmit                                        -      -
+     0.19%  libngtcp2.so.16.12.0               [.] conn_write_pkt                                        -      -
+     0.17%  [kernel.kallsyms]                  [k] irqentry_exit_to_user_mode                            -      -
+     0.15%  libngtcp2.so.16.12.0               [.] ngtcp2_rtb_recv_ack                                   -      -
+     0.13%  libngtcp2.so.16.12.0               [.] ngtcp2_opl_pop                                        -      -
+     0.09%  libwolfssl.so.45.0.0               [.] L_AES_GCM_init_avx2_iv_12                             -      -
+     0.07%  libwolfssl.so.45.0.0               [.] wc_AesGcmEncryptUpdate                                -      -
+     0.07%  libngtcp2.so.16.12.0               [.] ngtcp2_conn_write_vmsg                                -      -
+     0.06%  libwolfssl.so.45.0.0               [.] AES_GCM_ghash_block_avx2                              -      -
+     0.06%  [kernel.kallsyms]                  [k] skb_zerocopy_clone                                    -      -
+     0.06%  libwolfssl.so.45.0.0               [.] wolfSSL_EVP_CipherInit                                -      -
+     0.05%  [kernel.kallsyms]                  [k] kmem_cache_alloc_node_noprof                          -      -
+     0.05%  [kernel.kallsyms]                  [k] skb_segment                                           -      -
+     0.05%  libwolfssl.so.45.0.0               [.] L_AES_GCM_encrypt_update_avx2_end_128                 -      -
+     0.04%  [kernel.kallsyms]                  [k] ena_com_prepare_tx                                    -      -
+
+## interrupt-side work outside embr: swapper and ksoftirqd, idle loop left out
+     0.17%  swapper      [k] handle_softirqs
+     0.08%  swapper      [k] x2apic_send_IPI
+     0.08%  swapper      [k] finish_task_switch.isra.0
+     0.05%  swapper      [k] ena_clean_tx_irq
+     0.04%  swapper      [k] _raw_spin_unlock_irqrestore

@@ -1,0 +1,67 @@
+# system-wide cpu-clock profile at 499 Hz, flat, over one wan.sh pass of 1 warmup + 3 runs of one row (embrquicgso)
+# 6.18.62-127.179.amzn2023.x86_64, 2 CPUs, 2026-11-22T04:08:31Z. The whole pass is sampled, so idle time, the gaps between
+# transfers and the script checks (sha256sum, openssl speed) are in it. Every percentage is of all samples:
+# divide by the sum of the embr lines to get shares of embr.
+
+## every sample, by command and object
+# Samples: 75K of event 'cpu-clock'
+# Event count (approx.): 151230459712
+    85.42%  swapper          [kernel.kallsyms]
+     3.29%  sha256sum        libcrypto.so.3.5.8
+     2.45%  embr             [kernel.kallsyms]
+     1.98%  openssl          libcrypto.so.3.5.8
+     1.51%  embr             libwolfssl.so.45.0.0
+     1.11%  embr             libngtcp2.so.16.12.0
+     0.78%  embr             libc.so.6
+     0.49%  sshd-session     [kernel.kallsyms]
+     0.45%  sshd-session     libc.so.6
+     0.22%  bash             [kernel.kallsyms]
+     0.20%  sha256sum        [kernel.kallsyms]
+     0.13%  sshd-session     sshd-session
+     0.13%  tee              [kernel.kallsyms]
+     0.08%  embr             embr
+     0.08%  sshd-session     ld-linux-x86-64.so.2
+     0.07%  bash             libc.so.6
+     0.06%  embr             [vdso]
+     0.06%  grep             [kernel.kallsyms]
+     0.06%  sudo             libc.so.6
+     0.06%  systemd          libsystemd-shared-252.23-15.amzn2023.so
+     0.05%  systemd          [kernel.kallsyms]
+     0.05%  sudo             [kernel.kallsyms]
+     0.04%  bash             bash
+     0.04%  embr             libngtcp2_crypto_wolfssl.so.5.4.2
+     0.04%  sshd-session     libcrypto.so.3.5.8
+     0.04%  systemd          libc.so.6
+     0.04%  systemd-journal  [kernel.kallsyms]
+     0.03%  dbus-broker      [kernel.kallsyms]
+     0.03%  grep             ld-linux-x86-64.so.2
+     0.03%  grepconf.sh      [kernel.kallsyms]
+     0.03%  setup-policy-ro  [kernel.kallsyms]
+     0.03%  systemd-logind   [kernel.kallsyms]
+
+## embr, by symbol
+     0.80%  libwolfssl.so.45.0.0               [.] AES_GCM_encrypt_update_avx2                                                                        
+     0.20%  [kernel.kallsyms]                  [k] ena_start_xmit                                                                                     
+     0.17%  libngtcp2.so.16.12.0               [.] conn_write_pkt                                                                                     
+     0.14%  libngtcp2.so.16.12.0               [.] ngtcp2_rtb_recv_ack                                                                                
+     0.11%  libngtcp2.so.16.12.0               [.] ngtcp2_opl_pop                                                                                     
+     0.09%  libwolfssl.so.45.0.0               [.] L_AES_GCM_init_avx2_iv_12                                                                          
+     0.07%  libngtcp2.so.16.12.0               [.] ngtcp2_conn_write_vmsg                                                                             
+     0.06%  [kernel.kallsyms]                  [k] skb_zerocopy_clone                                                                                 
+     0.06%  [kernel.kallsyms]                  [k] kmem_cache_alloc_node_noprof                                                                       
+     0.06%  [kernel.kallsyms]                  [k] ena_com_prepare_tx                                                                                 
+     0.06%  libwolfssl.so.45.0.0               [.] wc_AesGcmEncryptUpdate                                                                             
+     0.05%  [vdso]                             [.] 0x0000000000000c1c                                                                                 
+     0.05%  libwolfssl.so.45.0.0               [.] AES_GCM_ghash_block_avx2                                                                           
+     0.05%  [kernel.kallsyms]                  [k] skb_segment                                                                                        
+     0.05%  libwolfssl.so.45.0.0               [.] wolfSSL_EVP_CipherInit                                                                             
+     0.05%  libwolfssl.so.45.0.0               [.] wolfSSL_EVP_CipherUpdate                                                                           
+     0.04%  [kernel.kallsyms]                  [k] ___slab_alloc                                                                                      
+     0.04%  [kernel.kallsyms]                  [k] __alloc_skb                                                                                        
+
+## interrupt-side work outside embr: swapper and ksoftirqd, idle loop left out
+     0.19%  swapper      [k] handle_softirqs
+     0.10%  swapper      [k] x2apic_send_IPI
+     0.06%  swapper      [k] ena_clean_tx_irq
+     0.06%  swapper      [k] finish_task_switch.isra.0
+     0.05%  swapper      [k] _raw_spin_unlock_irqrestore
