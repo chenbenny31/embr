@@ -479,6 +479,22 @@ sender_summary() {
     log "raw per-push lines in $SENDER_STATS.<row>; embrquic sys vs embrquicsm sys = SEND_ZC saving per GiB"
 }
 
+# "serving" must mean bound: embr push hashes the file before it listens (seconds per row on a
+# small host), and a receiver that probes earlier finds the port closed
+wait_listening() {
+    local row port proto limit="${LISTEN_WAIT:-300}" deadline
+    deadline=$(( SECONDS + limit ))
+    for row in $ROWS; do
+        [[ "$row" == scp ]] && continue
+        port=$(row_port "$row"); proto=t
+        if is_quic "$row"; then proto=u; fi
+        until [[ -n "$(ss -H -ln"$proto" "sport = :$port" 2>/dev/null)" ]]; do
+            (( SECONDS < deadline )) || die "$row is not listening on port $port after $limit s — see $SENDER_STATS.$row.log"
+            sleep 0.5
+        done
+    done
+}
+
 run_sender() {
     assert_binary
     if any_quic; then assert_toolchain; assert_cert; assert_sockbuf local; assert_sendzc local; fi
@@ -493,6 +509,7 @@ run_sender() {
         SENDER_PIDS+=($!)
     done
     trap stop_sender EXIT INT TERM
+    wait_listening
     log "serving: $ROWS — tcp:$TCP_PORT nc:$NC_PORT quic udp: $(row_ports)(pids ${SENDER_PIDS[*]}) zc_slots=${EMBR_QUIC_ZC_SLOTS:-default}"
     log "Ctrl-C when the receiver is done — the sender summary prints on exit"
     wait

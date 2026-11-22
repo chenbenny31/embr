@@ -236,7 +236,7 @@ snap_counters() { # <peer ip, or "" for the ssh client>: taken before and after 
     echo "## /proc/net/snmp";    grep -E '^(Ip|Udp|Tcp):' /proc/net/snmp
     echo "## /proc/net/netstat"; grep -E '^(TcpExt|IpExt):' /proc/net/netstat
     echo "## ethtool -S $dev";   ethtool -S "$dev" 2>/dev/null
-    echo "## ip -s link show dev $dev"; ip -s link show dev "$dev" 2>/dev/null | grep -v 'link/'
+    echo "## ip -s link show dev $dev"; ip -s link show dev "$dev" 2>/dev/null | grep -v -e 'link/' -e 'altname'
     echo "## /proc/net/softnet_stat";   cat /proc/net/softnet_stat
     echo "## /proc/interrupts, $dev";   head -1 /proc/interrupts; grep -i -e "${dev:-none}" -e ena -e virtio /proc/interrupts
     echo "## /proc/softirqs";           grep -E 'CPU|NET_RX|NET_TX' /proc/softirqs
