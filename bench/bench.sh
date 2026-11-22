@@ -5,6 +5,7 @@
 #   bash bench/bench.sh wan-sender                                   host A: serves every row until Ctrl-C
 #   SENDER_IP=<ip> [SSH_KEY=~/.ssh/key.pem] bash bench/bench.sh wan-receiver
 #                                                                    host B: pulls every row, prints the table
+#   bench/wan.sh runs the two WAN modes together from host B, pass after pass, and collects both hosts' files.
 #
 # Rows — ROWS="..." picks and orders them; use the same ROWS on both WAN hosts:
 #   embrtcp        sendfile/splice, plaintext
@@ -166,6 +167,22 @@ cpu_delta() { # cpu_delta "<busy irq>" "<busy irq>" -> "busy_seconds irq_seconds
     awk -v a="$1" -v b="$2" -v hz="$(getconf CLK_TCK)" 'BEGIN {
         if (split(a, x, " ") < 2 || split(b, y, " ") < 2 || x[1] == "NA" || y[1] == "NA") { print "NA NA"; exit }
         printf "%.2f %.2f\n", (y[1]-x[1])/hz, (y[2]-x[2])/hz }'
+}
+# datagrams this host dropped because a UDP socket's receive buffer was full (Udp: RcvbufErrors):
+# a receiver that cannot keep up shows here before it shows as loss in the sender's congestion window
+udp_drops() {
+    awk '/^Udp:/ { if (!col) { for (i = 2; i <= NF; i++) if ($i == "RcvbufErrors") col = i }
+                   else { print $col; exit } }' /proc/net/snmp
+}
+udp_drops_line() { # medians per QUIC row
+    local row lines
+    printf '\nUDP receive-buffer drops on this host per transfer (median):'
+    for row in $ROWS; do
+        is_quic "$row" || continue
+        lines=$(grep -E "^run[0-9]+_${row} " "$RESULTS") || continue
+        printf ' %s=%s' "$row" "$(field udp_drops <<<"$lines" | median)"
+    done
+    printf '\n'
 }
 host_cpu_table() { # host_cpu_table <key>... : medians of the whole-host fields, one line per row
     local row lines key
@@ -336,16 +353,16 @@ run_pair() {
 
     rm -f "$OUT"
     prepare_cache
-    local stfile rfile rc=0 c0 c1
+    local stfile rfile rc=0 c0 c1 d0 d1
     stfile=$(mktemp); rfile=$(mktemp)
 
-    c0=$(cpu_snap)
+    c0=$(cpu_snap); d0=$(udp_drops)
     /usr/bin/time -v -o "$stfile" "${send[@]}" >/dev/null 2>>"$slog" &
     local spid=$!
     sleep 0.5 # let the sender reach listen state
     /usr/bin/time -v -o "$rfile" "${recv[@]}" >/dev/null 2>>"$rlog" || rc=$?
     wait "$spid" 2>/dev/null || true
-    c1=$(cpu_snap) # before verify_output, whose hashing is not the transfer's
+    c1=$(cpu_snap); d1=$(udp_drops) # before verify_output, whose hashing is not the transfer's
 
     if [[ $rc -eq 0 ]] && verify_output; then
         local suser ssys rwall ruser rsys sec gbps hcpu hirq
@@ -358,8 +375,8 @@ run_pair() {
         sec=$(wall_to_sec "$rwall")
         gbps=$(awk -v b="$EXPECTED_BYTES" -v s="$sec" \
             'BEGIN{ if(s>0)printf "%.2f",b*8/s/1e9; else print "NA" }')
-        printf '%s wall=%s sec=%s gbps=%s send_user=%ss send_sys=%ss recv_user=%ss recv_sys=%ss host_cpu=%ss host_irq=%ss\n' \
-            "$label" "$rwall" "$sec" "$gbps" "$suser" "$ssys" "$ruser" "$rsys" "$hcpu" "$hirq" | tee -a "$RESULTS" >&2
+        printf '%s wall=%s sec=%s gbps=%s send_user=%ss send_sys=%ss recv_user=%ss recv_sys=%ss host_cpu=%ss host_irq=%ss udp_drops=%s\n' \
+            "$label" "$rwall" "$sec" "$gbps" "$suser" "$ssys" "$ruser" "$rsys" "$hcpu" "$hirq" "$(( d1 - d0 ))" | tee -a "$RESULTS" >&2
         rm -f "$stfile" "$rfile"; return 0
     fi
     log "  $label failed (rc=$rc)"
@@ -399,6 +416,7 @@ run_loopback() {
             "$(field recv_user <<<"$lines" | median)" "$(field recv_sys <<<"$lines" | median)"
     done
     host_cpu_table host_cpu host_irq
+    any_quic && udp_drops_line
     set -e
     echo
     for row in $ROWS; do if is_quic "$row"; then egress_summary "$row" "$RESULTS.$row.log"; ingress_summary "$row" "$RESULTS.$row.recv.log"; fi; done
@@ -488,12 +506,12 @@ run_tool() {
     while (( attempt < RETRY_MAX )); do
         attempt=$(( attempt + 1 ))
         rm -f "$OUT"; prepare_cache
-        local terr ttime rc=0 s0 s1 c0 c1
+        local terr ttime rc=0 s0 s1 c0 c1 d0 d1
         terr=$(mktemp); ttime=$(mktemp)
         # the sender's snapshots travel over ssh: its delta carries one ssh login, the same for every row
-        s0=$(cpu_snap_sender); c0=$(cpu_snap)
+        s0=$(cpu_snap_sender); c0=$(cpu_snap); d0=$(udp_drops)
         /usr/bin/time -v -o "$ttime" "$@" >/dev/null 2>"$terr" || rc=$?
-        c1=$(cpu_snap); s1=$(cpu_snap_sender)
+        c1=$(cpu_snap); d1=$(udp_drops); s1=$(cpu_snap_sender)
         if [[ $rc -eq 0 ]] && verify_output; then
             local wall user sys rss sec gbps hcpu hirq scpu sirq
             read -r hcpu hirq <<<"$(cpu_delta "$c0" "$c1")"; read -r scpu sirq <<<"$(cpu_delta "$s0" "$s1")"
@@ -504,8 +522,8 @@ run_tool() {
             sec=$(wall_to_sec "$wall")
             gbps=$(awk -v b="$EXPECTED_BYTES" -v s="$sec" \
                 'BEGIN{ if(s>0)printf "%.2f",b*8/s/1e9; else print "NA" }')
-            printf '%s wall=%s sec=%s gbps=%s user=%ss sys=%ss rss=%sKB host_cpu=%ss host_irq=%ss sender_cpu=%ss sender_irq=%ss\n' \
-                "$label" "$wall" "$sec" "$gbps" "$user" "$sys" "$rss" "$hcpu" "$hirq" "$scpu" "$sirq" | tee -a "$RESULTS" >&2
+            printf '%s wall=%s sec=%s gbps=%s user=%ss sys=%ss rss=%sKB host_cpu=%ss host_irq=%ss sender_cpu=%ss sender_irq=%ss udp_drops=%s\n' \
+                "$label" "$wall" "$sec" "$gbps" "$user" "$sys" "$rss" "$hcpu" "$hirq" "$scpu" "$sirq" "$(( d1 - d0 ))" | tee -a "$RESULTS" >&2
             grep -a '^\[quic-ingress\]' "$terr" >> "$RESULTS.${label#*_}.recv.log" || true # the pull's read counts
             rm -f "$terr" "$ttime"; return 0
         fi
@@ -573,6 +591,7 @@ run_receiver() {
             "$(field user <<<"$lines" | median)" "$(field sys <<<"$lines" | median)"
     done
     host_cpu_table host_cpu host_irq sender_cpu sender_irq
+    any_quic && udp_drops_line
     echo
     for row in $ROWS; do if is_quic "$row"; then ingress_summary "$row" "$RESULTS.$row.recv.log"; fi; done
     set -e

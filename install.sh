@@ -48,11 +48,11 @@ die() { log "FATAL: $*"; exit 1; }
 install_system_deps() {
     if command -v dnf >/dev/null; then          # Fedora / Amazon Linux 2023
         sudo dnf install -y gcc-c++ make cmake ninja-build autoconf automake libtool \
-            pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat
+            pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat ethtool
     elif command -v apt-get >/dev/null; then    # Debian / Ubuntu
         sudo apt-get update
         sudo apt-get install -y build-essential cmake ninja-build autoconf automake libtool \
-            pkg-config git openssl libssl-dev liburing-dev time ncat
+            pkg-config git openssl libssl-dev liburing-dev time ncat ethtool
     else
         die "unknown package manager — install: g++ cmake ninja autoconf automake libtool pkg-config git openssl-devel liburing-devel time ncat"
     fi
