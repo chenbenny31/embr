@@ -27,7 +27,8 @@ The TCP file-transfer path uses kernel I/O mechanisms. QUIC retains heap message
 - Chunks are `mmap`'d and retained for acknowledgement and retransmission; QUIC assembles and encrypts separate outgoing packets
 - Datagrams leave through an io_uring `SEND_ZC` egress: a registered per-connection slab, each packet slot retained until the kernel permits its memory to be reused
 - Falls back to `sendmsg` when the slab cannot be registered or the kernel lacks `SEND_ZC` (`EMBR_QUIC_EGRESS=sendmsg` forces it)
-- UDP GSO on both egress paths: same-size packets leave as one send that the kernel splits (`EMBR_QUIC_GSO=0` sends one packet per send)
+- UDP GSO on both egress paths: up to 16 same-size packets leave as one send that the kernel splits (`EMBR_QUIC_GSO=0` sends one packet per send)
+- Batched receive: the socket is read until empty (up to 64 packets, UDP GRO returning a run of packets per read) before ACKs are written once (`EMBR_QUIC_GRO=0` reads one packet per read)
 - The token carries a hash of the sender's certificate; pull verifies it after the handshake, before any request
 - Not yet: NAT traversal, tracker over QUIC
 
@@ -64,11 +65,21 @@ embr trust --show    # print current trusted tracker
 embr trust --clear   # remove saved tracker
 
 # Diagnostics
-EMBR_QUIC_STATS=1 embr push ...   # one [quic-egress] line per connection: sends, notifs, copied, fallback, errors, waits
+EMBR_QUIC_STATS=1 embr push ...   # per connection, [quic-egress]: sends, notifs, copied, fallback, errors, waits; [quic-ingress]: datagrams, reads
 EMBR_QUIC_LOG=1   embr pull ...   # ngtcp2 packet log
 ```
 
 ## How It Works
+
+**v0.9 — batches on both sides of the socket**
+```
+QUIC sender                                      QUIC receiver
+  ngtcp2 writes up to 16 same-size packets         read until the socket is empty (at most 64 packets);
+  into one slot                                     UDP GRO returns a run of packets per read
+  one send with UDP_SEGMENT = packet size:         ngtcp2 reads each packet and decrypts it in place
+  the kernel splits it (SEND_ZC or sendmsg)        one ACK pass for the batch, then the next read
+```
+One system call now carries about 15 packets on the sender and 12 or more on the receiver. The ownership rules below are unchanged: a slot holds a batch instead of a packet.
 
 **v0.8 — one buffer type, two release events**
 ```
@@ -121,7 +132,7 @@ Push answers requests and holds no session state — stateless across connection
 
 ## Benchmark
 
-See [bench/bench.md](bench/bench.md) for methodology, consolidated raw data and reproduction commands. The WAN table is from the 2026-09-06 v0.8 campaign: two `c5n.large` instances, Amazon Linux 2023 kernel 6.18.44, us-east-1 → us-east-2, a 1 GiB file, file caches dropped on both ends, two warmups and ten timed rounds, with output SHA-256 verification. The syscall counts are from an older v0.7 run. The corrected desktop ownership benchmark is a separate measurement described below.
+See [bench/bench.md](bench/bench.md) for methodology, the v0.8 campaign and reproduction commands, and [data/](data/README.md) for the raw files of the runs since 2026-11-15. The WAN table is from the 2026-11-22 v0.9 run ([full tables, profiles and how to read them](data/wan-2026-11-22.md)): two `c5n.large` instances, Amazon Linux 2023 kernel 6.18.62, us-east-1 → us-east-2, a 1 GiB file held in memory on both ends (`/tmp` is tmpfs on that image), two warmups and ten timed rounds, with output SHA-256 verification. The syscall counts are from an older v0.7 run. The corrected desktop ownership benchmark is a separate measurement described below.
 
 ### TCP mechanism (v0.7 strace syscall count, 1 GiB)
 
@@ -138,34 +149,49 @@ See [bench/bench.md](bench/bench.md) for methodology, consolidated raw data and 
 
 ### WAN cross-region (1 GiB, AWS c5n.large us-east-1 → us-east-2, n=10, medians)
 
-| tool | throughput | wall | receiver user / sys | sender user / sys |
-|------|-----------|------|---------------------|-------------------|
-| embr TCP (sendfile / splice) | 2.005 Gbps | 4.29 s | 2.64 s / 0.72 s | 0.00 s / 0.32 s |
-| nc | 2.225 Gbps | 3.87 s | 0.27 s / 1.06 s | — |
-| scp† | 1.115 Gbps | 7.73 s | 0.96 s / 1.94 s | — |
-| embr QUIC, `SEND_ZC` egress | 0.910 Gbps | 9.41 s | 5.74 s / 3.47 s | 2.77 s / 2.97 s |
-| embr QUIC, `sendmsg` egress | 0.905 Gbps | 9.51 s | 5.81 s / 3.59 s | 2.94 s / 2.56 s |
+| tool | throughput | wall | receiver user / sys | sender user / sys | sender, whole host |
+|------|-----------|------|---------------------|-------------------|--------------------|
+| embr TCP (sendfile / splice) | 1.96 Gbps | 4.37 s | 2.58 s / 0.79 s | 0.01 s / 0.21 s | 0.54 s |
+| nc | 2.21 Gbps | 3.88 s | 0.21 s / 1.08 s | — | 1.69 s |
+| scp† | 1.19 Gbps | 7.20 s | 0.91 s / 1.89 s | — | 3.02 s |
+| embr QUIC, `SEND_ZC` + GSO (default) | 1.71 Gbps | 5.01 s | 3.72 s / 1.10 s | 1.39 s / 0.89 s | 2.59 s |
+| embr QUIC, `sendmsg` + GSO | 1.71 Gbps | 5.01 s | 3.60 s / 1.23 s | 1.46 s / 0.88 s | 2.58 s |
+| embr QUIC, `SEND_ZC`, one packet per send | 1.71 Gbps | 5.01 s | 3.62 s / 1.17 s | 1.51 s / 1.88 s | 4.06 s |
+| embr QUIC, `sendmsg`, one packet per send | 1.71 Gbps | 5.03 s | 3.66 s / 1.16 s | 1.67 s / 1.49 s | 3.44 s |
+| embr QUIC at v0.8 (2026-09-06, `SEND_ZC`) | 0.910 Gbps | 9.41 s | 5.74 s / 3.47 s | 2.77 s / 2.97 s | — |
 
-†scp is an encrypted reference with different protocol and processing work. The first two successful transfers in each row were warmups; interrupted or failed sender processes are excluded. CPU columns are independently calculated medians, not components of a median total.
+†scp is an encrypted reference with different protocol and processing work. The first two transfers in each row were warmups. CPU columns are independently calculated medians, not components of a median total. "Sender, whole host" is every CPU of the sending machine over the transfer; it includes packet work done in interrupts, and it is the only sender figure recorded for nc and scp. The v0.8 row is from the earlier campaign on the same instance type ([bench/bench.md §2](bench/bench.md)); the three TCP-based rows read 2.005, 2.225 and 1.115 Gbps then, so the path is comparable.
 
-**TCP path.** Throughput ranges overlap (embr 1.81–2.19 Gbps, nc 2.00–2.74), while nc's median is about 11% higher. Receiver kernel CPU is about 33% lower for embr using the unrounded medians (0.715 s vs 1.060 s); receiver user CPU is higher (2.64 s vs 0.27 s). embr performs per-chunk verification during the timed transfer. These workloads differ, and the totals do not isolate copy or hashing cost.
+**TCP path.** nc's median is about 13% higher (embr 1.88–2.09 Gbps, nc 2.13–2.40). Receiver kernel CPU is about 27% lower for embr (0.79 s vs 1.08 s); receiver user CPU is higher (2.58 s vs 0.21 s), because embr verifies each chunk's SHA-256 during the timed transfer: 78% of its samples in the receiver's profile. The sending machine spends 0.54 s per GiB with `sendfile` against 1.69 s with nc.
 
-**QUIC path.** The two sending modes have similar throughput in this experiment. For SEND_ZC, median receiver CPU (user + sys computed for each run) is 9.23 s per GiB against 9.41 s elapsed, consistent with a CPU-limited receiver. These process-level timings do not separate hashing, decryption, packet handling and memory-copy costs. Receive batching and overlapping receive with file writes are future work.
+**QUIC path.** Every QUIC row reads 1.71 Gbps, against 0.91 at v0.8, and is now above scp. The receiver is the limit: its process uses 4.82 s of CPU in 5.01 s of wall time. UDP GRO gives it 12–20 packets per read on this NIC; with `EMBR_QUIC_GRO=0` the same rows read 1.50 Gbps. Acknowledging every 10 packets changes nothing. In the receiver's profile 52% of embr's samples are the content SHA-256 (this CPU has no SHA extensions), 25% kernel, 12% AES-GCM and 6% ngtcp2, so the next gain is the hash, not the network path.
 
-**`SEND_ZC` result.** The archived terminal summary reports **0 copied among 11,243,123 sends**, with no fallbacks or errors, over 12 connections including warmups. Individual egress logs were not preserved, so this aggregate cannot be independently recomputed from the retained files. Median sender total CPU, computed per successful timed push, is 5.755 s with SEND_ZC and 5.565 s with sendmsg. SEND_ZC did not reduce sender CPU in this campaign. Completion processing and packet size are candidates for further study; segmentation offload has no demonstrated benefit in these data.
+**`SEND_ZC` result.** The copy is gone: 0 copied in 8.8 million timed sends, no fallback, no error. It did not make the sender cheaper. With one 1345-byte packet per send, `SEND_ZC` costs more than `sendmsg` (3.36 s against 3.15 s of process CPU per GiB; 4.06 s against 3.44 s for the whole machine). With GSO, at about 20 kB per send, the two are level (2.27 s against 2.33 s; 2.59 s against 2.58 s). GSO is what saves sender CPU, 26–32%; this NIC has no UDP segmentation offload, so the kernel splits the batches. `SEND_ZC` + GSO was also the only row counted by AWS's outbound shaper (`bw_out_allowance_exceeded`), eight times more with a 128-slot pool; embr has no pacer yet.
+
+**The path.** One flow tops out near 2.2 Gbps here, and two plaintext streams at once carried 4.1 Gbps. Two embr transfers at once gained 19% (QUIC) and 38% (TCP): the two vCPUs of a c5n.large are the two threads of one core.
 
 ### UDP GSO on loopback (1 GiB, desktop, n=10, medians)
 
 | sender egress | receiver ACKs every | sender sys, one packet per send | sender sys, GSO | packets per GSO send |
 |---|---|---|---|---|
-| `SEND_ZC` | 2 packets (shipped) | 1.04 s | 0.81 s | 2.0 |
-| `sendmsg` | 2 packets (shipped) | 0.95 s | 0.75 s | 2.0 |
+| `SEND_ZC` | 2 packets (v0.8 receiver) | 1.04 s | 0.81 s | 2.0 |
+| `sendmsg` | 2 packets (v0.8 receiver) | 0.95 s | 0.75 s | 2.0 |
 | `SEND_ZC` | 10 packets | 0.76 s | 0.34 s | 9.7 |
 | `sendmsg` | 10 packets | 0.74 s | 0.33 s | 9.8 |
 
-Loopback copies every `SEND_ZC` send, so this measures the cost of a send, not zero-copy. The sender has no pacer and sends what each ACK frees, so at the shipped ACK rate a GSO batch is two packets; GSO still saves about 21% of sender kernel time. With the receiver acknowledging every 10 packets (`EMBR_QUIC_ACK_THRESH=10`; the default stays 2, since fewer ACKs slow recovery under loss) batches reach about 10, sender kernel time halves, and throughput goes from 3.3 to 4.8 Gbps. These rows were measured with 1200-byte packets; the 1350-byte packets embr sends since add about 10% throughput on the same setup. The same four rows on two hosts with a real NIC are still to run. [Full table and raw data](bench/bench.md#gso-loopback).
+Loopback copies every `SEND_ZC` send, so this measures the cost of a send, not zero-copy. The sender has no pacer and sends what each ACK frees, so with the receiver of that time, which acknowledged every two packets, a GSO batch was two packets; GSO still saved about 21% of sender kernel time. With the receiver acknowledging every 10 packets (`EMBR_QUIC_ACK_THRESH=10`) batches reached about 10, sender kernel time halved, and throughput went from 3.3 to 4.8 Gbps. These rows were measured with 1200-byte packets; the 1350-byte packets embr sends since add about 10% throughput on the same setup. On two hosts the same four rows are in the WAN table above. [Full table and raw data](bench/bench.md#gso-loopback).
 
 A send-only benchmark (`bench/egress_cost.sh`, dummy device, nothing copied) puts `SEND_ZC` at 130–150 ns more per send than `sendmsg`; the copy it saves repays that only above about 20 packets per send, and embr sends at most 16. When the device holds packets for 100 µs, the 8-slot pool makes the sender wait, and with 128 slots `SEND_ZC` is level at 8–10 packets and 6–19% cheaper at 12–16. At 8–16 packets per send either outcome is about 0.01 s per GiB. [Tables](bench/bench.md#egress-cost).
+
+### Receive batching on loopback (1 GiB, desktop, n=5, medians)
+
+| receive path | throughput | whole-host CPU per GiB | packets per send |
+|---|---|---|---|
+| one `select` + `recvmsg` per packet, ACK every 2 packets (v0.8) | 3.69 Gbps | 5.39 s | 2.1 |
+| read until the socket is empty, ACK once per batch | 6.98 Gbps | 2.56 s | 14.7 |
+| the same with UDP GRO (shipped) | 8.03 Gbps | 2.08 s | 14.9 |
+
+A third of the receiver's CPU went to sending an ACK for every second packet. It now reads what the socket holds and acknowledges once, and the sender fills its 16-packet GSO batches without `EMBR_QUIC_ACK_THRESH`. Where packets arrive one by one (veth) the change takes 4.3 to 8.0 Gbps. The cost is under loss: per-packet loss at a 20 ms round trip adds 0–16% to transfer time, and the 10% loopback test, which drops a whole batch at once, goes from 1.4 s to about 8 s. [Notes and raw data](data/receive-path.md).
 
 ### Desktop ownership benchmark
 
@@ -189,7 +215,7 @@ AMD Ryzen 9 9900X desktop, Fedora Linux kernel 7.1.13, GCC 16.2.1 / libstdc++ 20
 | The io_uring sender waited for ACKs with sends still queued | 13–17 s per transfer | 1.4–2.3 s (`sendmsg`: 1.4–1.9 s) |
 | ngtcp2 up to 1.25 stopped probing at the minimum window | 1 stall in about 300 transfers | 0 in 1,504 with ngtcp2 1.26.0 |
 
-Rows 1, 3 and 4 are at 10% loss; row 2 needs no loss. At 30% loss transfers still complete (about 130 s each) and 3 of 192 handshakes missed the 10 s limit. Causes, method and logs: [bench/bench.md §8](bench/bench.md#packet-loss-runs).
+Rows 1, 3 and 4 are at 10% loss; row 2 needs no loss. The times in row 3 predate receive batching, which makes this loopback test slower ([why](data/receive-path.md)). At 30% loss transfers still complete (about 130 s each) and 3 of 192 handshakes missed the 10 s limit. Causes, method and logs: [bench/bench.md §8](bench/bench.md#packet-loss-runs).
 
 ## Install Dependencies
 
@@ -219,7 +245,7 @@ sudo apt install cmake ninja-build g++ openssl libssl-dev liburing-dev
 
 **Kernel:** Linux 6.2+ for the io_uring `SEND_ZC` egress (`IORING_SEND_ZC_REPORT_USAGE`); older kernels fall back to `sendmsg` automatically. 6.0+ for the io_uring UDP path's `RECV`/`WRITE_FIXED`.
 
-**memlock:** the QUIC egress registers about 105 KiB per connection (64 packet slots plus the ring); the default 8 MiB `ulimit -l` is sufficient, and if registration fails embr falls back rather than pinning per datagram. The experimental io_uring UDP path registers about 4 MiB per transport, so two of them exceed the default limit and fall back to unregistered buffers.
+**memlock:** the QUIC egress registers a 169 KiB slab per connection with GSO (8 slots of 16 packets), about 105 KiB without (64 one-packet slots plus the ring); the default 8 MiB `ulimit -l` is sufficient, and if registration fails embr falls back rather than pinning per datagram. The experimental io_uring UDP path registers about 4 MiB per transport, so two of them exceed the default limit and fall back to unregistered buffers.
 
 ## Build
 
@@ -276,9 +302,12 @@ embr/
 │       ├── io_uring_ctx.hpp/.cpp       # io_uring ring + registered buffer pool (UDP path)
 │       └── constants.hpp               # CHUNK_SIZE, HASH_SIZE, EMBR_PORT, TRACKER_PORT
 ├── bench/
-│   ├── bench.md                        # methodology, raw per-run data
+│   ├── bench.md                        # methodology, tables and raw data: v0.8 WAN campaign, loss runs, GSO loopback, send cost
 │   ├── bench.sh                        # loopback / wan-sender / wan-receiver; TCP, QUIC SEND_ZC and sendmsg with and without GSO, nc, scp
+│   ├── wan.sh                          # every WAN pass from the receiver: starts the sender over ssh, collects both hosts' files
+│   ├── egress_cost.cpp / .sh           # send-only cost of one send, SEND_ZC against sendmsg, on a dummy device
 │   └── erasure_cost.cpp                # whole-owner lifecycle checks and desktop microbenchmark
+├── data/                               # raw results and notes, one directory per run, since 2026-11-15; the v0.9 WAN run
 ├── tests/
 │   ├── test_protocol.cpp, test_tcp.cpp, test_udp.cpp, test_resume.cpp, test_tracker.cpp
 │   ├── test_hash_parallel.cpp          # parallel vs serial SHA-256 correctness
@@ -288,7 +317,7 @@ embr/
 └── CMakeLists.txt
 ```
 
-Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle is owned by the CLI layer. The `run_push` / `run_pull` function bodies are byte-identical at v0.5, v0.6, v0.7 and v0.8 (`9342d1e`). The splice receiver (v0.6), QUIC transport (v0.8) and `SEND_ZC` egress (v0.8) each landed without touching `push.cpp` or `pull.cpp`.
+Business logic (`push`, `pull`) talks only to `Transport&` — never to raw sockets. Transport lifecycle is owned by the CLI layer. The `run_push` / `run_pull` function bodies are byte-identical at v0.5, v0.6, v0.7 and v0.8 (`9342d1e`). The splice receiver (v0.6), QUIC transport (v0.8) and `SEND_ZC` egress (v0.8) each landed without touching `push.cpp` or `pull.cpp`. So did v0.9's GSO, path-MTU probe and batched receive; `pull.cpp` changed once since v0.8, for the resume fixes (`30ecff4`).
 
 Separate changes to `push.cpp` added hash caching and parallel metadata precomputation. The earlier io_uring UDP experiment needed a second `Transport&` for its data plane and was withdrawn from the CLI.
 
@@ -353,33 +382,42 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 | v0.5 | Request-driven protocol, resume interrupted transfers ✓ |
 | v0.6 | Token + tracker, splice() zero-copy recv, .embr.hash cache, embr trust ✓ |
 | v0.7 | TCP path hardening, parallel pre-hash, strace zero-copy figure, WAN bench ✓ |
-| **v0.8** | **QUIC transport (ngtcp2 + wolfSSL), ownership until ACK, io_uring SEND_ZC egress with fallbacks, QUIC WAN bench ✓** |
-| v0.9 | Receiver batching (`recvmmsg`, hash off the connection thread), ACK frequency and pacing for larger GSO batches, tracker over QUIC |
+| v0.8 | QUIC transport (ngtcp2 + wolfSSL), ownership until ACK, io_uring SEND_ZC egress with fallbacks, QUIC WAN bench ✓ |
+| **v0.9** | **QUIC hardened under packet loss, sender-certificate check through the token, UDP GSO, batched receive with UDP GRO, one-command two-host bench; QUIC WAN 0.91 → 1.71 Gbps ✓** |
+| next | Hash off the connection thread, pacing, more than one connection per transfer, tracker over QUIC |
 | v1.x | SPMC ring buffer, 1-to-N fanout, parallel chunks via QUIC streams, eBPF/XDP, multi-tracker federation |
 
 ## Current Status
 
-**v0.8 — QUIC transport and SEND_ZC egress**
+**v0.9 — QUIC under loss, GSO and batched receive** (since v0.8, `9342d1e`)
 
-- [x] `QuicTransport` over ngtcp2 1.26 + wolfSSL 5.9 (`--enable-aesgcm-stream`, `--enable-quic`); `quic_connect` / `quic_listen` / `quic_accept` factories; `--transport quic` on push and pull
-- [x] `send_file` maps the chunk and retains it in `unacked_` until the acknowledgement callback; `recv_file` writes into a mapped output region
-- [x] Graceful close lingers up to 1 s so retained chunks are acknowledged; a peer's orderly close makes `recv()` return 0, as with TCP
-- [x] `ZcEgress` — per-connection packet slab registered with io_uring, `IORING_OP_SEND_ZC` with usage reporting, slot owner is a `Buffer` retired on the NOTIF completion; send CQE with `F_MORE` waits, without it the slot is final
-- [x] Egress fallbacks — refused datagram copy-sent once; no registration → sendmsg for the connection; pre-6.2 kernel → sendmsg; partial submit resubmitted from ring state; slab leaked, never reused, if the NIC may still hold it at teardown
 - [x] UDP GSO — up to 16 same-size packets per send on both egress paths, `UDP_SEGMENT` set to the packet size; `EMBR_QUIC_GSO=0` switch
 - [x] Path-MTU probe — data packets grow from QUIC's 1200-byte start to the 1350-byte buffer where the path carries them; DF is set, a size the path refuses counts as loss, and the transfer stays at 1200
-- [x] `EMBR_QUIC_ACK_THRESH=N` experiment switch — the receiver acknowledges every N packets instead of 2, so GSO batches grow; default unchanged
-- [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters (packets, sends and bytes in both modes)
-- [x] `EMBR_QUIC_ZC_SLOTS=N` experiment switch for the `SEND_ZC` slot pool; the stats line counts `waits`, the times the sender blocked for a free slot
-- [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in each of the four egress × GSO modes; ASan/UBSan clean on the suite and a 1 GiB transfer
-- [x] Memlock footprint — about 105 KiB per QUIC connection without GSO, a 169 KiB slab with it; fits the default 8 MiB
-- [x] `install.sh`, `bench/bench.sh` — SEND_ZC vs sendmsg rows, sender CPU per push, copied ratio, kernel and memlock preflights
-- [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.910 Gbps; archived terminal summary reports no copied sends (individual egress logs unavailable)
-- [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
-- [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions
+- [x] Batched receive — reads until the socket is empty or 64 packets are in, UDP GRO with a 64 KiB buffer, one ACK pass per batch; `EMBR_QUIC_GRO=0` switch
 - [x] Sender-certificate verification — the token carries the certificate's hash; pull checks it after the handshake
 - [x] Loss testing at 10% and 30% — accept survives a lost first packet, ICMP errors are loss on both paths, queued sends are submitted before every wait, ngtcp2 1.26 for the lost-probe stall ([details](#found-under-packet-loss))
-- [ ] Receive batching and asynchronous file-write overlap; GSO on a real NIC (two-host run) before making benefit claims
+- [x] A peer's orderly close makes `recv()` return 0, as with TCP (`send_fin` removed)
+- [x] Resume — any file size, resumed chunks re-verified, a sender-named file never overwritten; disk space is reserved before a chunk is received, so a full disk is an error
+- [x] `FILE_META` validation — path-like names, zero chunks and inconsistent sizes are rejected
+- [x] Experiment switches — `EMBR_QUIC_ACK_THRESH=N` (the receiver acknowledges every N packets; default 2) and `EMBR_QUIC_ZC_SLOTS=N` (the `SEND_ZC` slot pool; the stats line counts `waits`, the times the sender blocked for a free slot); `EMBR_QUIC_STATS=1` prints egress and ingress counters
+- [x] Load gate — 96 concurrent runs of the QUIC suite (12 × 8) pass in each of the four egress × GSO modes and with GRO off; ASan/UBSan clean on the suite and a 1 GiB transfer
+- [x] Memlock footprint — a 169 KiB slab per QUIC connection with GSO, about 105 KiB without; fits the default 8 MiB
+- [x] `install.sh` — one step from a fresh clone: packages, wolfSSL + ngtcp2 with the required flags, socket limits, QUIC cert
+- [x] `bench/bench.sh` (loopback and two-host rows), `bench/wan.sh` (every WAN pass from the receiver, both hosts' files collected), `bench/egress_cost.sh` (send-only cost of one send)
+- [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 1.71 Gbps (0.91 at v0.8), receiver-bound; 0 of 8.8 million sends copied; `SEND_ZC` level with `sendmsg` under GSO; raw files in `data/2026-11-22-wan/`
+- [x] Corrected desktop ownership benchmark — `Buffer` 15.552 ns/lifetime vs `RawBuf` 1.649 ns/lifetime; ten rounds, active lifetime checks, scoped allocation counts and raw output in `bench/bench.md`
+- [ ] Hash off the connection thread (52% of the WAN receiver's CPU); pacing; asynchronous file-write overlap
+
+**v0.8 — QUIC transport and SEND_ZC egress** (`9342d1e`)
+
+- [x] `QuicTransport` over ngtcp2 + wolfSSL 5.9 (`--enable-aesgcm-stream`, `--enable-quic`); `quic_connect` / `quic_listen` / `quic_accept` factories; `--transport quic` on push and pull
+- [x] `send_file` maps the chunk and retains it in `unacked_` until the acknowledgement callback; `recv_file` writes into a mapped output region
+- [x] Graceful close lingers up to 1 s so retained chunks are acknowledged
+- [x] `ZcEgress` — per-connection packet slab registered with io_uring, `IORING_OP_SEND_ZC` with usage reporting, slot owner is a `Buffer` retired on the NOTIF completion; send CQE with `F_MORE` waits, without it the slot is final
+- [x] Egress fallbacks — refused datagram copy-sent once; no registration → sendmsg for the connection; pre-6.2 kernel → sendmsg; partial submit resubmitted from ring state; slab leaked, never reused, if the NIC may still hold it at teardown
+- [x] `EMBR_QUIC_EGRESS=sendmsg` baseline switch; `EMBR_QUIC_STATS=1` per-connection egress counters
+- [x] QUIC WAN benchmark — c5n.large cross-region, n=10: 0.910 Gbps; archived terminal summary reports no copied sends (individual egress logs unavailable)
+- [x] `push.cpp` / `pull.cpp` unchanged through the QUIC and SEND_ZC transitions
 
 **v0.7 — TCP path hardening**
 
@@ -399,7 +437,7 @@ Tracker stores no file data — pure `token → (ip, port)` indirection. Newly r
 - [x] Token derivation, `TokenStore` with TTL, tracker HTTP server and client, `embr trust`
 - [x] Subcommand dispatch and full argparse per verb, `EMBR_TRACKER` env var
 - [x] TCP loopback and WAN benchmark rows (now in `bench/bench.sh`); strace zero-copy figure
-- [x] Protocol, transport, resume, tracker and parallel-hash unit tests (102 tests at v0.8)
+- [x] Protocol, transport, resume, tracker and parallel-hash unit tests (104 tests at v0.9)
 
 ## License
 
