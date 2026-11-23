@@ -1,0 +1,33 @@
+# SHA-256 of 1024 chunks of 1 MiB, one thread pinned to CPU 2, best of 3; desktop (Ryzen 9 9900X, kernel 7.3.3-300.fc45.x86_64), 2026-11-23T03:58:33Z
+# isa-l_crypto v2.26.1 (static, built with nasm 3.02), OpenSSL 4.0.3; 'batch' = chunks handed to the manager before a flush
+
+## the CPU as it is (SHA extensions available to OpenSSL)
+openssl, one chunk at a time           2700 MB/s  0.398 s per GiB
+multi-buffer, library's choice     batch  1      1875 MB/s  0.573 s per GiB  digests match
+multi-buffer, library's choice     batch  4      1877 MB/s  0.572 s per GiB  digests match
+multi-buffer, library's choice     batch  8      3982 MB/s  0.270 s per GiB  digests match
+multi-buffer, library's choice     batch 16      7819 MB/s  0.137 s per GiB  digests match
+multi-buffer, library's choice     batch 32      7848 MB/s  0.137 s per GiB  digests match
+multi-buffer, avx2 (8 lanes)       batch  1       604 MB/s  1.776 s per GiB  digests match
+multi-buffer, avx2 (8 lanes)       batch  4      1216 MB/s  0.883 s per GiB  digests match
+multi-buffer, avx2 (8 lanes)       batch  8      2401 MB/s  0.447 s per GiB  digests match
+multi-buffer, avx2 (8 lanes)       batch 16      2397 MB/s  0.448 s per GiB  digests match
+multi-buffer, avx2 (8 lanes)       batch 32      2399 MB/s  0.448 s per GiB  digests match
+multi-buffer, avx512 (16 lanes)    batch  1       605 MB/s  1.775 s per GiB  digests match
+multi-buffer, avx512 (16 lanes)    batch  4      2077 MB/s  0.517 s per GiB  digests match
+multi-buffer, avx512 (16 lanes)    batch  8      4024 MB/s  0.267 s per GiB  digests match
+multi-buffer, avx512 (16 lanes)    batch 16      7857 MB/s  0.137 s per GiB  digests match
+multi-buffer, avx512 (16 lanes)    batch 32      7882 MB/s  0.136 s per GiB  digests match
+multi-buffer, avx512 + sha ext     batch  1      1873 MB/s  0.573 s per GiB  digests match
+multi-buffer, avx512 + sha ext     batch  4      1872 MB/s  0.574 s per GiB  digests match
+multi-buffer, avx512 + sha ext     batch  8      4049 MB/s  0.265 s per GiB  digests match
+multi-buffer, avx512 + sha ext     batch 16      7848 MB/s  0.137 s per GiB  digests match
+multi-buffer, avx512 + sha ext     batch 32      7855 MB/s  0.137 s per GiB  digests match
+multi-buffer, sse + sha ext        batch  1      1873 MB/s  0.573 s per GiB  digests match
+multi-buffer, sse + sha ext        batch  4      2941 MB/s  0.365 s per GiB  digests match
+multi-buffer, sse + sha ext        batch  8      2941 MB/s  0.365 s per GiB  digests match
+multi-buffer, sse + sha ext        batch 16      2941 MB/s  0.365 s per GiB  digests match
+multi-buffer, sse + sha ext        batch 32      2942 MB/s  0.365 s per GiB  digests match
+
+## SHA extensions hidden from OpenSSL (OPENSSL_ia32cap=:~0x20000000): the first line is what a CPU without them gets
+openssl, one chunk at a time            981 MB/s  1.095 s per GiB

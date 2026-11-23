@@ -9,9 +9,17 @@
 #include <unistd.h>
 #include <sys/mman.h>
 #include <openssl/evp.h>
+#ifdef EMBR_HAVE_ISAL_CRYPTO
+#include <isa-l_crypto/sha256_mb.h>
+#include <cpuid.h>
+#endif
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <cstdlib>
+#include <limits>
+#include <memory>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -37,6 +45,61 @@ struct EvpCtx {
     EvpCtx& operator=(const EvpCtx&) = delete;
 };
 
+#ifdef EMBR_HAVE_ISAL_CRYPTO
+// lanes of the code ISA-L picks on this CPU: 16 with AVX-512, 8 with AVX2. With SHA extensions
+// and no AVX-512 it hashes one buffer at a time with them, as OpenSSL does: nothing to gain.
+unsigned isal_lanes() {
+    __builtin_cpu_init();
+    if (__builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512vl") &&
+        __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512dq") &&
+        __builtin_cpu_supports("avx512cd")) {
+        return 16;
+    }
+    unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
+    const bool sha_extensions = __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) != 0 && (ebx & (1u << 29)) != 0;
+    return __builtin_cpu_supports("avx2") && !sha_extensions ? 8 : 1;
+}
+
+void isal_check(int rc, const char* call) {
+    if (rc != 0) {
+        throw std::runtime_error(std::string("sha256_many: ") + call + " failed: " + std::to_string(rc));
+    }
+}
+
+// every input as one whole job; the manager runs them as lanes fill and on the final flushes
+void sha256_side_by_side(std::span<const HashInput> inputs,
+                         std::span<std::array<uint8_t, HASH_SIZE>> digests) {
+    auto manager = std::make_unique<ISAL_SHA256_HASH_CTX_MGR>(); // over-aligned type: aligned new
+    auto contexts = std::make_unique<ISAL_SHA256_HASH_CTX[]>(inputs.size());
+    isal_check(isal_sha256_ctx_mgr_init(manager.get()), "init");
+    ISAL_SHA256_HASH_CTX* done = nullptr;
+    static const uint8_t no_bytes = 0; // the library refuses a null source even for an empty buffer
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        isal_hash_ctx_init(&contexts[i]);
+        const uint8_t* source = inputs[i].len == 0 ? &no_bytes : inputs[i].data;
+        isal_check(isal_sha256_ctx_mgr_submit(manager.get(), &contexts[i], &done, source,
+                                              static_cast<uint32_t>(inputs[i].len), ISAL_HASH_ENTIRE),
+                   "submit");
+    }
+    do {
+        isal_check(isal_sha256_ctx_mgr_flush(manager.get(), &done), "flush");
+    } while (done != nullptr);
+
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        if (!isal_hash_ctx_complete(&contexts[i])) {
+            throw std::runtime_error("sha256_many: a job did not complete");
+        }
+        for (size_t word = 0; word < ISAL_SHA256_DIGEST_NWORDS; ++word) { // host-order words, big-endian digest
+            const uint32_t value = contexts[i].job.result_digest[word];
+            digests[i][word * 4] = static_cast<uint8_t>(value >> 24);
+            digests[i][word * 4 + 1] = static_cast<uint8_t>(value >> 16);
+            digests[i][word * 4 + 2] = static_cast<uint8_t>(value >> 8);
+            digests[i][word * 4 + 3] = static_cast<uint8_t>(value);
+        }
+    }
+}
+#endif
+
 }
 
 std::array<uint8_t, HASH_SIZE> sha256_buf(const uint8_t* data, size_t len) {
@@ -53,6 +116,48 @@ std::array<uint8_t, HASH_SIZE> sha256_buf(const uint8_t* data, size_t len) {
         throw std::runtime_error("sha256_buf: EVP_DigestFinal_ex() failed");
     }
     return digest;
+}
+
+unsigned sha256_lanes() {
+    static const unsigned lanes = [] {
+        unsigned detected = 1;
+#ifdef EMBR_HAVE_ISAL_CRYPTO
+        detected = isal_lanes();
+        if (const char* forced = std::getenv("EMBR_HASH_LANES")) {
+            detected = static_cast<unsigned>(std::clamp(std::atoi(forced), 1, 64));
+        }
+        if (detected > 1) {
+            // the library chooses its code for this CPU on the first call of each entry point and
+            // stores the choice unsynchronised: make those calls here, once, before threads hash
+            const uint8_t byte = 0;
+            const HashInput input{&byte, 1};
+            std::array<uint8_t, HASH_SIZE> digest{};
+            sha256_side_by_side(std::span(&input, 1), std::span(&digest, 1));
+        }
+#endif
+        return detected;
+    }();
+    return lanes;
+}
+
+void sha256_many(std::span<const HashInput> inputs,
+                 std::span<std::array<uint8_t, HASH_SIZE>> digests) {
+    if (inputs.size() != digests.size()) {
+        throw std::runtime_error("sha256_many: inputs and digests differ in count");
+    }
+#ifdef EMBR_HAVE_ISAL_CRYPTO
+    // half-empty lanes are slower than one buffer at a time; job lengths are 32-bit
+    const bool fits = std::all_of(inputs.begin(), inputs.end(), [](const HashInput& input) {
+        return input.len <= std::numeric_limits<uint32_t>::max();
+    });
+    if (sha256_lanes() > 1 && inputs.size() * 2 >= sha256_lanes() && fits) {
+        sha256_side_by_side(inputs, digests);
+        return;
+    }
+#endif
+    for (size_t i = 0; i < inputs.size(); ++i) {
+        digests[i] = sha256_buf(inputs[i].data, inputs[i].len);
+    }
 }
 
 std::string hash_cache_path_for(const std::string& file_path) {
@@ -161,24 +266,29 @@ std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
     const uint32_t num_workers = std::min(chunk_count,
                                           static_cast<uint32_t>(std::max(1u,
                                               std::thread::hardware_concurrency())));
+    const uint32_t lanes = sha256_lanes(); // at most 64
 
     worker_exceptions.resize(num_workers, nullptr);
 
     auto worker = [&](uint32_t worker_id) {
         try {
             while (true) {
-                // memory order relaxed: each independently grabs the next avail chunk index
-                const uint32_t i = next_chunk.value.fetch_add(1,
-                                                            std::memory_order_relaxed);
-                if (i >= chunk_count) { break; }
+                // memory order relaxed: each independently grabs the next set of chunk indexes,
+                // one set of lanes at a time so sha256_many can hash them side by side
+                const uint32_t first = next_chunk.value.fetch_add(lanes,
+                                                                  std::memory_order_relaxed);
+                if (first >= chunk_count) { break; }
+                const uint32_t count = std::min(lanes, chunk_count - first);
 
-                const uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
-                const size_t chunk_len = static_cast<size_t>(
-                    std::min(static_cast<uint64_t>(CHUNK_SIZE),
-                             file_size - offset));
-
-                chunk_hashes[i] = sha256_buf(
-                    static_cast<const uint8_t*>(mapped) + offset, chunk_len);
+                std::array<HashInput, 64> inputs{};
+                for (uint32_t k = 0; k < count; ++k) {
+                    const uint64_t offset = static_cast<uint64_t>(first + k) * CHUNK_SIZE;
+                    inputs[k] = {static_cast<const uint8_t*>(mapped) + offset,
+                                 static_cast<size_t>(std::min(static_cast<uint64_t>(CHUNK_SIZE),
+                                                              file_size - offset))};
+                }
+                sha256_many(std::span(inputs.data(), count),
+                            std::span(chunk_hashes.data() + first, count));
             }
         } catch (...) {
             std::lock_guard<std::mutex> lock(exceptions_mtx);

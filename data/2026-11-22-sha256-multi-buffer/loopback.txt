@@ -1,0 +1,82 @@
+# loopback, 1 GiB, desktop (Ryzen 9 9900X, kernel 7.3.3-300.fc45.x86_64), 2026-11-23T04:06:39Z; multi-buffer prototype (harness/multi-buffer.patch on the applied verifier threads), isa-l_crypto v2.26.1, n=5, configs alternated
+# inline = EMBR_VERIFY=inline; 'threads, chunk by chunk' = EMBR_HASH_LANES=1 (usable CPUs - 1 threads, OpenSSL per chunk); 'side by side' = default here: one thread, 16 chunks per call
+# sender pinned to CPUs 6-9, QUIC rows sendmsg + GSO; 'no sha ext' = OPENSSL_ia32cap=:~0x20000000 on the receiver (OpenSSL 981 MB/s instead of 2700; the library's own code is not affected)
+# process_cpu = user+sys of the pull process, median. The receiving_thread_ms column is not filled by this binary.
+
+## quic, receiver CPUs 2,14 (one core, two threads), no sha ext
+inline                                   quic n=5 gbps=4.69 wall=1.83 process_cpu=1.80 receiving_thread_ms=0 other_threads_ms=1800 failed=0
+threads, chunk by chunk                  quic n=5 gbps=6.05 wall=1.42 process_cpu=2.40 receiving_thread_ms=0 other_threads_ms=2400 failed=0
+side by side                             quic n=5 gbps=10.87 wall=0.79 process_cpu=0.94 receiving_thread_ms=0 other_threads_ms=940 failed=0
+
+## quic, receiver CPUs 2,3, no sha ext
+inline                                   quic n=5 gbps=4.72 wall=1.82 process_cpu=1.78 receiving_thread_ms=0 other_threads_ms=1780 failed=0
+threads, chunk by chunk                  quic n=5 gbps=7.28 wall=1.18 process_cpu=1.88 receiving_thread_ms=0 other_threads_ms=1880 failed=0
+side by side                             quic n=5 gbps=10.87 wall=0.79 process_cpu=0.86 receiving_thread_ms=0 other_threads_ms=860 failed=0
+
+## quic, receiver CPUs 2,3,4,5, no sha ext
+inline                                   quic n=5 gbps=4.72 wall=1.82 process_cpu=1.77 receiving_thread_ms=0 other_threads_ms=1770 failed=0
+threads, chunk by chunk                  quic n=5 gbps=11.01 wall=0.78 process_cpu=1.86 receiving_thread_ms=0 other_threads_ms=1860 failed=0
+side by side                             quic n=5 gbps=10.87 wall=0.79 process_cpu=0.87 receiving_thread_ms=0 other_threads_ms=870 failed=0
+
+## tcp, receiver CPUs 2,14 (one core, two threads), no sha ext
+inline                                   tcp  n=5 gbps=6.22 wall=1.38 process_cpu=1.35 receiving_thread_ms=0 other_threads_ms=1350 failed=0
+threads, chunk by chunk                  tcp  n=5 gbps=7.10 wall=1.21 process_cpu=1.52 receiving_thread_ms=0 other_threads_ms=1520 failed=0
+side by side                             tcp  n=5 gbps=27.71 wall=0.31 process_cpu=0.45 receiving_thread_ms=0 other_threads_ms=450 failed=0
+
+## tcp, receiver CPUs 2,3, no sha ext
+inline                                   tcp  n=5 gbps=6.27 wall=1.37 process_cpu=1.34 receiving_thread_ms=0 other_threads_ms=1340 failed=0
+threads, chunk by chunk                  tcp  n=5 gbps=7.41 wall=1.16 process_cpu=1.39 receiving_thread_ms=0 other_threads_ms=1390 failed=0
+side by side                             tcp  n=5 gbps=31.81 wall=0.27 process_cpu=0.41 receiving_thread_ms=0 other_threads_ms=410 failed=0
+
+## tcp, receiver CPUs 2,3,4,5, no sha ext
+inline                                   tcp  n=5 gbps=6.27 wall=1.37 process_cpu=1.34 receiving_thread_ms=0 other_threads_ms=1340 failed=0
+threads, chunk by chunk                  tcp  n=5 gbps=22.03 wall=0.39 process_cpu=1.43 receiving_thread_ms=0 other_threads_ms=1430 failed=0
+side by side                             tcp  n=5 gbps=31.81 wall=0.27 process_cpu=0.41 receiving_thread_ms=0 other_threads_ms=410 failed=0
+
+## quic, receiver CPUs 2,14 (one core, two threads), sha ext
+inline                                   quic n=5 gbps=7.60 wall=1.13 process_cpu=1.10 receiving_thread_ms=0 other_threads_ms=1100 failed=0
+threads, chunk by chunk                  quic n=5 gbps=10.23 wall=0.84 process_cpu=1.24 receiving_thread_ms=0 other_threads_ms=1240 failed=0
+side by side                             quic n=5 gbps=10.87 wall=0.79 process_cpu=0.93 receiving_thread_ms=0 other_threads_ms=930 failed=0
+
+## quic, receiver CPUs 2,3, sha ext
+inline                                   quic n=5 gbps=7.67 wall=1.12 process_cpu=1.08 receiving_thread_ms=0 other_threads_ms=1080 failed=0
+threads, chunk by chunk                  quic n=5 gbps=11.01 wall=0.78 process_cpu=1.13 receiving_thread_ms=0 other_threads_ms=1130 failed=0
+side by side                             quic n=5 gbps=10.87 wall=0.79 process_cpu=0.88 receiving_thread_ms=0 other_threads_ms=880 failed=0
+
+## quic, receiver CPUs 2,3,4,5, sha ext
+inline                                   quic n=5 gbps=7.67 wall=1.12 process_cpu=1.08 receiving_thread_ms=0 other_threads_ms=1080 failed=0
+threads, chunk by chunk                  quic n=5 gbps=10.87 wall=0.79 process_cpu=1.14 receiving_thread_ms=0 other_threads_ms=1140 failed=0
+side by side                             quic n=5 gbps=10.74 wall=0.80 process_cpu=0.88 receiving_thread_ms=0 other_threads_ms=880 failed=0
+
+## tcp, receiver CPUs 2,14 (one core, two threads), sha ext
+inline                                   tcp  n=5 gbps=12.45 wall=0.69 process_cpu=0.66 receiving_thread_ms=0 other_threads_ms=660 failed=0
+threads, chunk by chunk                  tcp  n=5 gbps=17.90 wall=0.48 process_cpu=0.80 receiving_thread_ms=0 other_threads_ms=800 failed=0
+side by side                             tcp  n=5 gbps=26.84 wall=0.32 process_cpu=0.46 receiving_thread_ms=0 other_threads_ms=460 failed=0
+
+## tcp, receiver CPUs 2,3, sha ext
+inline                                   tcp  n=5 gbps=12.63 wall=0.68 process_cpu=0.65 receiving_thread_ms=0 other_threads_ms=650 failed=0
+threads, chunk by chunk                  tcp  n=5 gbps=17.90 wall=0.48 process_cpu=0.72 receiving_thread_ms=0 other_threads_ms=720 failed=0
+side by side                             tcp  n=5 gbps=31.81 wall=0.27 process_cpu=0.41 receiving_thread_ms=0 other_threads_ms=410 failed=0
+
+## tcp, receiver CPUs 2,3,4,5, sha ext
+inline                                   tcp  n=5 gbps=12.63 wall=0.68 process_cpu=0.65 receiving_thread_ms=0 other_threads_ms=650 failed=0
+threads, chunk by chunk                  tcp  n=5 gbps=30.68 wall=0.28 process_cpu=0.68 receiving_thread_ms=0 other_threads_ms=680 failed=0
+side by side                             tcp  n=5 gbps=31.81 wall=0.27 process_cpu=0.41 receiving_thread_ms=0 other_threads_ms=410 failed=0
+
+# added 2026-11-23T04:31:06Z: one usable CPU, so no verifier thread; 'chunk by chunk' = EMBR_HASH_LANES=1, 'side by side' = default (16 chunks collected, then hashed on the receiving thread)
+
+## quic, receiver CPU 2 only, no sha ext
+inline, chunk by chunk                   quic n=5 gbps=4.62 wall=1.86 process_cpu=1.81 receiving_thread_ms=0 other_threads_ms=1810 failed=0
+inline, side by side                     quic n=5 gbps=9.99 wall=0.86 process_cpu=0.83 receiving_thread_ms=0 other_threads_ms=830 failed=0
+
+## tcp, receiver CPU 2 only, no sha ext
+inline, chunk by chunk                   tcp  n=5 gbps=6.14 wall=1.40 process_cpu=1.36 receiving_thread_ms=0 other_threads_ms=1360 failed=0
+inline, side by side                     tcp  n=5 gbps=20.45 wall=0.42 process_cpu=0.39 receiving_thread_ms=0 other_threads_ms=390 failed=0
+
+## quic, receiver CPU 2 only, sha ext
+inline, chunk by chunk                   quic n=5 gbps=7.60 wall=1.13 process_cpu=1.09 receiving_thread_ms=0 other_threads_ms=1090 failed=0
+inline, side by side                     quic n=5 gbps=9.99 wall=0.86 process_cpu=0.83 receiving_thread_ms=0 other_threads_ms=830 failed=0
+
+## tcp, receiver CPU 2 only, sha ext
+inline, chunk by chunk                   tcp  n=5 gbps=12.45 wall=0.69 process_cpu=0.65 receiving_thread_ms=0 other_threads_ms=650 failed=0
+inline, side by side                     tcp  n=5 gbps=20.95 wall=0.41 process_cpu=0.38 receiving_thread_ms=0 other_threads_ms=380 failed=0

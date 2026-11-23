@@ -1,0 +1,21 @@
+# loopback, 1 GiB, desktop (Ryzen 9 9900X, kernel 7.3.3-300.fc45.x86_64), 2026-11-22T05:15:40Z; prototype binary, EMBR_VERIFY=inline against thread, runs alternated, n=7
+# sender pinned to CPUs 6-9; receiver pinned as named; 'no sha ext' = OPENSSL_ia32cap=:~0x20000000 on the receiver (SHA-256 980 MB/s instead of 2746)
+# QUIC rows: sendmsg egress with GSO. cpu = median of user+sys of the pull process
+2 cores                            quic  inline  n=7 gbps=7.54 [7.47, 7.60] wall=1.14 user=0.75 sys=0.35 cpu=1.10 failed=0
+2 cores                            quic  thread  n=7 gbps=10.87 [10.60, 10.87] wall=0.79 user=0.76 sys=0.38 cpu=1.14 failed=0
+1 core, 2 threads                  quic  inline  n=7 gbps=7.41 [7.34, 7.54] wall=1.16 user=0.74 sys=0.37 cpu=1.12 failed=0
+1 core, 2 threads                  quic  thread  n=7 gbps=10.11 [9.99, 10.11] wall=0.85 user=0.81 sys=0.45 cpu=1.26 failed=0
+2 cores, no sha ext                quic  inline  n=7 gbps=4.59 [4.50, 4.67] wall=1.87 user=1.44 sys=0.38 cpu=1.81 failed=0
+2 cores, no sha ext                quic  thread  n=7 gbps=7.16 [7.04, 7.22] wall=1.20 user=1.52 sys=0.41 cpu=1.91 failed=0
+1 core, 2 threads, no sha ext      quic  inline  n=7 gbps=4.59 [4.59, 4.62] wall=1.87 user=1.45 sys=0.37 cpu=1.82 failed=0
+1 core, 2 threads, no sha ext      quic  thread  n=7 gbps=6.01 [5.97, 6.01] wall=1.43 user=1.91 sys=0.54 cpu=2.43 failed=0
+2 cores                            tcp   inline  n=7 gbps=12.27 [12.27, 12.45] wall=0.70 user=0.38 sys=0.28 cpu=0.66 failed=0
+2 cores                            tcp   thread  n=7 gbps=17.53 [17.53, 17.90] wall=0.49 user=0.44 sys=0.30 cpu=0.73 failed=0
+1 core, 2 threads                  tcp   inline  n=7 gbps=12.27 [12.27, 12.45] wall=0.70 user=0.38 sys=0.28 cpu=0.67 failed=0
+1 core, 2 threads                  tcp   thread  n=7 gbps=17.53 [17.53, 17.90] wall=0.49 user=0.42 sys=0.39 cpu=0.81 failed=0
+2 cores, no sha ext                tcp   inline  n=7 gbps=6.09 [6.09, 6.14] wall=1.41 user=1.08 sys=0.29 cpu=1.37 failed=0
+2 cores, no sha ext                tcp   thread  n=7 gbps=7.28 [7.22, 7.28] wall=1.18 user=1.12 sys=0.31 cpu=1.43 failed=0
+1 core, 2 threads, no sha ext      tcp   inline  n=7 gbps=6.14 [6.09, 6.18] wall=1.40 user=1.08 sys=0.29 cpu=1.37 failed=0
+1 core, 2 threads, no sha ext      tcp   thread  n=7 gbps=6.98 [6.98, 7.04] wall=1.23 user=1.15 sys=0.38 cpu=1.54 failed=0
+1 cpu, no sha ext                  quic  inline  n=7 gbps=4.59 [4.52, 4.67] wall=1.87 user=1.45 sys=0.38 cpu=1.83 failed=0
+1 cpu, no sha ext                  quic  thread  n=7 gbps=4.50 [4.47, 4.50] wall=1.91 user=1.43 sys=0.45 cpu=1.88 failed=0

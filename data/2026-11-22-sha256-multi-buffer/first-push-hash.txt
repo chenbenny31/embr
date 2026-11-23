@@ -1,0 +1,18 @@
+# the sender's first push of a 1 GiB file: seconds until the port is bound (the file is hashed into .embr.hash first; cache removed before every run)
+# applied tree's build, desktop, 2026-11-23T04:40:12Z
+sender CPUs 6          no sha ext chunk by chunk  n=5 seconds=1.257 [1.254, 1.484]  854 MB/s
+sender CPUs 6          no sha ext side by side    n=5 seconds=0.258 [0.233, 0.270]  4159 MB/s
+sender CPUs 6,18       no sha ext chunk by chunk  n=5 seconds=1.030 [1.024, 1.039]  1043 MB/s
+sender CPUs 6,18       no sha ext side by side    n=5 seconds=0.165 [0.159, 0.168]  6518 MB/s
+sender CPUs 6,7        no sha ext chunk by chunk  n=5 seconds=0.656 [0.648, 0.671]  1638 MB/s
+sender CPUs 6,7        no sha ext side by side    n=5 seconds=0.141 [0.135, 0.142]  7635 MB/s
+sender CPUs 6-9        no sha ext chunk by chunk  n=5 seconds=0.350 [0.344, 0.352]  3068 MB/s
+sender CPUs 6-9        no sha ext side by side    n=5 seconds=0.093 [0.091, 0.095]  11585 MB/s
+sender CPUs 6          sha ext    chunk by chunk  n=5 seconds=0.535 [0.534, 0.540]  2006 MB/s
+sender CPUs 6          sha ext    side by side    n=5 seconds=0.228 [0.227, 0.230]  4707 MB/s
+sender CPUs 6,18       sha ext    chunk by chunk  n=5 seconds=0.349 [0.347, 0.352]  3080 MB/s
+sender CPUs 6,18       sha ext    side by side    n=5 seconds=0.159 [0.158, 0.161]  6758 MB/s
+sender CPUs 6,7        sha ext    chunk by chunk  n=5 seconds=0.297 [0.293, 0.305]  3618 MB/s
+sender CPUs 6,7        sha ext    side by side    n=5 seconds=0.140 [0.133, 0.148]  7680 MB/s
+sender CPUs 6-9        sha ext    chunk by chunk  n=5 seconds=0.167 [0.165, 0.173]  6411 MB/s
+sender CPUs 6-9        sha ext    side by side    n=5 seconds=0.091 [0.091, 0.094]  11760 MB/s

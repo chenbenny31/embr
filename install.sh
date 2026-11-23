@@ -16,6 +16,10 @@
 #   --enable-aesni --enable-intelasm   x86_64 only; AES-GCM at line rate
 # Install prefixes match CMakeLists.txt: ~/.local/wolfssl and ~/.local/ngtcp2
 #
+# Also builds Intel's isa-l_crypto into ~/.local/isa-l_crypto (x86_64 only, optional for embr):
+# it hashes 8 or 16 chunks side by side with AVX2 or AVX-512, several times faster than one by
+# one on a CPU without SHA extensions. Without it embr builds and runs the same, chunk by chunk.
+#
 # The SEND_ZC egress (io_uring, liburing-devel above) additionally needs a kernel >= 6.2
 # (IORING_SEND_ZC_REPORT_USAGE) and ~105 KiB of RLIMIT_MEMLOCK per QUIC connection; the
 # stock 8 MiB is plenty. Neither is fatal here: embr falls back to sendmsg, but the
@@ -32,9 +36,11 @@ WOLFSSL_REF="${WOLFSSL_REF:-v5.9.2-stable}"   # reference laptop build: v5.9.2-s
 # >= 1.26.0: earlier releases can leave a server connection silent until the idle timeout
 # when both retransmission probes are lost while the congestion window is at its minimum
 NGTCP2_REF="${NGTCP2_REF:-v1.26.0}"
+ISAL_CRYPTO_REF="${ISAL_CRYPTO_REF:-v2.26.1}"
 SRC="${SRC:-$HOME/src}"
 PREFIX_WOLFSSL="${PREFIX_WOLFSSL:-$HOME/.local/wolfssl}"
 PREFIX_NGTCP2="${PREFIX_NGTCP2:-$HOME/.local/ngtcp2}"
+PREFIX_ISAL_CRYPTO="${PREFIX_ISAL_CRYPTO:-$HOME/.local/isa-l_crypto}"
 JOBS="${JOBS:-$(nproc)}"
 FORCE="${FORCE:-0}"
 BUILD_EMBR="${BUILD_EMBR:-0}"
@@ -48,11 +54,11 @@ die() { log "FATAL: $*"; exit 1; }
 install_system_deps() {
     if command -v dnf >/dev/null; then          # Fedora / Amazon Linux 2023
         sudo dnf install -y gcc-c++ make cmake ninja-build autoconf automake libtool \
-            pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat ethtool
+            pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat ethtool nasm
     elif command -v apt-get >/dev/null; then    # Debian / Ubuntu
         sudo apt-get update
         sudo apt-get install -y build-essential cmake ninja-build autoconf automake libtool \
-            pkg-config git openssl libssl-dev liburing-dev time ncat ethtool
+            pkg-config git openssl libssl-dev liburing-dev time ncat ethtool nasm
     else
         die "unknown package manager — install: g++ cmake ninja autoconf automake libtool pkg-config git openssl-devel liburing-devel time ncat"
     fi
@@ -151,6 +157,31 @@ build_ngtcp2() {
     ngtcp2_ok || die "ngtcp2 built but libngtcp2_crypto_wolfssl.pc missing — was wolfSSL found?"
 }
 
+isal_crypto_ok() {
+    [[ -f "$PREFIX_ISAL_CRYPTO/lib/pkgconfig/libisal_crypto.pc" ]] || return 1
+    [[ "$ISAL_CRYPTO_REF" != v[0-9]* ]] && return 0
+    [[ "v$(PKG_CONFIG_PATH="$PREFIX_ISAL_CRYPTO/lib/pkgconfig" pkg-config --modversion libisal_crypto 2>/dev/null)" == "$ISAL_CRYPTO_REF" ]]
+}
+
+# optional for embr; its assembly needs nasm >= 2.14.01
+build_isal_crypto() {
+    if [[ "$(uname -m)" != "x86_64" ]]; then
+        log "isa-l_crypto: skipped on $(uname -m); embr hashes chunk by chunk"; return 0
+    fi
+    if [[ "$FORCE" != "1" ]] && isal_crypto_ok; then
+        log "isa-l_crypto already present at $PREFIX_ISAL_CRYPTO — skip (FORCE=1 to rebuild)"; return 0
+    fi
+    clone_at https://github.com/intel/isa-l_crypto.git "$ISAL_CRYPTO_REF" "$SRC/isa-l_crypto"
+    pushd "$SRC/isa-l_crypto" >/dev/null
+    git clean -fdxq
+    ./autogen.sh
+    ./configure --prefix="$PREFIX_ISAL_CRYPTO"
+    make -j"$JOBS"
+    make install
+    popd >/dev/null
+    isal_crypto_ok || die "isa-l_crypto built but libisal_crypto.pc is missing or has another version"
+}
+
 verify() {
     log "=== verification ==="
     local opts="$PREFIX_WOLFSSL/include/wolfssl/options.h"
@@ -161,6 +192,8 @@ verify() {
     printf '  wolfssl:                  %s\n' "$(pkg-config --modversion wolfssl)"
     printf '  libngtcp2:                %s\n' "$(pkg-config --modversion libngtcp2)"
     printf '  libngtcp2_crypto_wolfssl: %s\n' "$(pkg-config --modversion libngtcp2_crypto_wolfssl)"
+    printf '  libisal_crypto:           %s\n' \
+        "$(PKG_CONFIG_PATH="$PREFIX_ISAL_CRYPTO/lib/pkgconfig" pkg-config --modversion libisal_crypto 2>/dev/null || echo 'not installed: chunks are hashed one by one')"
     printf '  net.core.rmem_max/wmem_max: %s / %s (want >= 4194304)\n' \
         "$(sysctl -n net.core.rmem_max)" "$(sysctl -n net.core.wmem_max)"
     printf '  liburing:                 %s (SEND_ZC egress; need >= 2.4 for SEND_ZC usage reporting)\n' "$(pkg-config --modversion liburing 2>/dev/null || echo missing)"
@@ -195,6 +228,7 @@ main() {
     tune_sysctl
     build_wolfssl
     build_ngtcp2
+    build_isal_crypto
     verify
     ensure_cert
     [[ "$BUILD_EMBR" == "1" ]] && build_embr

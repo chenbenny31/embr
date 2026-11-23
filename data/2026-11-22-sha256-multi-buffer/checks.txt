@@ -1,0 +1,14 @@
+# checks on harness/multi-buffer.patch (on top of the applied verifier threads), desktop, 2026-11-23T04:16:36Z
+unit tests with the library, each of: default, EMBR_VERIFY=inline, EMBR_VERIFY=thread, EMBR_HASH_LANES=1, EMBR_HASH_LANES=8, EMBR_VERIFY_THREADS=3: 110 passed
+unit tests built without the library (it is optional): 110 passed, 0 warnings
+the library installed by the install.sh recipe (autogen, configure, make, make install; nasm 3.02): libisal_crypto.so.2, pkg-config version 2.26.1; embr links it
+ASan + UBSan, RunPull/Sha256Many/ParallelHash/PartialFile, 3 repeats: passed, 0 reports
+96 concurrent runs of RunPull + Sha256Many + ParallelHash: 0 failures; 96-run QUIC gate: 0 failures
+one 1 GiB QUIC transfer: output sha256 equals the source's; the sender's pre-hash through sha256_many writes a byte-identical .embr.hash
+Helgrind, two RunPull tests: no report with its innermost frame in the library after the one-time warm-up in sha256_lanes()
+  (before it: 3, reads of the library's lazily stored CPU choice); one report on sha256_lanes()' function-local static, which is initialised under the
+  compiler's guard; the rest are the tests' printing and OpenSSL internals, as before.
+The first run of the new test found that the library refuses a null source for an empty buffer; sha256_many now passes a valid pointer for length 0.
+ThreadSanitizer was not run: libtsan is not installed on the desktop.
+Added later the same day: with no verifier thread (one usable CPU, or EMBR_VERIFY=inline) chunks are also collected into a set of lanes and hashed on the receiving thread; 110 tests in every mode and pinned to one CPU, ASan + UBSan clean, 96 concurrent RunPull runs with EMBR_VERIFY=inline 0 failures.
+Applied tree (the patch is now in the working tree), its own build: 110 tests in each of default, EMBR_VERIFY=inline, EMBR_VERIFY=thread, EMBR_HASH_LANES=1, EMBR_HASH_LANES=8, EMBR_VERIFY_THREADS=3 and pinned to one CPU; 96 concurrent runs of RunPull + Sha256Many + ParallelHash 0 failures; 96-run QUIC gate 0 failures.

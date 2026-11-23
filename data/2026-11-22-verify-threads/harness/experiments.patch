@@ -1,0 +1,116 @@
+--- a/src/core/pull.cpp
++++ b/src/core/pull.cpp
+@@ -12,6 +12,7 @@
+ #include <fcntl.h>
+ #include <sched.h>
+ #include <sys/mman.h>
++#include <sys/resource.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
+ #include <algorithm>
+@@ -68,6 +69,13 @@
+     return usable_cpus() >= 2;
+ }
+ 
++// EXPERIMENT: number of verifier threads
++unsigned verify_threads() {
++    if (!verify_on_thread()) { return 0; }
++    const char* count = std::getenv("EMBR_VERIFY_THREADS");
++    return count != nullptr ? static_cast<unsigned>(std::max(1, std::atoi(count))) : 1;
++}
++
+ // Hashes received chunks off the receiving thread: without SHA extensions one chunk's hash takes
+ // about as long as receiving it, and nothing is read from the socket while it runs inline.
+ class ChunkVerifier {
+@@ -77,8 +85,8 @@
+         bool matches;
+     };
+ 
+-    ChunkVerifier(int fd, const FileMeta& meta, bool threaded) : fd_(fd), meta_(meta) {
+-        if (threaded) { worker_ = std::thread([this] { run(); }); }
++    ChunkVerifier(int fd, const FileMeta& meta, unsigned threads) : fd_(fd), meta_(meta) {
++        for (unsigned i = 0; i < threads; ++i) { workers_.emplace_back([this] { run(); }); }
+     }
+     ~ChunkVerifier() { stop(); }
+     ChunkVerifier(const ChunkVerifier&) = delete;
+@@ -86,7 +94,7 @@
+ 
+     // the chunk is complete on disk; verified now when there is no thread
+     void submit(uint32_t chunk_index) {
+-        if (!worker_.joinable()) {
++        if (workers_.empty()) {
+             finished_.push_back(verify(chunk_index));
+             return;
+         }
+@@ -147,13 +155,14 @@
+     }
+ 
+     void stop() {
+-        if (!worker_.joinable()) { return; }
++        if (workers_.empty()) { return; }
+         {
+             std::lock_guard lock(mutex_);
+             closing_ = true;
+         }
+-        wake_.notify_one();
+-        worker_.join();
++        wake_.notify_all();
++        for (std::thread& worker : workers_) { worker.join(); }
++        workers_.clear();
+     }
+ 
+     int fd_;
+@@ -164,7 +173,7 @@
+     std::vector<Result> finished_;
+     std::exception_ptr error_;
+     bool closing_ = false;
+-    std::thread worker_;
++    std::vector<std::thread> workers_;
+ };
+ 
+ // true when out already holds the whole file: right size and every chunk hash; read-only
+@@ -185,7 +194,8 @@
+ 
+ // create the output for a fresh pull: a name the sender chose never replaces an existing file
+ int open_fresh(const std::string& out, bool sender_named) {
+-    const int flags = O_RDWR | O_CREAT | (sender_named ? O_EXCL : O_TRUNC);
++    int flags = O_RDWR | O_CREAT | (sender_named ? O_EXCL : O_TRUNC);
++    if (std::getenv("EMBR_EXPERIMENT_KEEP_PAGES") != nullptr) { flags &= ~O_TRUNC; } // EXPERIMENT
+     const int fd = ::open(out.c_str(), flags, 0664);
+     if (fd < 0 && errno == EEXIST) {
+         throw std::runtime_error("run_pull: " + out + " already exists and is a different file"
+@@ -266,7 +276,7 @@
+     }
+     send_msg(t, make_complete());
+ 
+-    ChunkVerifier verifier(fd.get(), file_meta, verify_on_thread());
++    ChunkVerifier verifier(fd.get(), file_meta, verify_threads());
+     // a chunk counts once its hash matched; the record is saved each time results come in
+     const auto record = [&](const std::vector<ChunkVerifier::Result>& results) {
+         if (results.empty()) { return; }
+@@ -313,6 +323,12 @@
+         try { record(verifier.finish()); } catch (...) {}
+         throw;
+     }
++    if (std::getenv("EMBR_EXPERIMENT_THREAD_CPU") != nullptr) { // EXPERIMENT: CPU of the receiving thread alone
++        struct rusage usage{};
++        ::getrusage(RUSAGE_THREAD, &usage);
++        std::cerr << "[experiment] receiving_thread_cpu_ms="
++                  << (usage.ru_utime.tv_sec + usage.ru_stime.tv_sec) * 1000 + (usage.ru_utime.tv_usec + usage.ru_stime.tv_usec) / 1000 << "\n";
++    }
+     record(verifier.finish());
+     verifier.rethrow_if_failed();
+     std::cout << "\n";
+--- a/src/transport/quic_transport.cpp
++++ b/src/transport/quic_transport.cpp
+@@ -204,7 +204,9 @@
+             std::strerror(reserve_rc));
+     }
+ 
+-    void* map = ::mmap(nullptr, map_len, PROT_READ | PROT_WRITE, MAP_SHARED,
++    // EXPERIMENT: map every page of the chunk in one call instead of one fault per page
++    static const int populate = std::getenv("EMBR_EXPERIMENT_POPULATE") != nullptr ? MAP_POPULATE : 0;
++    void* map = ::mmap(nullptr, map_len, PROT_READ | PROT_WRITE, MAP_SHARED | populate,
+                        file_fd, static_cast<off_t>(base_off));
+     if (map == MAP_FAILED) {
+         throw std::runtime_error(

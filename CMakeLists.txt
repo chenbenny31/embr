@@ -6,10 +6,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_BUILD_RPATH_USE_LINK_PATH TRUE)
 list(APPEND CMAKE_PREFIX_PATH
     "$ENV{HOME}/.local/ngtcp2"
-    "$ENV{HOME}/.local/wolfssl")
+    "$ENV{HOME}/.local/wolfssl"
+    "$ENV{HOME}/.local/isa-l_crypto")
 set(PKG_CONFIG_PATH_SAVE "$ENV{PKG_CONFIG_PATH}")
 set(ENV{PKG_CONFIG_PATH}
-    "$ENV{HOME}/.local/wolfssl/lib/pkgconfig:$ENV{HOME}/.local/ngtcp2/lib/pkgconfig:${PKG_CONFIG_PATH_SAVE}")
+    "$ENV{HOME}/.local/wolfssl/lib/pkgconfig:$ENV{HOME}/.local/ngtcp2/lib/pkgconfig:$ENV{HOME}/.local/isa-l_crypto/lib/pkgconfig:${PKG_CONFIG_PATH_SAVE}")
 
 find_package(OpenSSL REQUIRED)
 find_package(PkgConfig REQUIRED)
@@ -21,6 +22,8 @@ pkg_check_modules(URING REQUIRED liburing>=2.4)
 pkg_check_modules(NGTCP2 REQUIRED IMPORTED_TARGET libngtcp2)
 pkg_check_modules(NGTCP2_CRYPTO_WS REQUIRED IMPORTED_TARGET libngtcp2_crypto_wolfssl)
 pkg_check_modules(WOLFSSL REQUIRED IMPORTED_TARGET wolfssl)
+# optional: SHA-256 of several chunks side by side in SIMD lanes; without it chunks are hashed one by one
+pkg_check_modules(ISAL_CRYPTO IMPORTED_TARGET libisal_crypto)
 
 include(FetchContent)
 
@@ -72,6 +75,10 @@ add_library(core
 target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
 target_include_directories(core PUBLIC src)
 target_compile_definitions(core PRIVATE _GNU_SOURCE)
+if(ISAL_CRYPTO_FOUND)
+    target_link_libraries(core PRIVATE PkgConfig::ISAL_CRYPTO)
+    target_compile_definitions(core PRIVATE EMBR_HAVE_ISAL_CRYPTO)
+endif()
 
 # Tracker lib
 add_library(tracker

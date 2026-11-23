@@ -4,6 +4,7 @@
 
 #pragma once
 #include "util/constants.hpp"
+#include <span>
 #include <array>
 #include <cstdint>
 #include <cstddef>
@@ -12,6 +13,22 @@
 
 // SHA256 of an in-memory buffer for per-chunk verification
 std::array<uint8_t, HASH_SIZE> sha256_buf(const uint8_t* data, size_t len);
+
+// one buffer of a sha256_many call
+struct HashInput {
+    const uint8_t* data;
+    size_t len;
+};
+
+// SHA256 of several buffers. With ISA-L crypto built in and AVX-512 (or AVX2 without SHA
+// extensions) on the CPU, buffers are hashed side by side in SIMD lanes; for fewer than half a
+// set of lanes, and everywhere else, one by one as sha256_buf does.
+void sha256_many(std::span<const HashInput> inputs,
+                 std::span<std::array<uint8_t, HASH_SIZE>> digests);
+
+// buffers worth collecting for one sha256_many call on this CPU; 1 when one by one is as fast.
+// EMBR_HASH_LANES=N overrides it (1 turns the side-by-side path off)
+unsigned sha256_lanes();
 
 // Returns ".{file_name}.embr.hash" in the same directory as file_path
 std::string hash_cache_path_for(const std::string& file_path);

@@ -214,3 +214,33 @@ TEST(ParallelHash, HashChangesOnByteFlip) {
     EXPECT_NE(before[2], after[2]);  // chunk 2 changed
     EXPECT_EQ(before[3], after[3]);  // chunk 3 unchanged
 }
+
+// ── sha256_many ──────────────────────────────────────────────────────────────
+
+// any count and any mix of sizes gives what sha256_buf gives one by one: below, at and above a
+// set of lanes, with empty buffers, block-boundary sizes and a whole chunk
+TEST(Sha256Many, MatchesOneByOne) {
+    const std::vector<size_t> sizes = {0, 1, 55, 56, 63, 64, 65, 119, 120, 4096, 100000, CHUNK_SIZE, CHUNK_SIZE - 7};
+    std::mt19937 rng(7);
+    for (const size_t count : {1u, 2u, 7u, 8u, 9u, 15u, 16u, 17u, 33u, 40u}) {
+        std::vector<std::vector<uint8_t>> buffers(count);
+        std::vector<HashInput> inputs(count);
+        for (size_t i = 0; i < count; ++i) {
+            buffers[i].resize(sizes[(i * 5 + count) % sizes.size()]);
+            for (auto& byte : buffers[i]) { byte = static_cast<uint8_t>(rng()); }
+            inputs[i] = {buffers[i].data(), buffers[i].size()};
+        }
+        std::vector<std::array<uint8_t, HASH_SIZE>> digests(count);
+        sha256_many(inputs, digests);
+        for (size_t i = 0; i < count; ++i) {
+            EXPECT_EQ(digests[i], sha256_buf(buffers[i].data(), buffers[i].size()))
+                << "count " << count << " buffer " << i << " size " << buffers[i].size();
+        }
+    }
+}
+
+TEST(Sha256Many, CountMismatchThrows) {
+    std::vector<HashInput> inputs(2);
+    std::vector<std::array<uint8_t, HASH_SIZE>> digests(3);
+    EXPECT_THROW(sha256_many(inputs, digests), std::runtime_error);
+}

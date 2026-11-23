@@ -1,0 +1,313 @@
+--- a/src/core/pull.cpp
++++ b/src/core/pull.cpp
+@@ -10,14 +10,23 @@
+ #include "transport/udp_transport.hpp"
+ #include "util/socket_fd.hpp"
+ #include <fcntl.h>
++#include <sched.h>
+ #include <sys/mman.h>
+ #include <sys/stat.h>
+ #include <unistd.h>
+ #include <algorithm>
++#include <condition_variable>
++#include <cstdlib>
+ #include <cstring>
++#include <deque>
++#include <exception>
+ #include <iostream>
++#include <mutex>
+ #include <stdexcept>
+ #include <string>
++#include <string_view>
++#include <thread>
++#include <utility>
+ #include <vector>
+ #include <optional>
+ 
+@@ -43,6 +52,121 @@
+     return {offset, std::min(static_cast<uint64_t>(CHUNK_SIZE), meta.file_size - offset)};
+ }
+ 
++// CPUs this process may run on: taskset and container cpusets count here, hardware_concurrency() ignores them
++unsigned usable_cpus() {
++    cpu_set_t allowed;
++    CPU_ZERO(&allowed);
++    if (::sched_getaffinity(0, sizeof(allowed), &allowed) != 0) { return 1; }
++    return static_cast<unsigned>(CPU_COUNT(&allowed));
++}
++
++// verify on a second thread when there is a CPU for it; EMBR_VERIFY=inline|thread forces either
++bool verify_on_thread() {
++    const char* mode = std::getenv("EMBR_VERIFY");
++    if (mode != nullptr && std::string_view{mode} == "inline") { return false; }
++    if (mode != nullptr && std::string_view{mode} == "thread") { return true; }
++    return usable_cpus() >= 2;
++}
++
++// Hashes received chunks off the receiving thread: without SHA extensions one chunk's hash takes
++// about as long as receiving it, and nothing is read from the socket while it runs inline.
++class ChunkVerifier {
++public:
++    struct Result {
++        uint32_t chunk_index;
++        bool matches;
++    };
++
++    ChunkVerifier(int fd, const FileMeta& meta, bool threaded) : fd_(fd), meta_(meta) {
++        if (threaded) { worker_ = std::thread([this] { run(); }); }
++    }
++    ~ChunkVerifier() { stop(); }
++    ChunkVerifier(const ChunkVerifier&) = delete;
++    ChunkVerifier& operator=(const ChunkVerifier&) = delete;
++
++    // the chunk is complete on disk; verified now when there is no thread
++    void submit(uint32_t chunk_index) {
++        if (!worker_.joinable()) {
++            finished_.push_back(verify(chunk_index));
++            return;
++        }
++        {
++            std::lock_guard lock(mutex_);
++            pending_.push_back(chunk_index);
++        }
++        wake_.notify_one();
++    }
++
++    // results ready so far; never waits
++    std::vector<Result> take_finished() {
++        std::lock_guard lock(mutex_);
++        return std::exchange(finished_, {});
++    }
++
++    // waits until every submitted chunk is verified
++    std::vector<Result> finish() {
++        stop();
++        return std::exchange(finished_, {});
++    }
++
++    // an error on the verifier thread (a failed mmap) surfaces on the receiving thread here
++    void rethrow_if_failed() {
++        std::lock_guard lock(mutex_);
++        if (error_) { std::rethrow_exception(error_); }
++    }
++
++private:
++    Result verify(uint32_t chunk_index) const {
++        const auto [offset, len] = chunk_span(meta_, chunk_index);
++        return {chunk_index,
++                chunk_on_disk_matches(fd_, chunk_index, offset, len, meta_.chunk_hashes[chunk_index])};
++    }
++
++    void run() {
++        std::unique_lock lock(mutex_);
++        for (;;) {
++            wake_.wait(lock, [this] { return closing_ || !pending_.empty(); });
++            if (pending_.empty()) { return; } // closing, and nothing left to verify
++            const uint32_t chunk_index = pending_.front();
++            pending_.pop_front();
++            lock.unlock();
++            Result result{chunk_index, false};
++            std::exception_ptr error;
++            try {
++                result = verify(chunk_index);
++            } catch (...) {
++                error = std::current_exception();
++            }
++            lock.lock();
++            if (error) {
++                error_ = error;
++                return;
++            }
++            finished_.push_back(result);
++        }
++    }
++
++    void stop() {
++        if (!worker_.joinable()) { return; }
++        {
++            std::lock_guard lock(mutex_);
++            closing_ = true;
++        }
++        wake_.notify_one();
++        worker_.join();
++    }
++
++    int fd_;
++    const FileMeta& meta_;
++    std::mutex mutex_;
++    std::condition_variable wake_;
++    std::deque<uint32_t> pending_;
++    std::vector<Result> finished_;
++    std::exception_ptr error_;
++    bool closing_ = false;
++    std::thread worker_;
++};
++
+ // true when out already holds the whole file: right size and every chunk hash; read-only
+ bool already_complete(const std::string& out, const FileMeta& meta) {
+     const int raw_fd = ::open(out.c_str(), O_RDONLY);
+@@ -142,41 +266,55 @@
+     }
+     send_msg(t, make_complete());
+ 
+-    for (uint32_t chunk_index : needed) {
+-        // recv CHUNK_HDR
+-        Message hdr_msg = recv_msg(t);
+-        if (hdr_msg.type != MsgType::CHUNK_HDR) {
+-            throw std::runtime_error("run_pull: expected CHUNK_HDR for chunk "  +
+-                                     std::to_string(chunk_index));
+-        }
+-
+-        ChunkHdr hdr = parse_chunk_hdr(hdr_msg);
+-        if (hdr.chunk_index != chunk_index) {
+-            throw std::runtime_error("run_pull: chunk index mismatch - expected " +
+-                                     std::to_string(chunk_index) +
+-                                     " got " + std::to_string(hdr.chunk_index));
+-        }
+-
+-        uint64_t offset = static_cast<uint64_t>(chunk_index) * CHUNK_SIZE;
+-        uint64_t chunk_len = std::min(static_cast<uint64_t>(CHUNK_SIZE),
+-                                      file_meta.file_size - offset);
+-
+-        // recv chunk data into output file
+-        t.recv_file(fd.get(), offset, chunk_len);
+-
+-        // verify chunk hash
+-        if (chunk_on_disk_matches(fd.get(), chunk_index, offset, chunk_len,
+-                                  file_meta.chunk_hashes[chunk_index])) {
+-            cm.mark_done(chunk_index);
+-        } else {
+-            cm.mark_todo(chunk_index);
+-            std::cerr << "\n[pull] hash mismatch at chunk " << chunk_index << "\n";
++    ChunkVerifier verifier(fd.get(), file_meta, verify_on_thread());
++    // a chunk counts once its hash matched; the record is saved each time results come in
++    const auto record = [&](const std::vector<ChunkVerifier::Result>& results) {
++        if (results.empty()) { return; }
++        for (const ChunkVerifier::Result& result : results) {
++            if (result.matches) {
++                cm.mark_done(result.chunk_index);
++            } else {
++                cm.mark_todo(result.chunk_index);
++                std::cerr << "\n[pull] hash mismatch at chunk " << result.chunk_index << "\n";
++            }
+         }
+         PartialFile::save(out, file_meta.chunk_hashes[0], cm);
++    };
+ 
+-        std::cout << "[pull] received " << chunk_index + 1
+-                  << "/" << file_meta.chunk_count << "\r" << std::flush;
++    try {
++        for (uint32_t chunk_index : needed) {
++            // recv CHUNK_HDR
++            Message hdr_msg = recv_msg(t);
++            if (hdr_msg.type != MsgType::CHUNK_HDR) {
++                throw std::runtime_error("run_pull: expected CHUNK_HDR for chunk "  +
++                                         std::to_string(chunk_index));
++            }
++
++            ChunkHdr hdr = parse_chunk_hdr(hdr_msg);
++            if (hdr.chunk_index != chunk_index) {
++                throw std::runtime_error("run_pull: chunk index mismatch - expected " +
++                                         std::to_string(chunk_index) +
++                                         " got " + std::to_string(hdr.chunk_index));
++            }
++
++            const auto [offset, chunk_len] = chunk_span(file_meta, chunk_index);
++
++            // recv chunk data into output file, then hand it to the verifier
++            t.recv_file(fd.get(), offset, chunk_len);
++            verifier.submit(chunk_index);
++            record(verifier.take_finished());
++            verifier.rethrow_if_failed();
++
++            std::cout << "[pull] received " << chunk_index + 1
++                      << "/" << file_meta.chunk_count << "\r" << std::flush;
++        }
++    } catch (...) {
++        // the connection broke: chunks already on disk still count, so a resume does not fetch them again
++        try { record(verifier.finish()); } catch (...) {}
++        throw;
+     }
++    record(verifier.finish());
++    verifier.rethrow_if_failed();
+     std::cout << "\n";
+ 
+     if (cm.all_done()) {
+--- a/tests/test_resume.cpp
++++ b/tests/test_resume.cpp
+@@ -25,6 +25,7 @@
+ #include <cstring>
+ #include <filesystem>
+ #include <fstream>
++#include <functional>
+ #include <string>
+ #include <thread>
+ #include <vector>
+@@ -264,8 +265,10 @@
+     ~SourceFile() { ::unlink(hash_cache_path_for(file.path).c_str()); }
+ };
+ 
+-// one transfer; returns the pull side's error text, empty on success
+-static std::string pull_from_push(const std::string& src_path, const std::string& out_path) {
++// one transfer; returns the pull side's error text, empty on success.
++// edit_meta changes what the sender announces, to stand in for data that does not match its hash
++static std::string pull_from_push(const std::string& src_path, const std::string& out_path,
++                                  const std::function<void(FileMeta&)>& edit_meta = {}) {
+     ::signal(SIGPIPE, SIG_IGN); // main.cpp does this for the real binary
+ 
+     int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
+@@ -280,9 +283,10 @@
+     }
+     SocketFd listen_fd{lfd};
+ 
+-    std::jthread pusher([&src_path, &listen_fd]() {
++    std::jthread pusher([&src_path, &listen_fd, &edit_meta]() {
+         try {
+             FileMeta meta = precompute_meta(src_path);
++            if (edit_meta) { edit_meta(meta); }
+             SocketFd file_fd{::open(src_path.c_str(), O_RDONLY)};
+             auto conn = tcp_accept(listen_fd.get());
+             run_push(*conn, std::move(file_fd), std::move(meta));
+@@ -306,6 +310,42 @@
+     EXPECT_EQ(read_all(out.path), src.bytes);
+ }
+ 
++// EMBR_VERIFY for one scope: "inline" hashes on the receiving thread, "thread" on a second one
++struct VerifyMode {
++    explicit VerifyMode(const char* mode) { ::setenv("EMBR_VERIFY", mode, 1); }
++    ~VerifyMode() { ::unsetenv("EMBR_VERIFY"); }
++};
++
++TEST(RunPull, VerifierThreadAndInlineGiveTheSameFile) {
++    SourceFile src(5 * CHUNK_SIZE + 12345);
++    for (const char* mode : {"thread", "inline"}) {
++        VerifyMode verify(mode);
++        TempFile out = make_tempfile();
++        EXPECT_EQ(pull_from_push(src.file.path, out.path), "") << mode;
++        EXPECT_EQ(read_all(out.path), src.bytes) << mode;
++        EXPECT_NE(::access(PartialFile::path_for(out.path).c_str(), F_OK), 0) << mode;
++    }
++}
++
++TEST(RunPull, ChunkThatFailsItsHashIsLeftForResume) {
++    SourceFile src(5 * CHUNK_SIZE + 12345);
++    for (const char* mode : {"thread", "inline"}) {
++        VerifyMode verify(mode);
++        TempFile out = make_tempfile();
++        // the sender announces a wrong hash for chunk 3, so the data it sends cannot match
++        EXPECT_EQ(pull_from_push(src.file.path, out.path,
++                                 [](FileMeta& meta) { meta.chunk_hashes[3][0] ^= 0xff; }), "") << mode;
++
++        FileMeta announced = precompute_meta(src.file.path);
++        announced.chunk_hashes[3][0] ^= 0xff;
++        auto record = PartialFile::load(out.path, announced.chunk_hashes[0],
++                                        announced.chunk_count, announced.file_size);
++        ASSERT_TRUE(record.has_value()) << mode;
++        EXPECT_EQ(record->needed_chunks(), std::vector<uint32_t>{3}) << mode;
++        PartialFile::remove(out.path);
++    }
++}
++
+ TEST(RunPull, ResumeKeepsVerifiedChunksAndRefetchesStaleOnes) {
+     SourceFile src(2 * CHUNK_SIZE + 12345); // 3 chunks
+     auto out = make_tempfile();

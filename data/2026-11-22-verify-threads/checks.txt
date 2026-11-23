@@ -1,0 +1,11 @@
+# checks on harness/verify-threads.patch (on top of the applied verifier thread), desktop, 2026-11-23T03:24:15Z
+unit tests, default mode:        [  PASSED  ] 107 tests.
+unit tests, EMBR_VERIFY=inline:  [  PASSED  ] 107 tests.
+unit tests, EMBR_VERIFY=thread:  [  PASSED  ] 107 tests.
+RunPull suite repeated 40 times: 40 of 40 passed; pinned to one CPU: passed
+ASan + UBSan, RunPull suite, EMBR_VERIFY_THREADS=3, 5 repeats: 5 passed, 0 reports
+Helgrind, two RunPull tests: 35 possible races with 3 verifier threads and 35 with EMBR_VERIFY=inline, the same innermost frames
+  (ostream width from the tests' printing, memset, OpenSSL internals); none in pull.cpp.
+ThreadSanitizer was not run: libtsan is not installed on the desktop.
+For the applied one-thread version: 96 concurrent runs of the RunPull suite with EMBR_VERIFY=thread and the 96-run QUIC gate, 0 failures each;
+  one 1 GiB QUIC transfer with the output's sha256 equal to the source's.

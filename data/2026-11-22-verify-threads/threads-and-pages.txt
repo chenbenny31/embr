@@ -1,0 +1,40 @@
+# loopback, 1 GiB, desktop (Ryzen 9 9900X, kernel 7.3.3-300.fc45.x86_64), 2026-11-23T03:14:46Z; scratch binary = the applied verifier thread plus three experiment switches (harness/experiments.patch), n=5, configs alternated
+# sender pinned to CPUs 6-9, QUIC rows sendmsg + GSO; 'no sha ext' = OPENSSL_ia32cap=:~0x20000000 on the receiver
+# receiving_thread_ms: CPU of the thread that reads the socket, from its own getrusage at the end of the receive loop; other_threads_ms: the rest of the process
+
+## verifier threads: quic, 3 cores, no sha ext
+1 verifier thread                        quic n=5 gbps=7.28 wall=1.18 process_cpu=1.88 receiving_thread_ms=721 other_threads_ms=1157 failed=0
+2 verifier threads                       quic n=5 gbps=11.01 wall=0.78 process_cpu=1.84 receiving_thread_ms=717 other_threads_ms=1123 failed=0
+## verifier threads: tcp, 3 cores, no sha ext
+1 verifier thread                        tcp  n=5 gbps=7.41 wall=1.16 process_cpu=1.39 receiving_thread_ms=241 other_threads_ms=1149 failed=0
+2 verifier threads                       tcp  n=5 gbps=14.56 wall=0.59 process_cpu=1.42 receiving_thread_ms=250 other_threads_ms=1170 failed=0
+## verifier threads: tcp, 4 cores, no sha ext
+1 verifier thread                        tcp  n=5 gbps=7.41 wall=1.16 process_cpu=1.39 receiving_thread_ms=242 other_threads_ms=1149 failed=0
+2 verifier threads                       tcp  n=5 gbps=14.56 wall=0.59 process_cpu=1.41 receiving_thread_ms=247 other_threads_ms=1163 failed=0
+3 verifier threads                       tcp  n=5 gbps=22.03 wall=0.39 process_cpu=1.43 receiving_thread_ms=250 other_threads_ms=1179 failed=0
+## verifier threads: quic, 3 cores, sha ext
+1 verifier thread                        quic n=5 gbps=10.87 wall=0.79 process_cpu=1.13 receiving_thread_ms=719 other_threads_ms=411 failed=0
+2 verifier threads                       quic n=5 gbps=10.87 wall=0.79 process_cpu=1.13 receiving_thread_ms=718 other_threads_ms=411 failed=0
+## verifier threads: tcp, 3 cores, sha ext
+1 verifier thread                        tcp  n=5 gbps=18.28 wall=0.47 process_cpu=0.71 receiving_thread_ms=247 other_threads_ms=465 failed=0
+2 verifier threads                       tcp  n=5 gbps=31.81 wall=0.27 process_cpu=0.68 receiving_thread_ms=251 other_threads_ms=431 failed=0
+## verifier threads: quic, 2 cores, no sha ext
+1 verifier thread                        quic n=5 gbps=7.22 wall=1.19 process_cpu=1.89 receiving_thread_ms=724 other_threads_ms=1166 failed=0
+2 verifier threads                       quic n=5 gbps=8.95 wall=0.96 process_cpu=1.84 receiving_thread_ms=699 other_threads_ms=1141 failed=0
+## verifier threads: quic, 1 core 2 threads, no sha ext
+1 verifier thread                        quic n=5 gbps=6.05 wall=1.42 process_cpu=2.40 receiving_thread_ms=1000 other_threads_ms=1405 failed=0
+2 verifier threads                       quic n=5 gbps=6.36 wall=1.35 process_cpu=2.62 receiving_thread_ms=992 other_threads_ms=1632 failed=0
+
+## output pages already present (upper bound of preparing them off the receiving thread): quic, 2 cores, sha ext
+fresh output                             quic n=5 gbps=10.74 wall=0.80 process_cpu=1.13 receiving_thread_ms=721 other_threads_ms=407 failed=0
+pages kept                               quic n=5 gbps=10.48 wall=0.82 process_cpu=1.09 receiving_thread_ms=684 other_threads_ms=410 failed=0
+## the same, tcp
+fresh output                             tcp  n=5 gbps=18.28 wall=0.47 process_cpu=0.71 receiving_thread_ms=245 other_threads_ms=465 failed=0
+pages kept                               tcp  n=5 gbps=17.90 wall=0.48 process_cpu=0.61 receiving_thread_ms=145 other_threads_ms=466 failed=0
+
+## one mmap call maps the whole chunk (MAP_POPULATE) against one fault per page: quic, 2 cores, sha ext, output on tmpfs
+one fault per page                       quic n=5 gbps=10.74 wall=0.80 process_cpu=1.13 receiving_thread_ms=720 other_threads_ms=407 failed=0
+populate                                 quic n=5 gbps=11.01 wall=0.78 process_cpu=1.12 receiving_thread_ms=711 other_threads_ms=409 failed=0
+## the same, output on a disk file system (btrfs)
+one fault per page                       quic n=5 gbps=10.48 wall=0.82 process_cpu=1.06 receiving_thread_ms=664 other_threads_ms=396 failed=0
+populate                                 quic n=5 gbps=10.87 wall=0.79 process_cpu=1.14 receiving_thread_ms=744 other_threads_ms=400 failed=0

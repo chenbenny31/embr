@@ -1,0 +1,13 @@
+# checks on the prototype (harness/verify-thread.patch on 1bfdaf8), desktop, 2026-11-22T05:22:52Z
+unit tests, default mode:        [  PASSED  ] 106 tests.
+unit tests, EMBR_VERIFY=inline:  [  PASSED  ] 106 tests.
+unit tests, EMBR_VERIFY=thread:  [  PASSED  ] 106 tests.
+RunPull suite repeated 40 times: 40 of 40 passed
+ASan + UBSan, RunPull/PartialFile/ChunkManager, thread: [  PASSED  ] 22 tests., reports 0
+ASan + UBSan, same, inline:                            [  PASSED  ] 22 tests., reports 0
+Helgrind, three RunPull tests, thread: 41 possible races; inline: 43. Same innermost frames in both:
+  ostream width (the tests print from two threads), memset, and OpenSSL internals (ossl_*, OPENSSL_LH_retrieve, CRYPTO_atomic_load); none in ChunkVerifier's queue.
+ThreadSanitizer was not run: libtsan is not installed on the desktop.
+final binary, n=3 (the table in loopback.txt was run before the error handling was tidied and the tests added):
+  2 cores, no sha ext:           inline 4.67 Gbps, thread 7.22
+  1 core 2 threads, no sha ext:  inline 4.64 Gbps, thread 6.01

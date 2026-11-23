@@ -1,0 +1,59 @@
+# loopback, 1 GiB, desktop (Ryzen 9 9900X, kernel 7.3.3-300.fc45.x86_64), 2026-11-23T03:19:41Z; verifier threads = usable CPUs - 1, at most 4 (harness/verify-threads.patch on the applied verifier thread), n=5, configs alternated
+# 'inline' = EMBR_VERIFY=inline, 'default' = no switch set: the receiver's CPU list decides the thread count. Sender pinned to CPUs 6-9, QUIC rows sendmsg + GSO.
+# 'no sha ext' = OPENSSL_ia32cap=:~0x20000000 on the receiver. The receiving_thread_ms column is not filled by this binary.
+
+## quic, receiver CPUs 2,14 (one core, two threads), no sha ext
+inline                                   quic n=5 gbps=4.67 wall=1.84 process_cpu=1.80 receiving_thread_ms=0 other_threads_ms=1800 failed=0
+default                                  quic n=5 gbps=6.05 wall=1.42 process_cpu=2.40 receiving_thread_ms=0 other_threads_ms=2400 failed=0
+
+## quic, receiver CPUs 2,3, no sha ext
+inline                                   quic n=5 gbps=4.72 wall=1.82 process_cpu=1.77 receiving_thread_ms=0 other_threads_ms=1770 failed=0
+default                                  quic n=5 gbps=7.28 wall=1.18 process_cpu=1.88 receiving_thread_ms=0 other_threads_ms=1880 failed=0
+
+## quic, receiver CPUs 2,3,4, no sha ext
+inline                                   quic n=5 gbps=4.69 wall=1.83 process_cpu=1.79 receiving_thread_ms=0 other_threads_ms=1790 failed=0
+default                                  quic n=5 gbps=10.87 wall=0.79 process_cpu=1.85 receiving_thread_ms=0 other_threads_ms=1850 failed=0
+
+## quic, receiver CPUs 2,3,4,5, no sha ext
+inline                                   quic n=5 gbps=4.72 wall=1.82 process_cpu=1.78 receiving_thread_ms=0 other_threads_ms=1780 failed=0
+default                                  quic n=5 gbps=11.01 wall=0.78 process_cpu=1.86 receiving_thread_ms=0 other_threads_ms=1860 failed=0
+
+## tcp, receiver CPUs 2,14 (one core, two threads), no sha ext
+inline                                   tcp  n=5 gbps=6.18 wall=1.39 process_cpu=1.36 receiving_thread_ms=0 other_threads_ms=1360 failed=0
+default                                  tcp  n=5 gbps=7.04 wall=1.22 process_cpu=1.52 receiving_thread_ms=0 other_threads_ms=1520 failed=0
+
+## tcp, receiver CPUs 2,3, no sha ext
+inline                                   tcp  n=5 gbps=6.22 wall=1.38 process_cpu=1.35 receiving_thread_ms=0 other_threads_ms=1350 failed=0
+default                                  tcp  n=5 gbps=7.41 wall=1.16 process_cpu=1.40 receiving_thread_ms=0 other_threads_ms=1400 failed=0
+
+## tcp, receiver CPUs 2,3,4, no sha ext
+inline                                   tcp  n=5 gbps=6.22 wall=1.38 process_cpu=1.35 receiving_thread_ms=0 other_threads_ms=1350 failed=0
+default                                  tcp  n=5 gbps=14.56 wall=0.59 process_cpu=1.42 receiving_thread_ms=0 other_threads_ms=1420 failed=0
+
+## tcp, receiver CPUs 2,3,4,5, no sha ext
+inline                                   tcp  n=5 gbps=6.27 wall=1.37 process_cpu=1.34 receiving_thread_ms=0 other_threads_ms=1340 failed=0
+default                                  tcp  n=5 gbps=21.47 wall=0.40 process_cpu=1.43 receiving_thread_ms=0 other_threads_ms=1430 failed=0
+
+## quic, receiver CPUs 2,14 (one core, two threads), sha ext
+inline                                   quic n=5 gbps=7.60 wall=1.13 process_cpu=1.10 receiving_thread_ms=0 other_threads_ms=1100 failed=0
+default                                  quic n=5 gbps=10.23 wall=0.84 process_cpu=1.24 receiving_thread_ms=0 other_threads_ms=1240 failed=0
+
+## quic, receiver CPUs 2,3, sha ext
+inline                                   quic n=5 gbps=7.67 wall=1.12 process_cpu=1.08 receiving_thread_ms=0 other_threads_ms=1080 failed=0
+default                                  quic n=5 gbps=10.87 wall=0.79 process_cpu=1.13 receiving_thread_ms=0 other_threads_ms=1130 failed=0
+
+## quic, receiver CPUs 2,3,4,5, sha ext
+inline                                   quic n=5 gbps=7.67 wall=1.12 process_cpu=1.08 receiving_thread_ms=0 other_threads_ms=1080 failed=0
+default                                  quic n=5 gbps=11.01 wall=0.78 process_cpu=1.15 receiving_thread_ms=0 other_threads_ms=1150 failed=0
+
+## tcp, receiver CPUs 2,14 (one core, two threads), sha ext
+inline                                   tcp  n=5 gbps=12.63 wall=0.68 process_cpu=0.65 receiving_thread_ms=0 other_threads_ms=650 failed=0
+default                                  tcp  n=5 gbps=17.90 wall=0.48 process_cpu=0.79 receiving_thread_ms=0 other_threads_ms=790 failed=0
+
+## tcp, receiver CPUs 2,3, sha ext
+inline                                   tcp  n=5 gbps=12.45 wall=0.69 process_cpu=0.65 receiving_thread_ms=0 other_threads_ms=650 failed=0
+default                                  tcp  n=5 gbps=17.90 wall=0.48 process_cpu=0.72 receiving_thread_ms=0 other_threads_ms=720 failed=0
+
+## tcp, receiver CPUs 2,3,4,5, sha ext
+inline                                   tcp  n=5 gbps=12.63 wall=0.68 process_cpu=0.65 receiving_thread_ms=0 other_threads_ms=650 failed=0
+default                                  tcp  n=5 gbps=30.68 wall=0.28 process_cpu=0.69 receiving_thread_ms=0 other_threads_ms=690 failed=0

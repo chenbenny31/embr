@@ -1,0 +1,565 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -6,10 +6,11 @@
+ set(CMAKE_BUILD_RPATH_USE_LINK_PATH TRUE)
+ list(APPEND CMAKE_PREFIX_PATH
+     "$ENV{HOME}/.local/ngtcp2"
+-    "$ENV{HOME}/.local/wolfssl")
++    "$ENV{HOME}/.local/wolfssl"
++    "$ENV{HOME}/.local/isa-l_crypto")
+ set(PKG_CONFIG_PATH_SAVE "$ENV{PKG_CONFIG_PATH}")
+ set(ENV{PKG_CONFIG_PATH}
+-    "$ENV{HOME}/.local/wolfssl/lib/pkgconfig:$ENV{HOME}/.local/ngtcp2/lib/pkgconfig:${PKG_CONFIG_PATH_SAVE}")
++    "$ENV{HOME}/.local/wolfssl/lib/pkgconfig:$ENV{HOME}/.local/ngtcp2/lib/pkgconfig:$ENV{HOME}/.local/isa-l_crypto/lib/pkgconfig:${PKG_CONFIG_PATH_SAVE}")
+ 
+ find_package(OpenSSL REQUIRED)
+ find_package(PkgConfig REQUIRED)
+@@ -21,6 +22,8 @@
+ pkg_check_modules(NGTCP2 REQUIRED IMPORTED_TARGET libngtcp2)
+ pkg_check_modules(NGTCP2_CRYPTO_WS REQUIRED IMPORTED_TARGET libngtcp2_crypto_wolfssl)
+ pkg_check_modules(WOLFSSL REQUIRED IMPORTED_TARGET wolfssl)
++# optional: SHA-256 of several chunks side by side in SIMD lanes; without it chunks are hashed one by one
++pkg_check_modules(ISAL_CRYPTO IMPORTED_TARGET libisal_crypto)
+ 
+ include(FetchContent)
+ 
+@@ -72,6 +75,10 @@
+ target_link_libraries(core PUBLIC transport OpenSSL::Crypto)
+ target_include_directories(core PUBLIC src)
+ target_compile_definitions(core PRIVATE _GNU_SOURCE)
++if(ISAL_CRYPTO_FOUND)
++    target_link_libraries(core PRIVATE PkgConfig::ISAL_CRYPTO)
++    target_compile_definitions(core PRIVATE EMBR_HAVE_ISAL_CRYPTO)
++endif()
+ 
+ # Tracker lib
+ add_library(tracker
+--- a/src/core/hash.hpp
++++ b/src/core/hash.hpp
+@@ -4,6 +4,7 @@
+ 
+ #pragma once
+ #include "util/constants.hpp"
++#include <span>
+ #include <array>
+ #include <cstdint>
+ #include <cstddef>
+@@ -13,6 +14,22 @@
+ // SHA256 of an in-memory buffer for per-chunk verification
+ std::array<uint8_t, HASH_SIZE> sha256_buf(const uint8_t* data, size_t len);
+ 
++// one buffer of a sha256_many call
++struct HashInput {
++    const uint8_t* data;
++    size_t len;
++};
++
++// SHA256 of several buffers. With ISA-L crypto built in and AVX-512 (or AVX2 without SHA
++// extensions) on the CPU, buffers are hashed side by side in SIMD lanes; for fewer than half a
++// set of lanes, and everywhere else, one by one as sha256_buf does.
++void sha256_many(std::span<const HashInput> inputs,
++                 std::span<std::array<uint8_t, HASH_SIZE>> digests);
++
++// buffers worth collecting for one sha256_many call on this CPU; 1 when one by one is as fast.
++// EMBR_HASH_LANES=N overrides it (1 turns the side-by-side path off)
++unsigned sha256_lanes();
++
+ // Returns ".{file_name}.embr.hash" in the same directory as file_path
+ std::string hash_cache_path_for(const std::string& file_path);
+ 
+--- a/src/core/hash.cpp
++++ b/src/core/hash.cpp
+@@ -9,9 +9,17 @@
+ #include <unistd.h>
+ #include <sys/mman.h>
+ #include <openssl/evp.h>
++#ifdef EMBR_HAVE_ISAL_CRYPTO
++#include <isa-l_crypto/sha256_mb.h>
++#include <cpuid.h>
++#endif
+ #include <algorithm>
+ #include <array>
+ #include <cstdint>
++#include <cstdlib>
++#include <limits>
++#include <memory>
++#include <span>
+ #include <stdexcept>
+ #include <string>
+ #include <vector>
+@@ -37,6 +45,61 @@
+     EvpCtx& operator=(const EvpCtx&) = delete;
+ };
+ 
++#ifdef EMBR_HAVE_ISAL_CRYPTO
++// lanes of the code ISA-L picks on this CPU: 16 with AVX-512, 8 with AVX2. With SHA extensions
++// and no AVX-512 it hashes one buffer at a time with them, as OpenSSL does: nothing to gain.
++unsigned isal_lanes() {
++    __builtin_cpu_init();
++    if (__builtin_cpu_supports("avx512f") && __builtin_cpu_supports("avx512vl") &&
++        __builtin_cpu_supports("avx512bw") && __builtin_cpu_supports("avx512dq") &&
++        __builtin_cpu_supports("avx512cd")) {
++        return 16;
++    }
++    unsigned eax = 0, ebx = 0, ecx = 0, edx = 0;
++    const bool sha_extensions = __get_cpuid_count(7, 0, &eax, &ebx, &ecx, &edx) != 0 && (ebx & (1u << 29)) != 0;
++    return __builtin_cpu_supports("avx2") && !sha_extensions ? 8 : 1;
++}
++
++void isal_check(int rc, const char* call) {
++    if (rc != 0) {
++        throw std::runtime_error(std::string("sha256_many: ") + call + " failed: " + std::to_string(rc));
++    }
++}
++
++// every input as one whole job; the manager runs them as lanes fill and on the final flushes
++void sha256_side_by_side(std::span<const HashInput> inputs,
++                         std::span<std::array<uint8_t, HASH_SIZE>> digests) {
++    auto manager = std::make_unique<ISAL_SHA256_HASH_CTX_MGR>(); // over-aligned type: aligned new
++    auto contexts = std::make_unique<ISAL_SHA256_HASH_CTX[]>(inputs.size());
++    isal_check(isal_sha256_ctx_mgr_init(manager.get()), "init");
++    ISAL_SHA256_HASH_CTX* done = nullptr;
++    static const uint8_t no_bytes = 0; // the library refuses a null source even for an empty buffer
++    for (size_t i = 0; i < inputs.size(); ++i) {
++        isal_hash_ctx_init(&contexts[i]);
++        const uint8_t* source = inputs[i].len == 0 ? &no_bytes : inputs[i].data;
++        isal_check(isal_sha256_ctx_mgr_submit(manager.get(), &contexts[i], &done, source,
++                                              static_cast<uint32_t>(inputs[i].len), ISAL_HASH_ENTIRE),
++                   "submit");
++    }
++    do {
++        isal_check(isal_sha256_ctx_mgr_flush(manager.get(), &done), "flush");
++    } while (done != nullptr);
++
++    for (size_t i = 0; i < inputs.size(); ++i) {
++        if (!isal_hash_ctx_complete(&contexts[i])) {
++            throw std::runtime_error("sha256_many: a job did not complete");
++        }
++        for (size_t word = 0; word < ISAL_SHA256_DIGEST_NWORDS; ++word) { // host-order words, big-endian digest
++            const uint32_t value = contexts[i].job.result_digest[word];
++            digests[i][word * 4] = static_cast<uint8_t>(value >> 24);
++            digests[i][word * 4 + 1] = static_cast<uint8_t>(value >> 16);
++            digests[i][word * 4 + 2] = static_cast<uint8_t>(value >> 8);
++            digests[i][word * 4 + 3] = static_cast<uint8_t>(value);
++        }
++    }
++}
++#endif
++
+ }
+ 
+ std::array<uint8_t, HASH_SIZE> sha256_buf(const uint8_t* data, size_t len) {
+@@ -55,6 +118,48 @@
+     return digest;
+ }
+ 
++unsigned sha256_lanes() {
++    static const unsigned lanes = [] {
++        unsigned detected = 1;
++#ifdef EMBR_HAVE_ISAL_CRYPTO
++        detected = isal_lanes();
++        if (const char* forced = std::getenv("EMBR_HASH_LANES")) {
++            detected = static_cast<unsigned>(std::clamp(std::atoi(forced), 1, 64));
++        }
++        if (detected > 1) {
++            // the library chooses its code for this CPU on the first call of each entry point and
++            // stores the choice unsynchronised: make those calls here, once, before threads hash
++            const uint8_t byte = 0;
++            const HashInput input{&byte, 1};
++            std::array<uint8_t, HASH_SIZE> digest{};
++            sha256_side_by_side(std::span(&input, 1), std::span(&digest, 1));
++        }
++#endif
++        return detected;
++    }();
++    return lanes;
++}
++
++void sha256_many(std::span<const HashInput> inputs,
++                 std::span<std::array<uint8_t, HASH_SIZE>> digests) {
++    if (inputs.size() != digests.size()) {
++        throw std::runtime_error("sha256_many: inputs and digests differ in count");
++    }
++#ifdef EMBR_HAVE_ISAL_CRYPTO
++    // half-empty lanes are slower than one buffer at a time; job lengths are 32-bit
++    const bool fits = std::all_of(inputs.begin(), inputs.end(), [](const HashInput& input) {
++        return input.len <= std::numeric_limits<uint32_t>::max();
++    });
++    if (sha256_lanes() > 1 && inputs.size() * 2 >= sha256_lanes() && fits) {
++        sha256_side_by_side(inputs, digests);
++        return;
++    }
++#endif
++    for (size_t i = 0; i < inputs.size(); ++i) {
++        digests[i] = sha256_buf(inputs[i].data, inputs[i].len);
++    }
++}
++
+ std::string hash_cache_path_for(const std::string& file_path) {
+     if (file_path.empty()) {
+         throw std::runtime_error("hash_cache_path_for: file_path is empty");
+@@ -161,24 +266,29 @@
+     const uint32_t num_workers = std::min(chunk_count,
+                                           static_cast<uint32_t>(std::max(1u,
+                                               std::thread::hardware_concurrency())));
++    const uint32_t lanes = sha256_lanes(); // at most 64
+ 
+     worker_exceptions.resize(num_workers, nullptr);
+ 
+     auto worker = [&](uint32_t worker_id) {
+         try {
+             while (true) {
+-                // memory order relaxed: each independently grabs the next avail chunk index
+-                const uint32_t i = next_chunk.value.fetch_add(1,
+-                                                            std::memory_order_relaxed);
+-                if (i >= chunk_count) { break; }
+-
+-                const uint64_t offset = static_cast<uint64_t>(i) * CHUNK_SIZE;
+-                const size_t chunk_len = static_cast<size_t>(
+-                    std::min(static_cast<uint64_t>(CHUNK_SIZE),
+-                             file_size - offset));
+-
+-                chunk_hashes[i] = sha256_buf(
+-                    static_cast<const uint8_t*>(mapped) + offset, chunk_len);
++                // memory order relaxed: each independently grabs the next set of chunk indexes,
++                // one set of lanes at a time so sha256_many can hash them side by side
++                const uint32_t first = next_chunk.value.fetch_add(lanes,
++                                                                  std::memory_order_relaxed);
++                if (first >= chunk_count) { break; }
++                const uint32_t count = std::min(lanes, chunk_count - first);
++
++                std::array<HashInput, 64> inputs{};
++                for (uint32_t k = 0; k < count; ++k) {
++                    const uint64_t offset = static_cast<uint64_t>(first + k) * CHUNK_SIZE;
++                    inputs[k] = {static_cast<const uint8_t*>(mapped) + offset,
++                                 static_cast<size_t>(std::min(static_cast<uint64_t>(CHUNK_SIZE),
++                                                              file_size - offset))};
++                }
++                sha256_many(std::span(inputs.data(), count),
++                            std::span(chunk_hashes.data() + first, count));
+             }
+         } catch (...) {
+             std::lock_guard<std::mutex> lock(exceptions_mtx);
+--- a/src/core/pull.cpp
++++ b/src/core/pull.cpp
+@@ -15,6 +15,7 @@
+ #include <sys/stat.h>
+ #include <unistd.h>
+ #include <algorithm>
++#include <chrono>
+ #include <condition_variable>
+ #include <cstdlib>
+ #include <cstring>
+@@ -22,6 +23,7 @@
+ #include <exception>
+ #include <iostream>
+ #include <mutex>
++#include <span>
+ #include <stdexcept>
+ #include <string>
+ #include <string_view>
+@@ -64,6 +66,10 @@
+ // are only wanted beyond 30 Gbps
+ constexpr unsigned MAX_VERIFY_THREADS = 4;
+ 
++// a full set of lanes hashes several times faster than chunk by chunk, so the verifier waits this
++// long for one; it is also how far verification may trail the data on a slow link
++constexpr auto VERIFY_BATCH_WAIT = std::chrono::milliseconds(200);
++
+ // verifier threads: one per CPU besides the receiving thread's, 0 verifies inline.
+ // EMBR_VERIFY=inline|thread forces none or at least one, EMBR_VERIFY_THREADS=N the count
+ unsigned verify_threads() {
+@@ -72,14 +78,17 @@
+     if (const char* count = std::getenv("EMBR_VERIFY_THREADS")) {
+         return static_cast<unsigned>(std::clamp(std::atoi(count), 1, 64));
+     }
+-    const unsigned spare_cpus = std::min(usable_cpus() - 1, MAX_VERIFY_THREADS);
++    // hashing side by side, one thread does several GiB/s: more would only split its batches
++    const unsigned wanted = sha256_lanes() > 1 ? 1 : MAX_VERIFY_THREADS;
++    const unsigned spare_cpus = std::min(usable_cpus() - 1, wanted);
+     if (mode != nullptr && std::string_view{mode} == "thread") { return std::max(spare_cpus, 1u); }
+     return spare_cpus;
+ }
+ 
+ // Hashes received chunks off the receiving thread: without SHA extensions one chunk's hash takes
+ // about as long as receiving it, and nothing is read from the socket while it runs inline.
+-// Several threads share the queue, so results come back in any order.
++// A thread takes up to a set of lanes at a time; several threads share the queue, so results come
++// back in any order.
+ class ChunkVerifier {
+ public:
+     struct Result {
+@@ -94,10 +103,16 @@
+     ChunkVerifier(const ChunkVerifier&) = delete;
+     ChunkVerifier& operator=(const ChunkVerifier&) = delete;
+ 
+-    // the chunk is complete on disk; verified now when there is no thread
++    // the chunk is complete on disk. With no thread it is hashed here, once a set of lanes has
++    // collected or the oldest waiting chunk has waited long enough
+     void submit(uint32_t chunk_index) {
+         if (workers_.empty()) {
+-            finished_.push_back(verify(chunk_index));
++            const auto now = std::chrono::steady_clock::now();
++            if (pending_.empty()) { oldest_pending_ = now; }
++            pending_.push_back(chunk_index);
++            if (pending_.size() >= sha256_lanes() || now - oldest_pending_ >= VERIFY_BATCH_WAIT) {
++                verify_pending_here();
++            }
+             return;
+         }
+         {
+@@ -116,6 +131,7 @@
+     // waits until every submitted chunk is verified
+     std::vector<Result> finish() {
+         stop();
++        if (workers_.empty()) { verify_pending_here(); }
+         return std::exchange(finished_, {});
+     }
+ 
+@@ -126,24 +142,65 @@
+     }
+ 
+ private:
+-    Result verify(uint32_t chunk_index) const {
+-        const auto [offset, len] = chunk_span(meta_, chunk_index);
+-        return {chunk_index,
+-                chunk_on_disk_matches(fd_, chunk_index, offset, len, meta_.chunk_hashes[chunk_index])};
++    // no thread: what has collected is hashed on the calling thread
++    void verify_pending_here() {
++        if (pending_.empty()) { return; }
++        const std::vector<uint32_t> batch(pending_.begin(), pending_.end());
++        pending_.clear();
++        const std::vector<Result> results = verify(batch);
++        finished_.insert(finished_.end(), results.begin(), results.end());
++    }
++
++    // hashes of the chunks as they are on disk, against what the sender announced
++    std::vector<Result> verify(std::span<const uint32_t> chunk_indexes) const {
++        std::vector<HashInput> inputs;
++        inputs.reserve(chunk_indexes.size());
++        struct Unmap {
++            std::vector<HashInput>& mapped;
++            ~Unmap() { for (const HashInput& chunk : mapped) { ::munmap(const_cast<uint8_t*>(chunk.data), chunk.len); } }
++        } unmap{inputs};
++        for (const uint32_t chunk_index : chunk_indexes) {
++            const auto [offset, len] = chunk_span(meta_, chunk_index);
++            void* mapped = ::mmap(nullptr, len, PROT_READ, MAP_SHARED, fd_, static_cast<off_t>(offset));
++            if (mapped == MAP_FAILED) {
++                throw std::runtime_error("run_pull: mmap for verify failed at chunk " +
++                                         std::to_string(chunk_index) + " - " + std::strerror(errno));
++            }
++            inputs.push_back({static_cast<const uint8_t*>(mapped), static_cast<size_t>(len)});
++        }
++        std::vector<std::array<uint8_t, HASH_SIZE>> digests(inputs.size());
++        sha256_many(inputs, digests);
++
++        std::vector<Result> results;
++        results.reserve(chunk_indexes.size());
++        for (size_t i = 0; i < chunk_indexes.size(); ++i) {
++            results.push_back({chunk_indexes[i], digests[i] == meta_.chunk_hashes[chunk_indexes[i]]});
++        }
++        return results;
+     }
+ 
+     void run() {
++        const size_t lanes = sha256_lanes();
++        std::vector<uint32_t> batch;
+         std::unique_lock lock(mutex_);
+         for (;;) {
+             wake_.wait(lock, [this] { return closing_ || !pending_.empty(); });
+             if (pending_.empty()) { return; } // closing, and nothing left to verify
+-            const uint32_t chunk_index = pending_.front();
+-            pending_.pop_front();
++            if (lanes > 1 && pending_.size() < lanes && !closing_) {
++                wake_.wait_for(lock, VERIFY_BATCH_WAIT,
++                               [&] { return closing_ || pending_.size() >= lanes; });
++            }
++            batch.clear();
++            while (!pending_.empty() && batch.size() < lanes) {
++                batch.push_back(pending_.front());
++                pending_.pop_front();
++            }
++            if (batch.empty()) { continue; } // another thread took them during the wait
+             lock.unlock();
+-            Result result{chunk_index, false};
++            std::vector<Result> results;
+             std::exception_ptr error;
+             try {
+-                result = verify(chunk_index);
++                results = verify(batch);
+             } catch (...) {
+                 error = std::current_exception();
+             }
+@@ -152,7 +209,7 @@
+                 error_ = error;
+                 return;
+             }
+-            finished_.push_back(result);
++            finished_.insert(finished_.end(), results.begin(), results.end());
+         }
+     }
+ 
+@@ -171,6 +228,7 @@
+     std::mutex mutex_;
+     std::condition_variable wake_;
+     std::deque<uint32_t> pending_;
++    std::chrono::steady_clock::time_point oldest_pending_; // used only when there is no thread
+     std::vector<Result> finished_;
+     std::exception_ptr error_;
+     bool closing_ = false;
+--- a/tests/test_resume.cpp
++++ b/tests/test_resume.cpp
+@@ -354,6 +354,26 @@
+     PartialFile::remove(out.path);
+ }
+ 
++TEST(RunPull, ManyChunksAreVerifiedInSetsOfLanes) {
++    // more chunks than any set of lanes, so the verifier hashes full sets while the transfer runs
++    SourceFile src(40 * CHUNK_SIZE + 12345);
++    TempFile out = make_tempfile();
++    EXPECT_EQ(pull_from_push(src.file.path, out.path, [](FileMeta& meta) {
++        meta.chunk_hashes[20][0] ^= 0xff;
++        meta.chunk_hashes[40][0] ^= 0xff; // the short last chunk
++    }), "");
++    EXPECT_EQ(read_all(out.path), src.bytes);
++
++    FileMeta announced = precompute_meta(src.file.path);
++    announced.chunk_hashes[20][0] ^= 0xff;
++    announced.chunk_hashes[40][0] ^= 0xff;
++    auto record = PartialFile::load(out.path, announced.chunk_hashes[0],
++                                    announced.chunk_count, announced.file_size);
++    ASSERT_TRUE(record.has_value());
++    EXPECT_EQ(record->needed_chunks(), (std::vector<uint32_t>{20, 40}));
++    PartialFile::remove(out.path);
++}
++
+ TEST(RunPull, ChunkThatFailsItsHashIsLeftForResume) {
+     SourceFile src(5 * CHUNK_SIZE + 12345);
+     for (const char* mode : {"thread", "inline"}) {
+--- a/tests/test_hash_parallel.h
++++ b/tests/test_hash_parallel.h
+@@ -213,4 +213,34 @@
+     EXPECT_EQ(before[1], after[1]);  // chunk 1 unchanged
+     EXPECT_NE(before[2], after[2]);  // chunk 2 changed
+     EXPECT_EQ(before[3], after[3]);  // chunk 3 unchanged
+-}
+\ No newline at end of file
++}
++
++// ── sha256_many ──────────────────────────────────────────────────────────────
++
++// any count and any mix of sizes gives what sha256_buf gives one by one: below, at and above a
++// set of lanes, with empty buffers, block-boundary sizes and a whole chunk
++TEST(Sha256Many, MatchesOneByOne) {
++    const std::vector<size_t> sizes = {0, 1, 55, 56, 63, 64, 65, 119, 120, 4096, 100000, CHUNK_SIZE, CHUNK_SIZE - 7};
++    std::mt19937 rng(7);
++    for (const size_t count : {1u, 2u, 7u, 8u, 9u, 15u, 16u, 17u, 33u, 40u}) {
++        std::vector<std::vector<uint8_t>> buffers(count);
++        std::vector<HashInput> inputs(count);
++        for (size_t i = 0; i < count; ++i) {
++            buffers[i].resize(sizes[(i * 5 + count) % sizes.size()]);
++            for (auto& byte : buffers[i]) { byte = static_cast<uint8_t>(rng()); }
++            inputs[i] = {buffers[i].data(), buffers[i].size()};
++        }
++        std::vector<std::array<uint8_t, HASH_SIZE>> digests(count);
++        sha256_many(inputs, digests);
++        for (size_t i = 0; i < count; ++i) {
++            EXPECT_EQ(digests[i], sha256_buf(buffers[i].data(), buffers[i].size()))
++                << "count " << count << " buffer " << i << " size " << buffers[i].size();
++        }
++    }
++}
++
++TEST(Sha256Many, CountMismatchThrows) {
++    std::vector<HashInput> inputs(2);
++    std::vector<std::array<uint8_t, HASH_SIZE>> digests(3);
++    EXPECT_THROW(sha256_many(inputs, digests), std::runtime_error);
++}
+--- a/install.sh
++++ b/install.sh
+@@ -16,6 +16,10 @@
+ #   --enable-aesni --enable-intelasm   x86_64 only; AES-GCM at line rate
+ # Install prefixes match CMakeLists.txt: ~/.local/wolfssl and ~/.local/ngtcp2
+ #
++# Also builds Intel's isa-l_crypto into ~/.local/isa-l_crypto (x86_64 only, optional for embr):
++# it hashes 8 or 16 chunks side by side with AVX2 or AVX-512, several times faster than one by
++# one on a CPU without SHA extensions. Without it embr builds and runs the same, chunk by chunk.
++#
+ # The SEND_ZC egress (io_uring, liburing-devel above) additionally needs a kernel >= 6.2
+ # (IORING_SEND_ZC_REPORT_USAGE) and ~105 KiB of RLIMIT_MEMLOCK per QUIC connection; the
+ # stock 8 MiB is plenty. Neither is fatal here: embr falls back to sendmsg, but the
+@@ -32,9 +36,11 @@
+ # >= 1.26.0: earlier releases can leave a server connection silent until the idle timeout
+ # when both retransmission probes are lost while the congestion window is at its minimum
+ NGTCP2_REF="${NGTCP2_REF:-v1.26.0}"
++ISAL_CRYPTO_REF="${ISAL_CRYPTO_REF:-v2.26.1}"
+ SRC="${SRC:-$HOME/src}"
+ PREFIX_WOLFSSL="${PREFIX_WOLFSSL:-$HOME/.local/wolfssl}"
+ PREFIX_NGTCP2="${PREFIX_NGTCP2:-$HOME/.local/ngtcp2}"
++PREFIX_ISAL_CRYPTO="${PREFIX_ISAL_CRYPTO:-$HOME/.local/isa-l_crypto}"
+ JOBS="${JOBS:-$(nproc)}"
+ FORCE="${FORCE:-0}"
+ BUILD_EMBR="${BUILD_EMBR:-0}"
+@@ -48,11 +54,11 @@
+ install_system_deps() {
+     if command -v dnf >/dev/null; then          # Fedora / Amazon Linux 2023
+         sudo dnf install -y gcc-c++ make cmake ninja-build autoconf automake libtool \
+-            pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat ethtool
++            pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat ethtool nasm
+     elif command -v apt-get >/dev/null; then    # Debian / Ubuntu
+         sudo apt-get update
+         sudo apt-get install -y build-essential cmake ninja-build autoconf automake libtool \
+-            pkg-config git openssl libssl-dev liburing-dev time ncat ethtool
++            pkg-config git openssl libssl-dev liburing-dev time ncat ethtool nasm
+     else
+         die "unknown package manager — install: g++ cmake ninja autoconf automake libtool pkg-config git openssl-devel liburing-devel time ncat"
+     fi
+@@ -151,6 +157,31 @@
+     ngtcp2_ok || die "ngtcp2 built but libngtcp2_crypto_wolfssl.pc missing — was wolfSSL found?"
+ }
+ 
++isal_crypto_ok() {
++    [[ -f "$PREFIX_ISAL_CRYPTO/lib/pkgconfig/libisal_crypto.pc" ]] || return 1
++    [[ "$ISAL_CRYPTO_REF" != v[0-9]* ]] && return 0
++    [[ "v$(PKG_CONFIG_PATH="$PREFIX_ISAL_CRYPTO/lib/pkgconfig" pkg-config --modversion libisal_crypto 2>/dev/null)" == "$ISAL_CRYPTO_REF" ]]
++}
++
++# optional for embr; its assembly needs nasm >= 2.14.01
++build_isal_crypto() {
++    if [[ "$(uname -m)" != "x86_64" ]]; then
++        log "isa-l_crypto: skipped on $(uname -m); embr hashes chunk by chunk"; return 0
++    fi
++    if [[ "$FORCE" != "1" ]] && isal_crypto_ok; then
++        log "isa-l_crypto already present at $PREFIX_ISAL_CRYPTO — skip (FORCE=1 to rebuild)"; return 0
++    fi
++    clone_at https://github.com/intel/isa-l_crypto.git "$ISAL_CRYPTO_REF" "$SRC/isa-l_crypto"
++    pushd "$SRC/isa-l_crypto" >/dev/null
++    git clean -fdxq
++    ./autogen.sh
++    ./configure --prefix="$PREFIX_ISAL_CRYPTO"
++    make -j"$JOBS"
++    make install
++    popd >/dev/null
++    isal_crypto_ok || die "isa-l_crypto built but libisal_crypto.pc is missing or has another version"
++}
++
+ verify() {
+     log "=== verification ==="
+     local opts="$PREFIX_WOLFSSL/include/wolfssl/options.h"
+@@ -161,6 +192,8 @@
+     printf '  wolfssl:                  %s\n' "$(pkg-config --modversion wolfssl)"
+     printf '  libngtcp2:                %s\n' "$(pkg-config --modversion libngtcp2)"
+     printf '  libngtcp2_crypto_wolfssl: %s\n' "$(pkg-config --modversion libngtcp2_crypto_wolfssl)"
++    printf '  libisal_crypto:           %s\n' \
++        "$(PKG_CONFIG_PATH="$PREFIX_ISAL_CRYPTO/lib/pkgconfig" pkg-config --modversion libisal_crypto 2>/dev/null || echo 'not installed: chunks are hashed one by one')"
+     printf '  net.core.rmem_max/wmem_max: %s / %s (want >= 4194304)\n' \
+         "$(sysctl -n net.core.rmem_max)" "$(sysctl -n net.core.wmem_max)"
+     printf '  liburing:                 %s (SEND_ZC egress; need >= 2.4 for SEND_ZC usage reporting)\n' "$(pkg-config --modversion liburing 2>/dev/null || echo missing)"
+@@ -195,6 +228,7 @@
+     tune_sysctl
+     build_wolfssl
+     build_ngtcp2
++    build_isal_crypto
+     verify
+     ensure_cert
+     [[ "$BUILD_EMBR" == "1" ]] && build_embr

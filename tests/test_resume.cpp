@@ -25,6 +25,7 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <string>
 #include <thread>
 #include <vector>
@@ -264,8 +265,10 @@ struct SourceFile {
     ~SourceFile() { ::unlink(hash_cache_path_for(file.path).c_str()); }
 };
 
-// one transfer; returns the pull side's error text, empty on success
-static std::string pull_from_push(const std::string& src_path, const std::string& out_path) {
+// one transfer; returns the pull side's error text, empty on success.
+// edit_meta changes what the sender announces, to stand in for data that does not match its hash
+static std::string pull_from_push(const std::string& src_path, const std::string& out_path,
+                                  const std::function<void(FileMeta&)>& edit_meta = {}) {
     ::signal(SIGPIPE, SIG_IGN); // main.cpp does this for the real binary
 
     int lfd = ::socket(AF_INET, SOCK_STREAM, 0);
@@ -280,9 +283,10 @@ static std::string pull_from_push(const std::string& src_path, const std::string
     }
     SocketFd listen_fd{lfd};
 
-    std::jthread pusher([&src_path, &listen_fd]() {
+    std::jthread pusher([&src_path, &listen_fd, &edit_meta]() {
         try {
             FileMeta meta = precompute_meta(src_path);
+            if (edit_meta) { edit_meta(meta); }
             SocketFd file_fd{::open(src_path.c_str(), O_RDONLY)};
             auto conn = tcp_accept(listen_fd.get());
             run_push(*conn, std::move(file_fd), std::move(meta));
@@ -304,6 +308,89 @@ TEST(RunPull, FreshTransferOfUnalignedFile) {
 
     EXPECT_EQ(pull_from_push(src.file.path, out.path), "");
     EXPECT_EQ(read_all(out.path), src.bytes);
+}
+
+// EMBR_VERIFY for one scope: "inline" hashes on the receiving thread, "thread" on at least one other
+struct VerifyMode {
+    explicit VerifyMode(const char* mode) { ::setenv("EMBR_VERIFY", mode, 1); }
+    ~VerifyMode() { ::unsetenv("EMBR_VERIFY"); }
+};
+
+// EMBR_VERIFY_THREADS for one scope
+struct VerifyThreads {
+    explicit VerifyThreads(const char* count) { ::setenv("EMBR_VERIFY_THREADS", count, 1); }
+    ~VerifyThreads() { ::unsetenv("EMBR_VERIFY_THREADS"); }
+};
+
+TEST(RunPull, VerifierThreadAndInlineGiveTheSameFile) {
+    SourceFile src(5 * CHUNK_SIZE + 12345);
+    for (const char* mode : {"thread", "inline"}) {
+        VerifyMode verify(mode);
+        TempFile out = make_tempfile();
+        EXPECT_EQ(pull_from_push(src.file.path, out.path), "") << mode;
+        EXPECT_EQ(read_all(out.path), src.bytes) << mode;
+        EXPECT_NE(::access(PartialFile::path_for(out.path).c_str(), F_OK), 0) << mode;
+    }
+}
+
+TEST(RunPull, SeveralVerifierThreadsGiveTheSameFile) {
+    SourceFile src(11 * CHUNK_SIZE + 12345);
+    VerifyThreads verify("3");
+    TempFile out = make_tempfile();
+    // chunks 2 and 7 are announced with wrong hashes: results arrive in any order and both must be caught
+    EXPECT_EQ(pull_from_push(src.file.path, out.path, [](FileMeta& meta) {
+        meta.chunk_hashes[2][0] ^= 0xff;
+        meta.chunk_hashes[7][0] ^= 0xff;
+    }), "");
+    EXPECT_EQ(read_all(out.path), src.bytes); // the data is right; only the announced hashes were not
+
+    FileMeta announced = precompute_meta(src.file.path);
+    announced.chunk_hashes[2][0] ^= 0xff;
+    announced.chunk_hashes[7][0] ^= 0xff;
+    auto record = PartialFile::load(out.path, announced.chunk_hashes[0],
+                                    announced.chunk_count, announced.file_size);
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->needed_chunks(), (std::vector<uint32_t>{2, 7}));
+    PartialFile::remove(out.path);
+}
+
+TEST(RunPull, ManyChunksAreVerifiedInSetsOfLanes) {
+    // more chunks than any set of lanes, so the verifier hashes full sets while the transfer runs
+    SourceFile src(40 * CHUNK_SIZE + 12345);
+    TempFile out = make_tempfile();
+    EXPECT_EQ(pull_from_push(src.file.path, out.path, [](FileMeta& meta) {
+        meta.chunk_hashes[20][0] ^= 0xff;
+        meta.chunk_hashes[40][0] ^= 0xff; // the short last chunk
+    }), "");
+    EXPECT_EQ(read_all(out.path), src.bytes);
+
+    FileMeta announced = precompute_meta(src.file.path);
+    announced.chunk_hashes[20][0] ^= 0xff;
+    announced.chunk_hashes[40][0] ^= 0xff;
+    auto record = PartialFile::load(out.path, announced.chunk_hashes[0],
+                                    announced.chunk_count, announced.file_size);
+    ASSERT_TRUE(record.has_value());
+    EXPECT_EQ(record->needed_chunks(), (std::vector<uint32_t>{20, 40}));
+    PartialFile::remove(out.path);
+}
+
+TEST(RunPull, ChunkThatFailsItsHashIsLeftForResume) {
+    SourceFile src(5 * CHUNK_SIZE + 12345);
+    for (const char* mode : {"thread", "inline"}) {
+        VerifyMode verify(mode);
+        TempFile out = make_tempfile();
+        // the sender announces a wrong hash for chunk 3, so the data it sends cannot match
+        EXPECT_EQ(pull_from_push(src.file.path, out.path,
+                                 [](FileMeta& meta) { meta.chunk_hashes[3][0] ^= 0xff; }), "") << mode;
+
+        FileMeta announced = precompute_meta(src.file.path);
+        announced.chunk_hashes[3][0] ^= 0xff;
+        auto record = PartialFile::load(out.path, announced.chunk_hashes[0],
+                                        announced.chunk_count, announced.file_size);
+        ASSERT_TRUE(record.has_value()) << mode;
+        EXPECT_EQ(record->needed_chunks(), std::vector<uint32_t>{3}) << mode;
+        PartialFile::remove(out.path);
+    }
 }
 
 TEST(RunPull, ResumeKeepsVerifiedChunksAndRefetchesStaleOnes) {
