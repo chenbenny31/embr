@@ -3,6 +3,7 @@
 #              UDP socket limits, and a self-signed QUIC cert in ~/.config/embr
 # Run from the repo root: bash install.sh               (deps + sysctl + cert)
 #                         BUILD_EMBR=1 bash install.sh  (then release-build embr in ./build)
+#                         bash install.sh sysctl        (only the sysctl step: lifts the UDP socket-buffer limit)
 #
 # Reproduces the exact configure lines recorded in the reference build's config.log.
 # The flags that are NOT optional, and why:
@@ -19,16 +20,24 @@
 # Also builds Intel's isa-l_crypto into ~/.local/isa-l_crypto (x86_64 only, optional for embr):
 # it hashes 8 or 16 chunks side by side with AVX2 or AVX-512, several times faster than one by
 # one on a CPU without SHA extensions. Without it embr builds and runs the same, chunk by chunk.
+# Its assembly needs nasm; when the system has none, nasm is built into ~/.local/nasm first,
+# from its release tarball (checksum pinned below).
+#
+# Root: everything above goes under $HOME. sudo is used for two things only, and only when they
+# are needed: system packages that are missing, and the socket-buffer sysctl when it is too low.
+# The sysctl is not required: when sudo is refused or missing the run goes on, and ends with the
+# command that lifts the limit. NO_SUDO=1 never calls sudo (missing packages are then an error
+# that lists them).
 #
 # The SEND_ZC egress (io_uring, liburing-devel above) additionally needs a kernel >= 6.2
 # (IORING_SEND_ZC_REPORT_USAGE) and ~105 KiB of RLIMIT_MEMLOCK per QUIC connection; the
 # stock 8 MiB is plenty. Neither is fatal here: embr falls back to sendmsg, but the
 # embrquic bench row would then measure the fallback. verify() prints both.
 #
-# Also raises net.core.{r,w}mem_max: embr asks for 4 MiB UDP socket buffers and the
-# kernel silently clamps to these (212992 on Amazon Linux 2023). Below ~1 MiB the
-# receiver's per-chunk SHA-256 stall overflows the buffer at WAN rates and every chunk
-# becomes a loss event. This is the single most likely cause of an "ugly" QUIC number.
+# net.core.{r,w}mem_max: embr asks for 4 MiB UDP socket buffers and the kernel silently clamps
+# to these (212992 by default on Fedora, Ubuntu and Amazon Linux 2023). embr runs either way; with
+# the default the buffer holds about a millisecond of a fast transfer, and QUIC loses packets there
+# whenever the receiver falls behind. This is the single most likely cause of an "ugly" QUIC number.
 
 set -euo pipefail
 
@@ -37,21 +46,55 @@ WOLFSSL_REF="${WOLFSSL_REF:-v5.9.2-stable}"   # reference laptop build: v5.9.2-s
 # when both retransmission probes are lost while the congestion window is at its minimum
 NGTCP2_REF="${NGTCP2_REF:-v1.26.0}"
 ISAL_CRYPTO_REF="${ISAL_CRYPTO_REF:-v2.26.1}"
+# built only when the system has no nasm >= 2.14.01; the release tarball needs a C compiler and
+# make, nothing else (its git tree wants autoconf >= 2.71, which Amazon Linux 2023 does not have)
+NASM_VERSION="${NASM_VERSION:-2.16.03}"
+NASM_SHA256="${NASM_SHA256:-5bc940dd8a4245686976a8f7e96ba9340a0915f2d5b88356874890e207bdb581}"
 SRC="${SRC:-$HOME/src}"
 PREFIX_WOLFSSL="${PREFIX_WOLFSSL:-$HOME/.local/wolfssl}"
 PREFIX_NGTCP2="${PREFIX_NGTCP2:-$HOME/.local/ngtcp2}"
 PREFIX_ISAL_CRYPTO="${PREFIX_ISAL_CRYPTO:-$HOME/.local/isa-l_crypto}"
+PREFIX_NASM="${PREFIX_NASM:-$HOME/.local/nasm}"
+NO_SUDO="${NO_SUDO:-0}"
 JOBS="${JOBS:-$(nproc)}"
 FORCE="${FORCE:-0}"
 BUILD_EMBR="${BUILD_EMBR:-0}"
 EMBR_BUILD_DIR="${EMBR_BUILD_DIR:-./build}"
-SOCKBUF_MAX="${SOCKBUF_MAX:-16777216}"        # 16 MiB; embr requests 4 MiB
+SOCKBUF_MAX="${SOCKBUF_MAX:-16777216}"        # what `install.sh sysctl` sets: 16 MiB
+SOCKBUF_NEED=4194304                          # what embr asks for (QUIC_SOCKET_BUFFER)
 SYSCTL_FILE="${SYSCTL_FILE:-/etc/sysctl.d/90-embr-quic.conf}"
 
 log() { echo "[install $(date +%H:%M:%S)] $*" >&2; }
 die() { log "FATAL: $*"; exit 1; }
 
+# what the build cannot do without, as "command" or "pkg:module"; all of it is in the package lists below
+REQUIRED_TOOLS=(g++ make cmake ninja autoconf automake libtoolize pkg-config git openssl pkg:openssl pkg:liburing)
+BENCH_TOOLS=(/usr/bin/time ncat ethtool)   # bench/*.sh only
+
+missing_of() { # prints the entries of the list that this system lacks
+    local tool
+    for tool in "$@"; do
+        case "$tool" in
+            pkg:*) pkg-config --exists "${tool#pkg:}" 2>/dev/null || printf '%s ' "${tool#pkg:}-devel" ;;
+            /*)    [[ -x "$tool" ]] || printf '%s ' "$tool" ;;
+            *)     command -v "$tool" >/dev/null 2>&1 || printf '%s ' "$tool" ;;
+        esac
+    done
+}
+
+# root only when a required package is missing; the bench tools alone are not worth a password
 install_system_deps() {
+    local missing bench
+    missing=$(missing_of "${REQUIRED_TOOLS[@]}"); bench=$(missing_of "${BENCH_TOOLS[@]}")
+    if [[ -z "$missing" ]]; then
+        log "system packages present — no root needed for them"
+        [[ -z "$bench" ]] || log "WARN: not installed, bench/*.sh needs them: $bench"
+        return 0
+    fi
+    if [[ "$NO_SUDO" == "1" ]] || ! command -v sudo >/dev/null; then
+        die "missing: $missing— NO_SUDO=1 (or no sudo here): ask an administrator for the packages listed in install_system_deps"
+    fi
+    log "missing: $missing— installing system packages with sudo"
     if command -v dnf >/dev/null; then          # Fedora / Amazon Linux 2023
         sudo dnf install -y gcc-c++ make cmake ninja-build autoconf automake libtool \
             pkgconf-pkg-config git openssl openssl-devel liburing-devel time nmap-ncat ethtool nasm
@@ -82,16 +125,35 @@ check_sendzc() {
     else log "WARN: ulimit -l = $l KiB < 1 MiB — SEND_ZC slab cannot register; raise in /etc/security/limits.d or bench rows will refuse"; fi
 }
 
+sockbuf_ok() {
+    (( $(sysctl -n net.core.rmem_max) >= SOCKBUF_NEED && $(sysctl -n net.core.wmem_max) >= SOCKBUF_NEED ))
+}
+
+# raises the limit with sudo; returns 1, and changes nothing, when sudo is switched off, missing or refused
 tune_sysctl() {
-    local cur_r cur_w
+    local cur_r cur_w rc=0
     cur_r=$(sysctl -n net.core.rmem_max); cur_w=$(sysctl -n net.core.wmem_max)
-    if (( cur_r >= SOCKBUF_MAX && cur_w >= SOCKBUF_MAX )); then
-        log "sysctl already ok: rmem_max=$cur_r wmem_max=$cur_w"; return 0
-    fi
-    log "raising net.core.rmem_max/wmem_max $cur_r/$cur_w -> $SOCKBUF_MAX (persisted in $SYSCTL_FILE)"
+    if sockbuf_ok; then log "sysctl already ok: rmem_max=$cur_r wmem_max=$cur_w"; return 0; fi
+    if [[ "$NO_SUDO" == "1" ]] || ! command -v sudo >/dev/null; then return 1; fi
+    log "raising net.core.rmem_max/wmem_max $cur_r/$cur_w -> $SOCKBUF_MAX with sudo (persisted in $SYSCTL_FILE)"
+    log "  QUIC loses packets on fast or long paths without it. Ctrl-C at the password prompt skips this step only."
+    trap ':' INT # Ctrl-C then ends sudo, not the install
     printf 'net.core.rmem_max = %s\nnet.core.wmem_max = %s\n' "$SOCKBUF_MAX" "$SOCKBUF_MAX" \
-        | sudo tee "$SYSCTL_FILE" >/dev/null
-    sudo sysctl -q -w net.core.rmem_max="$SOCKBUF_MAX" net.core.wmem_max="$SOCKBUF_MAX"
+        | sudo tee "$SYSCTL_FILE" >/dev/null \
+        && sudo sysctl -q -w net.core.rmem_max="$SOCKBUF_MAX" net.core.wmem_max="$SOCKBUF_MAX" || rc=1
+    trap - INT
+    (( rc == 0 )) || log "WARN: sudo did not go through; the limit stays at $cur_r/$cur_w and the install goes on"
+    return $rc
+}
+
+# last lines of a run, so they are not lost above the build output
+report_sysctl() {
+    sockbuf_ok && return 0
+    log "one step is left, and it needs root:"
+    log "  UDP socket buffers are limited to $(sysctl -n net.core.rmem_max) bytes here; embr asks for $SOCKBUF_NEED."
+    log "  embr runs as it is. QUIC transfers on fast or long paths lose packets and slow down until this is run, once:"
+    log "      bash install.sh sysctl          (uses sudo)"
+    log "  or, as root:  sysctl -w net.core.rmem_max=$SOCKBUF_MAX net.core.wmem_max=$SOCKBUF_MAX"
 }
 
 wolfssl_ok() {
@@ -163,6 +225,33 @@ isal_crypto_ok() {
     [[ "v$(PKG_CONFIG_PATH="$PREFIX_ISAL_CRYPTO/lib/pkgconfig" pkg-config --modversion libisal_crypto 2>/dev/null)" == "$ISAL_CRYPTO_REF" ]]
 }
 
+nasm_ok() { # <nasm binary>: exists and is >= 2.14.01
+    local version
+    [[ -n "$1" && -x "$1" ]] || return 1
+    version=$("$1" -v 2>/dev/null | awk '{print $3}')
+    [[ -n "$version" && "$(printf '%s\n' 2.14.01 "$version" | sort -V | head -1)" == "2.14.01" ]]
+}
+
+# prints the nasm to build isa-l_crypto with: the system's, or one built from source under $HOME
+ensure_nasm() {
+    local system_nasm; system_nasm=$(command -v nasm 2>/dev/null || true)
+    if nasm_ok "$system_nasm"; then echo "$system_nasm"; return 0; fi
+    if [[ "$FORCE" != "1" ]] && nasm_ok "$PREFIX_NASM/bin/nasm"; then echo "$PREFIX_NASM/bin/nasm"; return 0; fi
+    local name="nasm-$NASM_VERSION" url tarball
+    url="https://www.nasm.us/pub/nasm/releasebuilds/$NASM_VERSION/$name.tar.gz"; tarball="$SRC/$name.tar.gz"
+    log "no nasm >= 2.14.01 on this system — building $name into $PREFIX_NASM"
+    if command -v curl >/dev/null; then curl -fsSL -o "$tarball" "$url" || die "cannot download $url"
+    elif command -v wget >/dev/null; then wget -q -O "$tarball" "$url" || die "cannot download $url"
+    else die "nasm is missing and neither curl nor wget is here to fetch it"; fi
+    echo "$NASM_SHA256  $tarball" | sha256sum -c --quiet - >&2 || die "$tarball does not match its pinned sha256"
+    rm -rf "${SRC:?}/$name"
+    tar -xzf "$tarball" -C "$SRC" || die "cannot unpack $tarball"
+    ( cd "$SRC/$name" && ./configure --prefix="$PREFIX_NASM" && make -j"$JOBS" nasm ) >&2 || die "nasm did not build"
+    install -D -m 755 "$SRC/$name/nasm" "$PREFIX_NASM/bin/nasm" || die "cannot install nasm" # the binary alone
+    nasm_ok "$PREFIX_NASM/bin/nasm" || die "nasm built but $PREFIX_NASM/bin/nasm does not run"
+    echo "$PREFIX_NASM/bin/nasm"
+}
+
 # optional for embr; its assembly needs nasm >= 2.14.01
 build_isal_crypto() {
     if [[ "$(uname -m)" != "x86_64" ]]; then
@@ -171,12 +260,14 @@ build_isal_crypto() {
     if [[ "$FORCE" != "1" ]] && isal_crypto_ok; then
         log "isa-l_crypto already present at $PREFIX_ISAL_CRYPTO — skip (FORCE=1 to rebuild)"; return 0
     fi
+    local nasm; nasm=$(ensure_nasm)
+    log "nasm: $nasm ($("$nasm" -v))"
     clone_at https://github.com/intel/isa-l_crypto.git "$ISAL_CRYPTO_REF" "$SRC/isa-l_crypto"
     pushd "$SRC/isa-l_crypto" >/dev/null
     git clean -fdxq
     ./autogen.sh
-    ./configure --prefix="$PREFIX_ISAL_CRYPTO"
-    make -j"$JOBS"
+    PATH="$(dirname "$nasm"):$PATH" ./configure --prefix="$PREFIX_ISAL_CRYPTO"
+    PATH="$(dirname "$nasm"):$PATH" make -j"$JOBS"
     make install
     popd >/dev/null
     isal_crypto_ok || die "isa-l_crypto built but libisal_crypto.pc is missing or has another version"
@@ -221,18 +312,20 @@ build_embr() {
 }
 
 main() {
+    if [[ "${1:-}" == "sysctl" ]]; then tune_sysctl || { report_sysctl; return 1; }; return 0; fi
     mkdir -p "$SRC"
     install_system_deps
     require_gcc
     check_sendzc
-    tune_sysctl
+    tune_sysctl || true # asked for while the user is still at the keyboard; a refusal is reported at the end
     build_wolfssl
     build_ngtcp2
     build_isal_crypto
     verify
     ensure_cert
     [[ "$BUILD_EMBR" == "1" ]] && build_embr
-    log "done. Sender host security group: inbound UDP 10008-10011 (one per QUIC bench row) + TCP 10007/9999/22."
+    log "done. Sender host security group: inbound UDP 10008-10012 (one per QUIC bench row) + TCP 10007/9999/22."
+    report_sysctl
 }
 
 main "$@"
