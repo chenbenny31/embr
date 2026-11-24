@@ -1,0 +1,9 @@
+# one 1 GiB transfer, veth A-R-B, rate limit 2200mbit, 5.5 ms each way, the pull on its default egress (io_uring SEND_ZC, 8 slots): 829 Mbit/s
+# the receiver's own egress counters (its ACK packets), and what the sender received:
+[quic-egress] mode=zc gso=1 datagrams=14917 sends=14916 bytes=1091240 notifs=14908 copied=14908 fallback=0 errors=0 waits=12201 registered=1
+[quic-ingress] gro=1 datagrams=14916 reads=14916 bytes=1090040
+# 14916 ACK packets in 10.4 s = 7.9 per one-way delay: the pool's 8 slots, each held until netem released the packet
+
+# sender's ngtcp2 log of a 256 MiB transfer on the same path (EMBR_QUIC_LOG=1), summarised:
+# STREAM_DATA_BLOCKED sent 241 times, MAX_STREAM_DATA received 247 times in steps of about 1085000 bytes (ngtcp2 returns credit when a quarter of the window is used);
+# latest_rtt 27 ms, smoothed 28 ms on an 11 ms path; no packet declared lost; slow start reached cwnd 6.05 MB before HyStart++ ended it

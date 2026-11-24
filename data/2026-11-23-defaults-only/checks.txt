@@ -1,0 +1,16 @@
+# checks on the final scratch tree; 2026-11-24T06:30:47Z
+unit [default] exit 0 [  PASSED  ] 115 tests. 
+unit [EMBR_QUIC_EGRESS=zc] exit 0 [  PASSED  ] 115 tests. 
+unit [EMBR_QUIC_EGRESS=sendmsg] exit 0 [  PASSED  ] 111 tests. [  SKIPPED ] 4 tests, listed below: 
+unit [EMBR_QUIC_GSO_SEGS=16] exit 0 [  PASSED  ] 115 tests. 
+unit [EMBR_QUIC_GSO=0] exit 0 [  PASSED  ] 112 tests. [  SKIPPED ] 3 tests, listed below: 
+unit [EMBR_QUIC_GRO=0] exit 0 [  PASSED  ] 114 tests. [  SKIPPED ] 1 test, listed below: 
+asan build exit 0
+asan [default] exit 0 [  PASSED  ] 115 tests.  reports=0
+asan [EMBR_QUIC_EGRESS=zc] exit 0 [  PASSED  ] 115 tests.  reports=0
+asan [EMBR_QUIC_GSO_SEGS=16] exit 0 [  PASSED  ] 115 tests.  reports=0
+gate [default]: 96 runs, 0 failed
+gate [EMBR_QUIC_EGRESS=zc]: 96 runs, 0 failed
+gate [EMBR_QUIC_EGRESS=sendmsg]: 96 runs, 0 failed
+gate [EMBR_QUIC_GSO_SEGS=16]: 96 runs, 0 failed
+# done 2026-11-24T06:42:51Z

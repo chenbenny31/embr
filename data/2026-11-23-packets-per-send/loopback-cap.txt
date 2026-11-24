@@ -1,0 +1,14 @@
+# packets per send x egress path, loopback, QUIC, 1 GiB, current tree (2c2b26d) plus the experiment switch EMBR_QUIC_GSO_SEGS
+# (../2026-11-18-gso-cap-and-slots/harness/experiment-switches.patch), receiver with the verifier thread and side-by-side SHA-256.
+# push_cpu and pull_cpu are user+sys of each whole process; this kernel accounts softirq time separately, so loopback's receive
+# work done in the sender's context is in neither. copied = SEND_ZC sends the kernel copied (all of them: loopback). 2026-11-23T08:08:42Z
+
+# loopback, 1073741824 bytes, receiver CPUs 2-5, sender CPUs 6-9, kernel 7.3.3-300.fc45.x86_64, n=5, medians
+zc cap16 burst64             n=5 gbps=10.23 [10.23, 10.48] packets_per_send=14.9 sends=55636 push_cpu=0.58 (sys 0.24) push_cpu_of_wall=69% pull_cpu=0.86 waits=0 copied=55672 failed=0
+sendmsg cap16 burst64        n=5 gbps=10.74 [10.74, 11.30] packets_per_send=14.9 sends=55431 push_cpu=0.71 (sys 0.26) push_cpu_of_wall=89% pull_cpu=0.86 waits=0 copied=- failed=0
+zc cap32 burst64             n=5 gbps=11.01 [11.01, 11.30] packets_per_send=27.6 sends=29990 push_cpu=0.56 (sys 0.21) push_cpu_of_wall=72% pull_cpu=0.84 waits=0 copied=30020 failed=0
+sendmsg cap32 burst64        n=5 gbps=12.10 [11.93, 12.10] packets_per_send=27.8 sends=29765 push_cpu=0.66 (sys 0.21) push_cpu_of_wall=93% pull_cpu=0.83 waits=0 copied=- failed=0
+zc cap48 burst64             n=5 gbps=11.45 [11.45, 11.45] packets_per_send=39.8 sends=20790 push_cpu=0.54 (sys 0.20) push_cpu_of_wall=72% pull_cpu=0.83 waits=0 copied=20756 failed=0
+sendmsg cap48 burst64        n=5 gbps=12.45 [12.45, 12.45] packets_per_send=40.1 sends=20633 push_cpu=0.64 (sys 0.20) push_cpu_of_wall=93% pull_cpu=0.82 waits=0 copied=- failed=0
+zc cap48 burst256            n=5 gbps=11.61 [11.45, 11.77] packets_per_send=40.0 sends=20702 push_cpu=0.53 (sys 0.20) push_cpu_of_wall=72% pull_cpu=0.82 waits=0 copied=20675 failed=0
+sendmsg cap48 burst256       n=5 gbps=12.63 [12.63, 12.82] packets_per_send=40.5 sends=20412 push_cpu=0.64 (sys 0.18) push_cpu_of_wall=94% pull_cpu=0.81 waits=0 copied=- failed=0

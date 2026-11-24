@@ -1,0 +1,21 @@
+# final version (probe of 3 sends), both ends at defaults, 3 runs per delay; 2026-11-24T06:28:38Z
+# veth A-R-B  rate=2200mbit delay=2.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 5.037/5.067/5.089/0.022 ms
+run1 after rc=0 intact mbps=2031 drops=0 sender_datagrams=829574 receiver_datagrams=827227_reads=594335 push_egress: sends=311972 copied=3 waits=0 by_sendmsg=311969 
+run2 after rc=0 intact mbps=2031 drops=0 sender_datagrams=830302 receiver_datagrams=827067_reads=594800 push_egress: sends=313294 copied=3 waits=0 by_sendmsg=313291 
+run3 after rc=0 intact mbps=2028 drops=0 sender_datagrams=828897 receiver_datagrams=827102_reads=595606 push_egress: sends=313648 copied=3 waits=0 by_sendmsg=313645 
+# r1 netem: Sent 3442217395 bytes 2481416 pkt (dropped 7376, overlimits 0 requeues 0) 
+# veth A-R-B  rate=2200mbit delay=5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 10.021/10.063/10.106/0.034 ms
+run1 after rc=0 intact mbps=2008 drops=0 sender_datagrams=831744 receiver_datagrams=827064_reads=593538 push_egress: sends=311044 copied=3 waits=0 by_sendmsg=311041 
+run2 after rc=0 intact mbps=2001 drops=0 sender_datagrams=832979 receiver_datagrams=827072_reads=594641 push_egress: sends=310370 copied=3 waits=0 by_sendmsg=310367 
+run3 after rc=0 intact mbps=2006 drops=0 sender_datagrams=832979 receiver_datagrams=827103_reads=594607 push_egress: sends=310075 copied=3 waits=0 by_sendmsg=310072 
+# r1 netem: Sent 3442209316 bytes 2481258 pkt (dropped 16462, overlimits 0 requeues 0) 
+# veth A-R-B  rate=2200mbit delay=10ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 20.048/20.070/20.088/0.016 ms
+run1 after rc=0 intact mbps=1755 drops=0 sender_datagrams=830367 receiver_datagrams=827067_reads=580146 push_egress: sends=320134 copied=3 waits=0 by_sendmsg=320131 
+run2 after rc=0 intact mbps=1908 drops=0 sender_datagrams=830679 receiver_datagrams=826924_reads=591813 push_egress: sends=313204 copied=3 waits=0 by_sendmsg=313201 
+run3 after rc=0 intact mbps=1934 drops=0 sender_datagrams=830965 receiver_datagrams=826950_reads=594779 push_egress: sends=314867 copied=3 waits=0 by_sendmsg=314864 
+# r1 netem: Sent 3442173940 bytes 2480962 pkt (dropped 11067, overlimits 0 requeues 0) 
+# veth A-R-B  rate=2200mbit delay=25ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 50.057/50.068/50.089/0.014 ms
+run1 after rc=0 intact mbps=524 drops=0 sender_datagrams=834054 receiver_datagrams=827107_reads=456647 push_egress: sends=355254 copied=3 waits=0 by_sendmsg=355251 
+run2 after rc=0 intact mbps=535 drops=0 sender_datagrams=832336 receiver_datagrams=826933_reads=465855 push_egress: sends=349282 copied=3 waits=0 by_sendmsg=349279 
+run3 after rc=0 intact mbps=515 drops=0 sender_datagrams=834654 receiver_datagrams=826974_reads=458061 push_egress: sends=354483 copied=3 waits=0 by_sendmsg=354480 
+# r1 netem: Sent 3442175382 bytes 2481038 pkt (dropped 20027, overlimits 0 requeues 0) 

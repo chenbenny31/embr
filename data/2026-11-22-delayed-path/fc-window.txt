@@ -1,0 +1,26 @@
+# flow-control window on longer paths, receiver ACKs on sendmsg (EMBR_QUIC_EGRESS=sendmsg on both ends); scratch build with EMBR_EXPERIMENT_FC_WINDOW (stream window, connection window twice that; embr's own 4 MiB / 8 MiB)
+# veth A-R-B, rate limit 2200mbit, limit 3000 packets, 1 GiB, receiver CPUs 2,3, 2026-11-23T06:32:01Z
+# delay 11ms each way, measured round trip 22.042 ms
+run1 window-4MiB rc=0 intact mbps=1104 drops=0 sender_datagrams=828382 receiver_datagrams=828278_reads=429128
+run1 window-16MiB rc=0 intact mbps=1779 drops=0 sender_datagrams=831303 receiver_datagrams=826953_reads=578882
+run1 window-64MiB rc=0 intact mbps=1801 drops=0 sender_datagrams=831354 receiver_datagrams=826886_reads=578375
+run2 window-4MiB rc=0 intact mbps=1108 drops=0 sender_datagrams=828471 receiver_datagrams=828468_reads=431963
+run2 window-16MiB rc=0 intact mbps=1792 drops=0 sender_datagrams=831186 receiver_datagrams=826963_reads=575718
+run2 window-64MiB rc=0 intact mbps=1759 drops=0 sender_datagrams=830966 receiver_datagrams=826819_reads=575748
+# r1 netem: Sent 6884577972 bytes 4964399 pkt (dropped 17284, overlimits 0 requeues 0) 
+# delay 25ms each way, measured round trip 50.076 ms
+run1 window-4MiB rc=0 intact mbps=489 drops=0 sender_datagrams=828207 receiver_datagrams=828205_reads=432045
+run1 window-16MiB rc=0 intact mbps=523 drops=0 sender_datagrams=834124 receiver_datagrams=827029_reads=455185
+run1 window-64MiB rc=0 intact mbps=572 drops=0 sender_datagrams=833412 receiver_datagrams=826934_reads=474784
+run2 window-4MiB rc=0 intact mbps=489 drops=0 sender_datagrams=828198 receiver_datagrams=828196_reads=430969
+run2 window-16MiB rc=0 intact mbps=520 drops=0 sender_datagrams=834457 receiver_datagrams=827119_reads=461847
+run2 window-64MiB rc=0 intact mbps=572 drops=0 sender_datagrams=833488 receiver_datagrams=826994_reads=458514
+# r1 netem: Sent 6884586971 bytes 4964516 pkt (dropped 27402, overlimits 0 requeues 0) 
+# delay 50ms each way, measured round trip 100.050 ms
+run1 window-4MiB rc=0 intact mbps=245 drops=0 sender_datagrams=828279 receiver_datagrams=828212_reads=427942
+run1 window-16MiB rc=0 intact mbps=263 drops=0 sender_datagrams=833677 receiver_datagrams=826971_reads=445058
+run1 window-64MiB rc=0 intact mbps=263 drops=0 sender_datagrams=835621 receiver_datagrams=826905_reads=446409
+run2 window-4MiB rc=0 intact mbps=245 drops=0 sender_datagrams=828262 receiver_datagrams=828259_reads=428742
+run2 window-16MiB rc=0 intact mbps=262 drops=0 sender_datagrams=834112 receiver_datagrams=826880_reads=445804
+run2 window-64MiB rc=0 intact mbps=263 drops=0 sender_datagrams=834763 receiver_datagrams=826863_reads=445520
+# r1 netem: Sent 6884551331 bytes 4964135 pkt (dropped 30616, overlimits 0 requeues 0) 

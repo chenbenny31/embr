@@ -13,8 +13,10 @@
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
+#include <fstream>
 #include <memory>
 #include <future>
 #include <stdexcept>
@@ -116,6 +118,24 @@ static void fill_pattern(uint8_t* buf, size_t len) {
         buf[i] = static_cast<uint8_t>(i & 0xFF);
     }
 }
+
+// one environment variable set for a scope, then put back as it was
+struct ScopedEnv {
+    std::string name;
+    std::string saved;
+    bool had;
+    ScopedEnv(const char* variable, const char* value) : name(variable) {
+        const char* prev = std::getenv(variable);
+        had = prev != nullptr;
+        if (had) { saved = prev; }
+        ::setenv(variable, value, 1);
+    }
+    ~ScopedEnv() {
+        if (had) { ::setenv(name.c_str(), saved.c_str(), 1); } else { ::unsetenv(name.c_str()); }
+    }
+    ScopedEnv(const ScopedEnv&) = delete;
+    ScopedEnv& operator=(const ScopedEnv&) = delete;
+};
 
 // ── Handshake_Completes ───────────────────────────────────────────────────────
 
@@ -514,10 +534,15 @@ TEST(QuicTransport, SendFile_RecvFile_Aligned) {
 }
 
 // ── Egress_ZcPathCarriesTransfer ──────────────────────────────────────────────
-// skipped when EMBR_QUIC_EGRESS=sendmsg (the same suite gates both modes)
-TEST(QuicTransport, Egress_ZcPathCarriesTransfer) {
+// the suite also runs as a whole with EMBR_QUIC_EGRESS=sendmsg: tests of the SEND_ZC path skip there
+static bool sendmsg_mode() {
     const char* mode = std::getenv("EMBR_QUIC_EGRESS");
-    if (mode && std::string(mode) == "sendmsg") { GTEST_SKIP() << "sendmsg mode"; }
+    return mode && std::string(mode) == "sendmsg";
+}
+
+TEST(QuicTransport, Egress_ZcPathCarriesTransfer) {
+    if (sendmsg_mode()) { GTEST_SKIP() << "sendmsg mode"; }
+    ScopedEnv egress("EMBR_QUIC_EGRESS", "zc"); // loopback copies every send: unset, the transfer would leave SEND_ZC
     auto cert = make_temp_cert();
     auto [listen_fd, port] = make_quic_listener();
     constexpr size_t kLen = 256 * 1024;
@@ -564,21 +589,25 @@ TEST(QuicTransport, Egress_ZcPathCarriesTransfer) {
 }
 
 // ── Gso ───────────────────────────────────────────────────────────────────────
-// one 1 MiB send_file over a fresh connection, reporting the sender's packet and send counts
-// and the receiver's packet and read counts
+// one send_file over a fresh connection, reporting the sender's packet and send counts
+// and the receiver's packet and read counts, and what the receiver itself sent (its ACKs)
 struct GsoRun {
     bool gso{false};
     QuicTransport::SendStats send;
+    bool sender_zc{false}; // the sender had a SEND_ZC egress
+    ZcEgress::Stats sender_zc_stats;
     bool gro{false};
     QuicTransport::RecvStats recv;
+    QuicTransport::SendStats receiver_send;
+    bool receiver_zc{false}; // the receiver had a SEND_ZC egress
+    ZcEgress::Stats receiver_zc_stats;
     bool intact{false};
     std::string server_err;
 };
 
-static GsoRun run_gso_transfer() {
+static GsoRun run_gso_transfer(const size_t kLen = 1024 * 1024) {
     auto cert = make_temp_cert();
     auto [listen_fd, port] = make_quic_listener();
-    constexpr size_t kLen = 1024 * 1024;
 
     auto src = make_tempfile();
     std::vector<uint8_t> pattern(kLen);
@@ -588,7 +617,7 @@ static GsoRun run_gso_transfer() {
     ::ftruncate(dst.fd, static_cast<off_t>(kLen));
 
     GsoRun run;
-    std::jthread server([listen_fd, &cert, dst_fd = dst.fd, &run]() {
+    std::jthread server([listen_fd, &cert, dst_fd = dst.fd, &run, kLen]() {
         try {
             auto t = quic_accept(listen_fd, cert.cert_path, cert.key_path);
             t->recv_file(dst_fd, 0, kLen);
@@ -597,6 +626,11 @@ static GsoRun run_gso_transfer() {
             const auto* server_qt = dynamic_cast<QuicTransport*>(t.get());
             run.gro = server_qt->gro();
             run.recv = server_qt->recv_stats();
+            run.receiver_send = server_qt->send_stats();
+            if (const ZcEgress* zc = server_qt->zc_egress()) {
+                run.receiver_zc = true;
+                run.receiver_zc_stats = zc->stats();
+            }
         } catch (const std::exception& e) {
             run.server_err = e.what();
         }
@@ -612,6 +646,10 @@ static GsoRun run_gso_transfer() {
     const auto* qt = dynamic_cast<QuicTransport*>(client.get());
     run.gso = qt->gso();
     run.send = qt->send_stats();
+    if (const ZcEgress* zc = qt->zc_egress()) {
+        run.sender_zc = true;
+        run.sender_zc_stats = zc->stats();
+    }
     std::vector<uint8_t> got(kLen);
     ::pread(dst.fd, got.data(), kLen, 0);
     run.intact = std::memcmp(pattern.data(), got.data(), kLen) == 0;
@@ -639,6 +677,80 @@ TEST(QuicTransport, Gso_SwitchedOffSendsOnePacketPerSend) {
     EXPECT_TRUE(run.intact);
     EXPECT_FALSE(run.gso);
     EXPECT_EQ(run.send.datagrams, run.send.sends);
+}
+
+// EMBR_QUIC_GSO_SEGS lowers the packets in one send; it cannot raise them past what a UDP send carries
+TEST(QuicTransport, Gso_PacketsPerSendFollowTheSwitch) {
+    for (const auto& [value, cap] : {std::pair{"4", 4u}, std::pair{"16", 16u}, std::pair{"1000", QUIC_GSO_SEGS}}) {
+        ScopedEnv segs("EMBR_QUIC_GSO_SEGS", value);
+        const GsoRun run = run_gso_transfer();
+        EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+        EXPECT_TRUE(run.intact) << value;
+        if (!run.gso) { GTEST_SKIP() << "GSO off"; }
+        EXPECT_LE(run.send.largest, cap) << value;
+        EXPECT_GT(run.send.largest, std::min(cap, 16u) / 2) << value; // the cap is used, not only allowed
+    }
+}
+
+// ── Egress: which sends go through SEND_ZC ────────────────────────────────────
+// the receiver of a file sends ACKs: they are copied by sendmsg and it never waits for a slot
+TEST(QuicTransport, Egress_ShortSendsAreCopied) {
+    if (sendmsg_mode()) { GTEST_SKIP() << "sendmsg mode"; }
+    ScopedEnv egress("EMBR_QUIC_EGRESS", "auto");
+    const GsoRun run = run_gso_transfer();
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    if (!run.receiver_zc) { GTEST_SKIP() << "no SEND_ZC here"; }
+    EXPECT_GT(run.receiver_send.by_sendmsg, 0u);
+    EXPECT_EQ(run.receiver_send.by_sendmsg + run.receiver_zc_stats.sends, run.receiver_send.sends);
+    EXPECT_EQ(run.receiver_zc_stats.waits, 0u);
+}
+
+// loopback copies every SEND_ZC send: after the first few the sender finishes the transfer on sendmsg
+TEST(QuicTransport, Egress_LeavesZcWhenTheKernelCopiesEverySend) {
+    if (sendmsg_mode()) { GTEST_SKIP() << "sendmsg mode"; }
+    ScopedEnv egress("EMBR_QUIC_EGRESS", "auto");
+    const GsoRun run = run_gso_transfer(8 * 1024 * 1024);
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    if (!run.sender_zc) { GTEST_SKIP() << "no SEND_ZC here"; }
+    const auto& zc = run.sender_zc_stats;
+    if (zc.copied != zc.notifs) { GTEST_SKIP() << "this kernel does not copy on loopback"; }
+    EXPECT_GE(zc.sends, QUIC_ZC_PROBE_SENDS);
+    EXPECT_LE(zc.sends, QUIC_ZC_PROBE_SENDS + 2 * QUIC_ZC_SLOTS); // the probe, plus sends in flight around its end
+    EXPECT_LT(zc.sends, run.send.sends / 2);
+    EXPECT_EQ(run.send.by_sendmsg + zc.sends, run.send.sends);
+}
+
+// EMBR_QUIC_EGRESS=zc: every send of both ends through SEND_ZC, copied by the kernel or not
+TEST(QuicTransport, Egress_ZcModePutsEverySendThroughZc) {
+    if (sendmsg_mode()) { GTEST_SKIP() << "sendmsg mode"; }
+    ScopedEnv egress("EMBR_QUIC_EGRESS", "zc");
+    const GsoRun run = run_gso_transfer();
+    EXPECT_TRUE(run.server_err.empty()) << run.server_err;
+    EXPECT_TRUE(run.intact);
+    if (!run.receiver_zc || !run.sender_zc) { GTEST_SKIP() << "no SEND_ZC here"; }
+    EXPECT_EQ(run.receiver_send.by_sendmsg, 0u);
+    EXPECT_EQ(run.receiver_zc_stats.sends, run.receiver_send.sends);
+    EXPECT_EQ(run.send.by_sendmsg, 0u);
+    EXPECT_EQ(run.sender_zc_stats.sends, run.send.sends);
+}
+
+// ── Socket buffers ────────────────────────────────────────────────────────────
+// a request within the kernel's ceiling is granted; one beyond it comes back as the ceiling
+TEST(QuicSocket, BuffersReportWhatTheKernelGranted) {
+    const auto ceiling_of = [](const char* path) { long value = 0; std::ifstream(path) >> value; return value; };
+    const long ceiling = std::min(ceiling_of("/proc/sys/net/core/rmem_max"),
+                                  ceiling_of("/proc/sys/net/core/wmem_max"));
+    ASSERT_GT(ceiling, 0);
+
+    const int fd = ::socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    ASSERT_GE(fd, 0);
+    const int within = 65536;
+    EXPECT_GE(set_socket_buffers(fd, within), within);
+    const int beyond = 1 << 29;
+    if (ceiling < beyond) { EXPECT_EQ(set_socket_buffers(fd, beyond), ceiling); }
+    ::close(fd);
 }
 
 // ngtcp2 starts at 1200 bytes; the 1350-byte probe must lift data packets to the buffer size

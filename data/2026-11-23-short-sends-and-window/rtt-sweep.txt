@@ -1,0 +1,35 @@
+# delayed-path sweep, before and after; veth A-R-B, rate limit 2200mbit, limit 3000 packets, 1 GiB, 3 runs per delay, receiver CPUs 2,3; 2026-11-23T09:23:59Z
+# veth A-R-B  rate=2200mbit delay=2.75ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 5.535/5.581/5.619/0.034 ms
+run1 before rc=0 intact mbps=1659 drops=0 sender_datagrams=828361 receiver_datagrams=828359_reads=434129
+run1 after rc=0 intact mbps=2029 drops=0 sender_datagrams=831575 receiver_datagrams=827121_reads=600954
+run2 before rc=0 intact mbps=1657 drops=0 sender_datagrams=828171 receiver_datagrams=828169_reads=435681
+run2 after rc=0 intact mbps=2029 drops=0 sender_datagrams=830172 receiver_datagrams=827045_reads=600894
+run3 before rc=0 intact mbps=1657 drops=0 sender_datagrams=827983 receiver_datagrams=827981_reads=435087
+run3 after rc=0 intact mbps=2029 drops=0 sender_datagrams=830230 receiver_datagrams=827014_reads=602439
+# r1 netem: Sent 6884717586 bytes 4965717 pkt (dropped 10797, overlimits 0 requeues 0) 
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.029/11.078/11.129/0.040 ms
+run1 before rc=0 intact mbps=828 drops=0 sender_datagrams=827962 receiver_datagrams=827961_reads=427094
+run1 after rc=0 intact mbps=2002 drops=0 sender_datagrams=830865 receiver_datagrams=826962_reads=598288
+run2 before rc=0 intact mbps=827 drops=0 sender_datagrams=827941 receiver_datagrams=827940_reads=427202
+run2 after rc=0 intact mbps=2002 drops=0 sender_datagrams=831420 receiver_datagrams=826826_reads=588806
+run3 before rc=0 intact mbps=829 drops=0 sender_datagrams=828065 receiver_datagrams=828064_reads=433409
+run3 after rc=0 intact mbps=1994 drops=0 sender_datagrams=832486 receiver_datagrams=826984_reads=598225
+# r1 netem: Sent 6884635871 bytes 4964767 pkt (dropped 13998, overlimits 0 requeues 0) 
+# veth A-R-B  rate=2200mbit delay=11ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 22.037/22.296/22.794/0.352 ms
+run1 before rc=0 intact mbps=416 drops=0 sender_datagrams=827990 receiver_datagrams=827988_reads=430747
+run1 after rc=0 intact mbps=1827 drops=0 sender_datagrams=831631 receiver_datagrams=826932_reads=592238
+run2 before rc=0 intact mbps=416 drops=0 sender_datagrams=828104 receiver_datagrams=828099_reads=431951
+run2 after rc=0 intact mbps=1819 drops=0 sender_datagrams=831170 receiver_datagrams=826708_reads=592223
+run3 before rc=0 intact mbps=416 drops=0 sender_datagrams=828211 receiver_datagrams=828208_reads=430448
+run3 after rc=0 intact mbps=1809 drops=0 sender_datagrams=831347 receiver_datagrams=826906_reads=589865
+# r1 netem: Sent 6884643618 bytes 4964882 pkt (dropped 13599, overlimits 0 requeues 0) 
+# veth A-R-B  rate=2200mbit delay=25ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 50.054/50.201/50.483/0.199 ms
+run1 before rc=0 intact mbps=182 drops=0 sender_datagrams=827867 receiver_datagrams=827864_reads=416482
+run1 after rc=0 intact mbps=514 drops=0 sender_datagrams=834664 receiver_datagrams=826822_reads=461618
+run2 before rc=0 intact mbps=182 drops=0 sender_datagrams=827942 receiver_datagrams=827941_reads=417685
+run2 after rc=0 intact mbps=518 drops=0 sender_datagrams=831813 receiver_datagrams=826914_reads=466293
+run3 before rc=0 intact mbps=182 drops=0 sender_datagrams=827904 receiver_datagrams=827900_reads=416111
+run3 after rc=0 intact mbps=524 drops=0 sender_datagrams=833910 receiver_datagrams=826934_reads=450778
+# r1 netem: Sent 6884626261 bytes 4964421 pkt (dropped 19712, overlimits 0 requeues 0) 
+# the receiver's egress line of the last transfer (50 ms, after): [quic-egress] mode=zc gso=1 datagrams=377970 sends=377968 bytes=39389670 notifs=3 copied=3 fallback=0 errors=0 waits=0 small=377965 registered=1
+# before the change the same line read (2026-11-22-delayed-path/receiver-ack-egress.txt): sends=14916 notifs=14908 copied=14908 waits=12201

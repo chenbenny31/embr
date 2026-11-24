@@ -20,6 +20,7 @@
 #include <wolfssl/ssl.h>
 #include <wolfssl/wolfcrypt/sha256.h>
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdlib>
@@ -83,6 +84,31 @@ std::string cert_sha256_hex(WOLFSSL_X509* cert) {
     return out;
 }
 
+int set_socket_buffers(int fd, int bytes) {
+    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &bytes, sizeof(bytes));
+    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &bytes, sizeof(bytes));
+    // the kernel reports twice what it reserved for the caller
+    int recv_buf = 0;
+    int send_buf = 0;
+    socklen_t len = sizeof(recv_buf);
+    ::getsockopt(fd, SOL_SOCKET, SO_RCVBUF, &recv_buf, &len);
+    len = sizeof(send_buf);
+    ::getsockopt(fd, SOL_SOCKET, SO_SNDBUF, &send_buf, &len);
+    return std::min(recv_buf, send_buf) / 2;
+}
+
+void set_quic_socket_buffers(int fd) {
+    static std::atomic_flag told;
+    const int granted = set_socket_buffers(fd, QUIC_SOCKET_BUFFER);
+    if (granted < QUIC_SOCKET_BUFFER && !told.test_and_set()) {
+        std::fprintf(stderr, "[warn] UDP socket buffers: the kernel grants %d KiB of the %d KiB embr asks for; "
+                             "QUIC works, and loses packets when the receiver falls behind\n"
+                             "[warn] to lift the limit, with root: sudo sysctl -w net.core.rmem_max=%d "
+                             "net.core.wmem_max=%d (install.sh sysctl also keeps it after a reboot)\n",
+                     granted / 1024, QUIC_SOCKET_BUFFER / 1024, QUIC_SOCKET_BUFFER, QUIC_SOCKET_BUFFER);
+    }
+}
+
 int QuicTransport::abandon() {
     closed_ = true; // the destructor then sends nothing
     return std::exchange(udp_fd_, -1);
@@ -101,10 +127,11 @@ QuicTransport::~QuicTransport() {
             (unsigned long long)send_stats_.sends, (unsigned long long)send_stats_.bytes);
         if (zc_) {
             const auto& s = zc_->stats();
-            std::fprintf(stderr, " notifs=%llu copied=%llu fallback=%llu errors=%llu waits=%llu registered=%d",
+            std::fprintf(stderr, " notifs=%llu copied=%llu fallback=%llu errors=%llu waits=%llu by_sendmsg=%llu registered=%d",
                 (unsigned long long)s.notifs, (unsigned long long)s.copied,
                 (unsigned long long)s.fallback, (unsigned long long)s.errors,
-                (unsigned long long)s.waits, zc_->registered() ? 1 : 0);
+                (unsigned long long)s.waits, (unsigned long long)send_stats_.by_sendmsg,
+                zc_->registered() ? 1 : 0);
         }
         std::fputc('\n', stderr);
     }
@@ -605,23 +632,30 @@ void QuicTransport::init_egress() {
     const int unset = 0;
     gso_ = !(gso && std::strcmp(gso, "0") == 0) &&
            ::setsockopt(udp_fd_, SOL_UDP, UDP_SEGMENT, &unset, sizeof(unset)) == 0;
-    if (gso_) { batch_buf_.resize(QUIC_GSO_SEGS * QUIC_MAX_PKTLEN); }
+    // EMBR_QUIC_GSO_SEGS=N: fewer packets per send, for experiments
+    if (const char* n = std::getenv("EMBR_QUIC_GSO_SEGS")) {
+        gso_segs_ = static_cast<unsigned>(std::clamp(std::atoi(n), 1, static_cast<int>(QUIC_GSO_SEGS)));
+    }
+    if (gso_) { batch_buf_.resize(gso_segs_ * QUIC_MAX_PKTLEN); }
 
     // DF on every datagram and no kernel fragmenting: a packet too long for the path is lost or
     // fails with EMSGSIZE, so the 1350-byte probe finds out whether the path carries it
     const int df = IP_PMTUDISC_PROBE;
     ::setsockopt(udp_fd_, IPPROTO_IP, IP_MTU_DISCOVER, &df, sizeof(df));
 
+    // EMBR_QUIC_EGRESS, for experiments: sendmsg = no SEND_ZC at all, zc = every send through SEND_ZC
+    // unset, send_batch() chooses for each send
     const char* mode = std::getenv("EMBR_QUIC_EGRESS");
     if (mode && std::strcmp(mode, "sendmsg") == 0) { return; }
+    zc_always_ = mode && std::strcmp(mode, "zc") == 0;
     try {
-        // with GSO a slot holds a whole batch: fewer, larger slots
-        unsigned slots = gso_ ? QUIC_ZC_GSO_SLOTS : QUIC_ZC_SLOTS;
+        // with GSO a slot holds a whole batch: fewer, larger slots, and the same slab whatever the batch size
+        unsigned slots = gso_ ? (QUIC_ZC_GSO_PACKETS + gso_segs_ - 1) / gso_segs_ : QUIC_ZC_SLOTS;
         // EMBR_QUIC_ZC_SLOTS=N: pool size for experiments; a slot is busy until the NIC frees its packets
         if (const char* n = std::getenv("EMBR_QUIC_ZC_SLOTS")) {
             slots = static_cast<unsigned>(std::clamp(std::atoi(n), 1, 1024));
         }
-        zc_ = std::make_unique<ZcEgress>(udp_fd_, (gso_ ? QUIC_GSO_SEGS : 1u) * QUIC_MAX_PKTLEN, slots);
+        zc_ = std::make_unique<ZcEgress>(udp_fd_, (gso_ ? gso_segs_ : 1u) * QUIC_MAX_PKTLEN, slots);
         // unregistered SEND_ZC pins 8KiB per in-flight datagram against the same budget, use copy
         if (!zc_->registered()) { zc_.reset(); }
     } catch (const std::exception&) {
@@ -654,7 +688,7 @@ QuicTransport::SendResult QuicTransport::send_packet(size_t n) {
     if (batch_pkts_ == 0) { batch_seg_ = n; }
     batch_len_ += n;
     ++batch_pkts_;
-    if (n < batch_seg_ || batch_pkts_ >= (gso_ ? QUIC_GSO_SEGS : 1u)) { return send_batch(); }
+    if (n < batch_seg_ || batch_pkts_ >= (gso_ ? gso_segs_ : 1u)) { return send_batch(); }
     return SendResult::ok;
 }
 
@@ -663,6 +697,7 @@ QuicTransport::SendResult QuicTransport::send_batch() {
     const unsigned pkts = std::exchange(batch_pkts_, 0);
     if (pkts == 0) { return SendResult::ok; }
     ++send_stats_.sends;
+    send_stats_.largest = std::max(send_stats_.largest, pkts);
 
     // the kernel cuts every send at the socket's UDP_SEGMENT: several packets need exactly their
     // size there, a single packet only needs to be no longer than it
@@ -675,11 +710,21 @@ QuicTransport::SendResult QuicTransport::send_batch() {
         sock_seg_ = batch_seg_;
     }
 
-    if (zc_) {
+    // SEND_ZC unless it cannot pay: a short send, or a path where the kernel copies every send anyway
+    bool by_zc = zc_ != nullptr;
+    if (by_zc && !zc_always_) {
+        const auto& s = zc_->stats();
+        zc_copied_ = zc_copied_ || (s.notifs >= QUIC_ZC_PROBE_SENDS && s.copied == s.notifs);
+        by_zc = !zc_copied_ && len >= QUIC_ZC_MIN_BYTES;
+    }
+    if (by_zc) {
         if (zc_->commit(len)) { return SendResult::ok; }
         errno = zc_->error() != 0 ? zc_->error() : EIO; // a send CQE latched error
         return SendResult::failed;
     }
+    // sendmsg copies out of the slot, which stays reserved for the next batch
+    if (zc_) { zc_->flush(); } // sends queued before this one leave first: packets stay in order
+    ++send_stats_.by_sendmsg;
 
     struct iovec iov{};
     iov.iov_base = batch_base_;

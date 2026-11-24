@@ -1,0 +1,26 @@
+# 16, 32 and 48 packets per send on a veth A-R-B path (../2026-11-22-delayed-path/harness/vethsb.sh), sendmsg on both ends,
+# first the 11 ms / 2.2 Gbit/s path with 1 GiB, then a shallow queue (100 Mbit/s, 20 ms, 100 packets) with 64 MiB; 3 runs each
+
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.039/11.318/11.459/0.197 ms
+run1 cap16 rc=0 intact mbps=1995 drops=0 sender_datagrams=828514 receiver_datagrams=828511_reads=431666
+run1 cap32 rc=0 intact mbps=2000 drops=0 sender_datagrams=828568 receiver_datagrams=828564_reads=404518
+run1 cap48 rc=0 intact mbps=1995 drops=0 sender_datagrams=828427 receiver_datagrams=828425_reads=392437
+run2 cap16 rc=0 intact mbps=1999 drops=0 sender_datagrams=828380 receiver_datagrams=828377_reads=431146
+run2 cap32 rc=0 intact mbps=2000 drops=0 sender_datagrams=828401 receiver_datagrams=828399_reads=404008
+run2 cap48 rc=0 intact mbps=2004 drops=0 sender_datagrams=828487 receiver_datagrams=828482_reads=392071
+run3 cap16 rc=0 intact mbps=1999 drops=0 sender_datagrams=828574 receiver_datagrams=828570_reads=431609
+run3 cap32 rc=0 intact mbps=2000 drops=0 sender_datagrams=828514 receiver_datagrams=828509_reads=404966
+run3 cap48 rc=0 intact mbps=1998 drops=0 sender_datagrams=828601 receiver_datagrams=828597_reads=394167
+# r1 netem: Sent 10327785947 bytes 7456495 pkt (dropped 0, overlimits 0 requeues 0) 
+
+# veth A-R-B  rate=100mbit delay=10ms each way limit=100 packets  file=67108864 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 20.050/20.113/20.145/0.044 ms
+run1 cap16 rc=0 intact mbps=76 drops=0 sender_datagrams=52168 receiver_datagrams=52019_reads=51995
+run1 cap32 rc=0 intact mbps=78 drops=0 sender_datagrams=52201 receiver_datagrams=52016_reads=51988
+run1 cap48 rc=0 intact mbps=78 drops=0 sender_datagrams=52188 receiver_datagrams=52012_reads=51983
+run2 cap16 rc=0 intact mbps=78 drops=0 sender_datagrams=52194 receiver_datagrams=52008_reads=51983
+run2 cap32 rc=0 intact mbps=78 drops=0 sender_datagrams=52192 receiver_datagrams=52015_reads=51991
+run2 cap48 rc=0 intact mbps=78 drops=0 sender_datagrams=52202 receiver_datagrams=52007_reads=51982
+run3 cap16 rc=0 intact mbps=78 drops=0 sender_datagrams=52188 receiver_datagrams=52009_reads=51996
+run3 cap32 rc=0 intact mbps=74 drops=0 sender_datagrams=52224 receiver_datagrams=52019_reads=52004
+run3 cap48 rc=0 intact mbps=78 drops=0 sender_datagrams=52233 receiver_datagrams=52041_reads=52005
+# r1 netem: Sent 645679083 bytes 468175 pkt (dropped 1634, overlimits 0 requeues 0) 

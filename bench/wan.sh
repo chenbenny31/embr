@@ -13,7 +13,14 @@
 #   default   every row at embr's defaults                              the headline table
 #   gro-off   QUIC rows, EMBR_QUIC_GRO=0 on the receiver                what batched receive buys on a real NIC
 #   ack10     QUIC rows, EMBR_QUIC_ACK_THRESH=10 on the receiver        whether the ACK rate still matters
-#   slots128  SEND_ZC rows, EMBR_QUIC_ZC_SLOTS=128 on the sender        whether 8 slots make the sender wait
+#   slots128  SEND_ZC rows, EMBR_QUIC_ZC_SLOTS=128 on the sender        whether the slot pool (3 with GSO) makes the sender wait
+#   segs16    GSO rows, EMBR_QUIC_GSO_SEGS=16 on the sender             what 48 packets per send buy over the 16 of before
+#   v09-hash  hash on the receiving thread, one chunk at a time         the v0.9 receiver, as the baseline
+#   threads-only  verifier threads, one chunk at a time                 what the threads give without side-by-side hashing
+#   recv-zc   EMBR_QUIC_EGRESS=zc on the receiver: its ACKs through SEND_ZC, as before short sends were copied
+#                                                                       whether its slot pool held a transfer back on a NIC
+#   sockbuf-default  both hosts' socket-buffer ceiling at the kernel's default for the pass (needs sudo on both)
+#                                                                       what a host without install.sh's sysctl loses
 #   custom    CUSTOM='rows|receiver env|sender env'                     a follow-up without editing this file
 # embrtcp is in every pass: no pass's environment touches it, so it shows drift between passes.
 #
@@ -31,7 +38,7 @@
 # data/ as it is.
 #
 # Both hosts: install.sh run, embr built in ./build, the same commit checked out. Sender security
-# group: inbound TCP 22, 10007, 9999 and UDP 10008-10011 from the receiver. The key in SSH_KEY
+# group: inbound TCP 22, 10007, 9999 and UDP 10008-10012 from the receiver. The key in SSH_KEY
 # must be a file on the receiver; a forwarded agent dies with the ssh session.
 # The sender host is treated as dedicated: a sender left behind by an aborted run is stopped.
 #
@@ -98,7 +105,7 @@ echo $$ > "$RUN_DIR/pid"
 # ── functions that also run on the sender ───────────────────────────────────────────────────
 
 # the remote bash reads these functions, then the call, from stdin: no quoting through ssh
-REMOTE_FNS=(r_dir r_repo r_prep r_space r_ports r_start r_wait r_stop r_clean r_tar snap_env snap_counters)
+REMOTE_FNS=(r_dir r_repo r_prep r_space r_ports r_sockbuf r_start r_wait r_stop r_clean r_tar snap_env snap_counters)
 remote() { { declare -f "${REMOTE_FNS[@]}"; printf '%q ' "$@"; echo; } | on_sender bash -s; }
 
 r_dir()  { case "$1" in /*) echo "$1" ;; *) echo "$HOME/$1" ;; esac; }
@@ -121,6 +128,12 @@ r_ports() { # <port>...: a push or ncat orphaned by an earlier run would serve t
     local p busy=""
     for p in "$@"; do [[ -n "$(ss -H -lntu "sport = :$p" 2>/dev/null)" ]] && busy+=" $p"; done
     [[ -z "$busy" ]] || { echo "ports in use on the sender:$busy — stop what holds them (pkill -x embr; pkill -x ncat)" >&2; return 1; }
+}
+
+r_sockbuf() { # [<rmem_max> <wmem_max>]: prints this host's ceiling, then sets the one given (needs sudo)
+    sysctl -n net.core.rmem_max net.core.wmem_max | tr '\n' ' '
+    [[ $# -eq 2 ]] || return 0
+    sudo -n sysctl -q -w net.core.rmem_max="$1" net.core.wmem_max="$2"
 }
 
 r_start() { # <repo> <dir> NAME=value...: bench.sh wan-sender in a session of its own; its pid is the session id
@@ -244,13 +257,19 @@ snap_counters() { # <peer ip, or "" for the ssh client>: taken before and after 
 
 # ── here only ───────────────────────────────────────────────────────────────────────────────
 
-QUIC_ROWS="embrquic embrquicsm embrquicgso embrquicsmgso"
-pass_spec() { # <name> -> rows|receiver env|sender env
+QUIC_ROWS="embrquic embrquicsm embrquicgso embrquicsmgso embrquicdef"
+pass_spec() { # <name> -> rows|receiver env|sender env[|socket-buffer ceiling]
     case "$1" in
         default)  echo "$QUIC_ROWS embrtcp nc scp||" ;;
         gro-off)  echo "$QUIC_ROWS embrtcp|EMBR_QUIC_GRO=0|" ;;
         ack10)    echo "$QUIC_ROWS embrtcp|EMBR_QUIC_ACK_THRESH=10|" ;;
         slots128) echo "embrquic embrquicgso embrquicsmgso embrtcp||EMBR_QUIC_ZC_SLOTS=128" ;;
+        segs16)   echo "embrquicgso embrquicsmgso embrquicdef embrtcp||EMBR_QUIC_GSO_SEGS=16" ;;
+        v09-hash)     echo "$QUIC_ROWS embrtcp|EMBR_VERIFY=inline EMBR_HASH_LANES=1|" ;;
+        threads-only) echo "$QUIC_ROWS embrtcp|EMBR_HASH_LANES=1|" ;;
+        recv-zc)      echo "$QUIC_ROWS embrtcp|EMBR_QUIC_EGRESS=zc|" ;;
+        # fourth field: the socket-buffer ceiling set on both hosts for the pass (212992 is the kernel's default)
+        sockbuf-default) echo "$QUIC_ROWS embrtcp|SOCKBUF_MIN=0|SOCKBUF_MIN=0|212992" ;;
         custom)   [[ "${CUSTOM:-}" == *"|"*"|"* ]] && echo "$CUSTOM" ;;
         *)        return 1 ;;
     esac
@@ -279,6 +298,14 @@ nic_delta() { # <before> <after>: ENA's allowance counters, and any drop or trou
 
 RECV_PID=""
 SENDER_UP="" # the pass whose sender is running
+SOCKBUF_LOCAL="" SOCKBUF_REMOTE="" # ceilings to put back after a pass that changed them
+restore_sockbuf() {
+    # shellcheck disable=SC2086  # "rmem wmem", split on purpose
+    [[ -z "$SOCKBUF_LOCAL" ]]  || r_sockbuf $SOCKBUF_LOCAL > /dev/null || log "WARNING: the receiver's socket-buffer ceiling was not put back ($SOCKBUF_LOCAL)"
+    # shellcheck disable=SC2086
+    [[ -z "$SOCKBUF_REMOTE" ]] || remote r_sockbuf $SOCKBUF_REMOTE > /dev/null || log "WARNING: the sender's socket-buffer ceiling was not put back ($SOCKBUF_REMOTE)"
+    SOCKBUF_LOCAL=""; SOCKBUF_REMOTE=""
+}
 
 stop_local() { # whatever this run still has running on this host
     if [[ "$(ps -o sid= -p $$ | tr -d ' ')" == "$$" ]]; then
@@ -303,25 +330,34 @@ stop_fetch() { # <pass>: stop its sender and bring the sender's files here
 }
 
 run_pass() { # <name>
-    local name="$1" spec rows renv senv rc=0 v
+    local name="$1" spec rows renv senv sockbuf rc=0 v
     local dir="$RUN_DIR/$1" rdir="$SENDER_OUT_ROOT/$STAMP/$1"
     spec=$(pass_spec "$name") || { log "unknown pass: $name (custom needs CUSTOM='rows|receiver env|sender env')"; return 1; }
-    IFS='|' read -r rows renv senv <<<"$spec"
+    IFS='|' read -r rows renv senv sockbuf <<<"$spec"
     mkdir -p "$dir/sender"
     log "=== pass $name: rows [$rows]  receiver env [${renv:-none}]  sender env [${senv:-none}] ==="
     { echo "pass: $name"; echo "rows: $rows"
       echo "receiver env: ${renv:-none}"; echo "sender env: ${senv:-none}${SENDER_ENV:+ $SENDER_ENV}"
       echo "runs: $RUNS  warmup: $WARMUP  file_size_gb: $FILE_SIZE_GB"; echo "started: $(date -u +%FT%TZ)"; } > "$dir/pass.txt"
 
+    if [[ -n "$sockbuf" ]]; then # both hosts, for this pass only
+        if ! SOCKBUF_LOCAL=$(r_sockbuf "$sockbuf" "$sockbuf") || ! SOCKBUF_REMOTE=$(remote r_sockbuf "$sockbuf" "$sockbuf"); then
+            restore_sockbuf
+            log "pass $name: cannot set the socket-buffer ceiling — it needs sudo without a password on both hosts"
+            return 1
+        fi
+        echo "socket-buffer ceiling: $sockbuf on both hosts (receiver had $SOCKBUF_LOCAL, sender had $SOCKBUF_REMOTE)" >> "$dir/pass.txt"
+    fi
+
     local -a sender_env=("ROWS=$rows" "WARMUP=$WARMUP" "FILE_SIZE_GB=$FILE_SIZE_GB" "BUILD=$SENDER_BUILD")
     for v in FILE TCP_PORT QUIC_PORT NC_PORT; do [[ -n "${!v:-}" ]] && sender_env+=("$v=${!v}"); done
     # shellcheck disable=SC2206  # NAME=value words, split on purpose
     sender_env+=($senv $SENDER_ENV)
 
-    remote r_start "$SENDER_REPO" "$rdir" "${sender_env[@]}" || { log "pass $name: could not start the sender"; return 1; }
+    remote r_start "$SENDER_REPO" "$rdir" "${sender_env[@]}" || { restore_sockbuf; log "pass $name: could not start the sender"; return 1; }
     SENDER_UP="$name"
     # the first pass generates and hashes the test file before it serves
-    remote r_wait "$rdir" 300 || { log "pass $name: the sender did not come up"; stop_fetch "$name"; return 1; }
+    remote r_wait "$rdir" 300 || { log "pass $name: the sender did not come up"; stop_fetch "$name"; restore_sockbuf; return 1; }
 
     snap_counters "$SENDER_IP" > "$dir/counters.receiver.before.txt"
     remote snap_counters ""    > "$dir/counters.sender.before.txt"
@@ -337,6 +373,7 @@ run_pass() { # <name>
     snap_counters "$SENDER_IP" > "$dir/counters.receiver.after.txt"
     remote snap_counters ""    > "$dir/counters.sender.after.txt"
     stop_fetch "$name"
+    restore_sockbuf
 
     for v in receiver sender; do
         log "pass $name, $v: udp$(udp_delta "$dir/counters.$v.before.txt" "$dir/counters.$v.after.txt")  nic$(nic_delta "$dir/counters.$v.before.txt" "$dir/counters.$v.after.txt")"
@@ -353,7 +390,7 @@ preflight() {
         || die "cannot ssh ${SENDER_USER}@${SENDER_IP} — SSH_KEY must be a key file on this host (mode 600) and TCP 22 open on the sender"
     remote r_clean "$SENDER_OUT_ROOT" || die "the sender is not free"
     local q="${QUIC_PORT:-10008}"
-    remote r_ports "${TCP_PORT:-10007}" "${NC_PORT:-9999}" "$q" $(( q + 1 )) $(( q + 2 )) $(( q + 3 )) || die "the sender is not free"
+    remote r_ports "${TCP_PORT:-10007}" "${NC_PORT:-9999}" "$q" $(( q + 1 )) $(( q + 2 )) $(( q + 3 )) $(( q + 4 )) || die "the sender is not free"
 
     # a pull without a rebuild would measure the old binary
     if [[ "$SKIP_BUILD" != 1 ]]; then cmake --build "$BUILD" --target embr >&2 || die "build failed here"; fi
@@ -401,6 +438,7 @@ finish() {
     trap '' TERM INT
     stop_local
     [[ -n "$SENDER_UP" ]] && stop_fetch "$SENDER_UP"
+    restore_sockbuf
     rm -f "$RUN_DIR/pid"
     if ! ls "$RUN_DIR"/*/pass.txt >/dev/null 2>&1; then
         rmdir "$RUN_DIR" 2>/dev/null

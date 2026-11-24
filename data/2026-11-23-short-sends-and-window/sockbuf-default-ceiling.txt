@@ -1,0 +1,59 @@
+# The kernel's default socket-buffer ceiling on the emulated 11 ms path, 2026-11-23. Three sets, all on a quiet machine.
+# Yesterday's result for this configuration (../2026-11-22-delayed-path/sockbuf-wanlike.txt: median 1988-1994 Mbit/s, half the runs without
+# a drop) did not come back: today every run drops packets at the receive buffer and runs at 525-1432 Mbit/s, with the same binary and script.
+
+## set 1
+# default socket-buffer ceiling (212992 asked on both ends, 425984 granted), quiet machine: the tree before the change with a 4 and a 16 MiB flow-control
+# window (sendmsg on both ends), and the tree after it; veth A-R-B, 2200mbit, limit 3000 packets, 1 GiB, 5 runs; 2026-11-23T09:37:00Z
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.016/11.212/11.483/0.197 ms
+run1 w4-small rc=0 intact mbps=1054 drops=452 sender_datagrams=828796 receiver_datagrams=828155_reads=537020
+run1 w16-small rc=0 intact mbps=725 drops=424 sender_datagrams=834549 receiver_datagrams=827813_reads=536915
+run1 after-small rc=0 intact mbps=837 drops=524 sender_datagrams=834378 receiver_datagrams=827595_reads=537517
+run2 w4-small rc=0 intact mbps=1432 drops=440 sender_datagrams=828999 receiver_datagrams=828134_reads=481025
+run2 w16-small rc=0 intact mbps=663 drops=540 sender_datagrams=834755 receiver_datagrams=827894_reads=528024
+run2 after-small rc=0 intact mbps=727 drops=526 sender_datagrams=833486 receiver_datagrams=827812_reads=533587
+run3 w4-small rc=0 intact mbps=1010 drops=428 sender_datagrams=828685 receiver_datagrams=828003_reads=527557
+run3 w16-small rc=0 intact mbps=1303 drops=333 sender_datagrams=833870 receiver_datagrams=827362_reads=557703
+run3 after-small rc=0 intact mbps=665 drops=914 sender_datagrams=833460 receiver_datagrams=827901_reads=539848
+run4 w4-small rc=0 intact mbps=988 drops=550 sender_datagrams=829217 receiver_datagrams=828146_reads=504329
+run4 w16-small rc=0 intact mbps=658 drops=938 sender_datagrams=835320 receiver_datagrams=827809_reads=540980
+run4 after-small rc=0 intact mbps=525 drops=485 sender_datagrams=835059 receiver_datagrams=828235_reads=516623
+run5 w4-small rc=0 intact mbps=775 drops=460 sender_datagrams=829090 receiver_datagrams=828191_reads=524266
+run5 w16-small rc=0 intact mbps=848 drops=451 sender_datagrams=834311 receiver_datagrams=827657_reads=537241
+run5 after-small rc=0 intact mbps=929 drops=477 sender_datagrams=834490 receiver_datagrams=827604_reads=540184
+# r1 netem: Sent 17228715952 bytes 12430306 pkt (dropped 58197, overlimits 0 requeues 0) 
+
+## set 2, after 12 GB of scratch files were removed from the in-memory /tmp (swap had been full)
+# default socket-buffer ceiling (212992 asked on both ends, 425984 granted) after freeing memory (swap had been full): the tree before the change with a 4 and a
+# 16 MiB flow-control window (sendmsg on both ends), and the tree after it; veth A-R-B, 2200mbit, limit 3000 packets, 1 GiB, 5 runs; 2026-11-23T09:43:12Z; free 16204 MiB, swap free 4044 MiB
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.048/11.251/11.563/0.223 ms
+run1 w4-small rc=0 intact mbps=645 drops=498 sender_datagrams=829139 receiver_datagrams=828381_reads=520629
+run1 w16-small rc=0 intact mbps=804 drops=314 sender_datagrams=834156 receiver_datagrams=827700_reads=529577
+run1 after-small rc=0 intact mbps=697 drops=458 sender_datagrams=834524 receiver_datagrams=827830_reads=542840
+run2 w4-small rc=0 intact mbps=968 drops=404 sender_datagrams=828610 receiver_datagrams=827791_reads=526356
+run2 w16-small rc=0 intact mbps=785 drops=579 sender_datagrams=832344 receiver_datagrams=827769_reads=529100
+run2 after-small rc=0 intact mbps=774 drops=865 sender_datagrams=835094 receiver_datagrams=827771_reads=517804
+run3 w4-small rc=0 intact mbps=1091 drops=444 sender_datagrams=828661 receiver_datagrams=827783_reads=551694
+run3 w16-small rc=0 intact mbps=937 drops=738 sender_datagrams=834288 receiver_datagrams=827599_reads=542115
+run3 after-small rc=0 intact mbps=760 drops=374 sender_datagrams=834275 receiver_datagrams=827688_reads=541798
+run4 w4-small rc=0 intact mbps=659 drops=559 sender_datagrams=829437 receiver_datagrams=828392_reads=521991
+run4 w16-small rc=0 intact mbps=715 drops=939 sender_datagrams=835334 receiver_datagrams=827834_reads=531505
+run4 after-small rc=0 intact mbps=785 drops=299 sender_datagrams=834175 receiver_datagrams=827704_reads=534485
+run5 w4-small rc=0 intact mbps=839 drops=495 sender_datagrams=829205 receiver_datagrams=828207_reads=514562
+run5 w16-small rc=0 intact mbps=952 drops=384 sender_datagrams=834100 receiver_datagrams=827519_reads=549301
+run5 after-small rc=0 intact mbps=793 drops=318 sender_datagrams=834172 receiver_datagrams=827684_reads=533524
+# r1 netem: Sent 17227888740 bytes 12429099 pkt (dropped 58451, overlimits 0 requeues 0) 
+
+## set 3: yesterday's exact configuration (small-nosha) next to the same without OPENSSL_ia32cap, before set 2
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.025/11.100/11.149/0.053 ms
+run1 small-nosha rc=0 intact mbps=815 drops=388 sender_datagrams=828936 receiver_datagrams=828097_reads=529497
+run1 small rc=0 intact mbps=820 drops=418 sender_datagrams=828930 receiver_datagrams=828053_reads=529477
+run2 small-nosha rc=0 intact mbps=885 drops=507 sender_datagrams=829013 receiver_datagrams=828076_reads=538604
+run2 small rc=0 intact mbps=879 drops=281 sender_datagrams=828581 receiver_datagrams=827879_reads=517992
+run3 small-nosha rc=0 intact mbps=746 drops=449 sender_datagrams=828756 receiver_datagrams=828110_reads=528963
+run3 small rc=0 intact mbps=809 drops=201 sender_datagrams=828649 receiver_datagrams=828117_reads=528537
+run4 small-nosha rc=0 intact mbps=645 drops=473 sender_datagrams=829092 receiver_datagrams=828299_reads=534358
+run4 small rc=0 intact mbps=1015 drops=252 sender_datagrams=828592 receiver_datagrams=827955_reads=521048
+run5 small-nosha rc=0 intact mbps=743 drops=575 sender_datagrams=829376 receiver_datagrams=828236_reads=525401
+run5 small rc=0 intact mbps=869 drops=210 sender_datagrams=828437 receiver_datagrams=828106_reads=527976
+# r1 netem: Sent 11483120488 bytes 8286878 pkt (dropped 1515, overlimits 0 requeues 0) 

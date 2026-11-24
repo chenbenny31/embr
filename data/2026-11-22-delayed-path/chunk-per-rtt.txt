@@ -1,0 +1,12 @@
+# is it one chunk per round trip? 1 MiB chunks (embr's) against a scratch build with 4 MiB chunks; flow-control window 64 MiB in both so that it cannot be the limit
+# veth A-R-B, rate limit 2200mbit, limit 3000 packets, 1 GiB, receiver CPUs 2,3, 2026-11-23T06:21:55Z
+# delay 5.5ms each way, measured round trip 11.051 ms
+run1 chunk-1MiB rc=0 intact mbps=832 drops=723 sender_datagrams=828522 receiver_datagrams=827136_reads=427701
+run1 chunk-4MiB rc=0 intact mbps=925 drops=614 sender_datagrams=826124 receiver_datagrams=824916_reads=429885
+run2 chunk-1MiB rc=0 intact mbps=832 drops=815 sender_datagrams=828720 receiver_datagrams=827160_reads=430125
+run2 chunk-4MiB rc=0 intact mbps=925 drops=782 sender_datagrams=826464 receiver_datagrams=824946_reads=429145
+# delay 25ms each way, measured round trip 50.047 ms
+run1 chunk-1MiB rc=0 intact mbps=184 drops=594 sender_datagrams=828152 receiver_datagrams=826985_reads=423134
+run1 chunk-4MiB rc=0 intact mbps=204 drops=264 sender_datagrams=825446 receiver_datagrams=824910_reads=421448
+run2 chunk-1MiB rc=0 intact mbps=184 drops=989 sender_datagrams=828899 receiver_datagrams=826962_reads=420169
+run2 chunk-4MiB rc=0 intact mbps=204 drops=699 sender_datagrams=826281 receiver_datagrams=824932_reads=423804

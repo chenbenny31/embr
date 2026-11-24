@@ -37,11 +37,32 @@ inline constexpr uint64_t QUIC_HANDSHAKE_TIMEOUT_NS = 10'000'000'000ULL; // give
 // SEND_ZC slots per conn: ~ 105 KiB of memlock; slots recycle on NOTIF (NIC TX done) not on ACK
 inline constexpr unsigned QUIC_ZC_SLOTS = 64;
 // UDP GSO: up to this many same-size packets leave in one send; a SEND_ZC slot then holds one batch
-inline constexpr unsigned QUIC_GSO_SEGS = 16;
-inline constexpr unsigned QUIC_ZC_GSO_SLOTS = 8; // 8 x 16 x 1350 B = 169 KiB slab per conn
+// 48 x 1350 B is the most one UDP send carries (65,507 B)
+inline constexpr unsigned QUIC_GSO_SEGS = 48;
+// packets the SEND_ZC slab holds with GSO, in whole slots: 3 x 48 x 1350 B = 190 KiB per conn
+inline constexpr unsigned QUIC_ZC_GSO_PACKETS = 128;
+// a send shorter than a full packet is copied by sendmsg: its SEND_ZC slot would stay busy until the
+// kernel lets go of the packet, and a receiver that only writes ACKs then waits for slots
+inline constexpr size_t QUIC_ZC_MIN_BYTES = 1200;
+// the kernel reports whether it copied a SEND_ZC send after all (loopback, veth, a packet capture):
+// when it copied every one of the first this many, the connection goes over to sendmsg
+// no more than the slots a connection has: on a path that holds packets a longer probe waits for them
+inline constexpr uint64_t QUIC_ZC_PROBE_SENDS = 3;
+// flow-control credit: at 4 MiB the sender ran out of it once per round trip, about 3 MiB each
+inline constexpr uint64_t QUIC_STREAM_WINDOW = 16 * 1024 * 1024;
+inline constexpr uint64_t QUIC_CONN_WINDOW = 2 * QUIC_STREAM_WINDOW;
+// asked for each direction: rmem_default holds ~157 packets, against bursts and an AEAD-bound receiver
+inline constexpr int QUIC_SOCKET_BUFFER = 4 * 1024 * 1024;
 
 // lowercase hex SHA-256 of a certificate's DER encoding; empty if cert is null
 std::string cert_sha256_hex(WOLFSSL_X509* cert);
+
+// asks for bytes of send and of receive buffer; returns what the kernel granted, the smaller of the two
+// (it caps a request at net.core.rmem_max / wmem_max without an error)
+int set_socket_buffers(int fd, int bytes);
+// QUIC_SOCKET_BUFFER for a QUIC socket; when the kernel grants less, says so on stderr with the
+// command that lifts the limit, once per process
+void set_quic_socket_buffers(int fd);
 
 // QUIC implementation of Transport
 // construct only via factories: quic_connect, quic_accept
@@ -65,6 +86,8 @@ public:
         uint64_t datagrams{0};
         uint64_t sends{0};
         uint64_t bytes{0};
+        uint64_t by_sendmsg{0}; // sends that left through sendmsg; the others went through SEND_ZC
+        unsigned largest{0};    // packets in the largest send
     };
     const SendStats& send_stats() const { return send_stats_; }
     bool gso() const { return gso_; } // false: EMBR_QUIC_GSO=0 or the kernel has no UDP_SEGMENT
@@ -125,6 +148,9 @@ private:
     // GSO batch: same-size packets laid end to end, handed to the kernel as one send
     // without GSO a batch is always one packet and every path below is today's
     bool gso_{false};
+    unsigned gso_segs_{QUIC_GSO_SEGS}; // EMBR_QUIC_GSO_SEGS
+    bool zc_always_{false}; // EMBR_QUIC_EGRESS=zc: every send through SEND_ZC
+    bool zc_copied_{false}; // the kernel copied the first SEND_ZC sends: sendmsg from here on
     std::vector<uint8_t> batch_buf_; // sendmsg mode with GSO
     uint8_t* batch_base_{nullptr};   // a SEND_ZC slot, batch_buf_ or packet_buf_
     size_t batch_len_{0};

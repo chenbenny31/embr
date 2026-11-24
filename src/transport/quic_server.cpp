@@ -72,9 +72,7 @@ int quic_listen(uint16_t port) {
     addr.sin_addr.s_addr = htonl(INADDR_ANY);
     addr.sin_port = htons(port);
 
-    const int sock_buf = 4 * 1024 * 1024;
-    ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sock_buf, sizeof(sock_buf));
-    ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sock_buf, sizeof(sock_buf));
+    set_quic_socket_buffers(fd);
 
     if (::bind(fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) < 0) {
         ::close(fd);
@@ -229,9 +227,9 @@ std::unique_ptr<Transport> quic_accept_one(int listen_fd,
     ngtcp2_transport_params params{};
     ngtcp2_transport_params_default(&params);
     params.max_idle_timeout = 30 * NGTCP2_SECONDS;
-    params.initial_max_stream_data_bidi_local = 4 * 1024 * 1024;
-    params.initial_max_stream_data_bidi_remote = 4 * 1024 * 1024;
-    params.initial_max_data = 8 * 1024 * 1024;
+    params.initial_max_stream_data_bidi_local = QUIC_STREAM_WINDOW;
+    params.initial_max_stream_data_bidi_remote = QUIC_STREAM_WINDOW;
+    params.initial_max_data = QUIC_CONN_WINDOW;
     params.initial_max_streams_bidi = 1; // credit the client's open_bidi_stream needs
 
     // client checks this against the dcid it invented for us

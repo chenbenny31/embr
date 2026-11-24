@@ -1,0 +1,49 @@
+# socket-buffer ceiling on a WAN-like path, receiver ACKs on sendmsg (EMBR_QUIC_EGRESS=sendmsg on both ends): the corrected baseline for sockbuf-wanlike.txt
+# big = embr's own 4 MiB request (8388608 granted), small = 212992 asked on both ends (425984 granted: the kernel's default ceiling); default = the current receiver,
+# v09 = EMBR_VERIFY=inline EMBR_HASH_LANES=1; nosha = OPENSSL_ia32cap=:~0x20000000; veth A-R-B, rate limit 2200mbit, limit 3000 packets, 1 GiB, 5 runs, 2026-11-23T06:37:53Z
+
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,3  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.051/11.092/11.123/0.030 ms
+run1 big-default-nosha rc=0 intact mbps=2001 drops=0 sender_datagrams=828445 receiver_datagrams=828442_reads=431496
+run1 small-default-nosha rc=0 intact mbps=1997 drops=0 sender_datagrams=828501 receiver_datagrams=828498_reads=431441
+run1 big-v09-nosha rc=0 intact mbps=2003 drops=0 sender_datagrams=828426 receiver_datagrams=828423_reads=433130
+run1 small-v09-nosha rc=0 intact mbps=321 drops=515 sender_datagrams=830577 receiver_datagrams=829689_reads=475945
+run2 big-default-nosha rc=0 intact mbps=2003 drops=0 sender_datagrams=828440 receiver_datagrams=828437_reads=432503
+run2 small-default-nosha rc=0 intact mbps=1624 drops=300 sender_datagrams=828666 receiver_datagrams=828035_reads=556733
+run2 big-v09-nosha rc=0 intact mbps=1995 drops=0 sender_datagrams=828501 receiver_datagrams=828499_reads=433808
+run2 small-v09-nosha rc=0 intact mbps=321 drops=666 sender_datagrams=830839 receiver_datagrams=829635_reads=477617
+run3 big-default-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828584 receiver_datagrams=828581_reads=431520
+run3 small-default-nosha rc=0 intact mbps=1988 drops=318 sender_datagrams=829062 receiver_datagrams=828443_reads=470182
+run3 big-v09-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828440 receiver_datagrams=828438_reads=434669
+run3 small-v09-nosha rc=0 intact mbps=322 drops=479 sender_datagrams=830508 receiver_datagrams=829660_reads=480107
+run4 big-default-nosha rc=0 intact mbps=1996 drops=0 sender_datagrams=828564 receiver_datagrams=828561_reads=431498
+run4 small-default-nosha rc=0 intact mbps=1993 drops=0 sender_datagrams=828577 receiver_datagrams=828573_reads=432205
+run4 big-v09-nosha rc=0 intact mbps=1997 drops=0 sender_datagrams=828415 receiver_datagrams=828413_reads=434580
+run4 small-v09-nosha rc=0 intact mbps=318 drops=557 sender_datagrams=830630 receiver_datagrams=829661_reads=475755
+run5 big-default-nosha rc=0 intact mbps=1993 drops=0 sender_datagrams=828640 receiver_datagrams=828635_reads=432212
+run5 small-default-nosha rc=0 intact mbps=1217 drops=533 sender_datagrams=829267 receiver_datagrams=828144_reads=524216
+run5 big-v09-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828476 receiver_datagrams=828471_reads=433675
+run5 small-v09-nosha rc=0 intact mbps=321 drops=525 sender_datagrams=830641 receiver_datagrams=829701_reads=479665
+# r1 netem: Sent 22960465138 bytes 16581789 pkt (dropped 457, overlimits 0 requeues 0) 
+
+# veth A-R-B  rate=2200mbit delay=5.5ms each way limit=3000 packets  file=1073741824 bytes  receiver CPUs 2,14  kernel=7.3.3-300.fc45.x86_64  rtt min/avg/max/mdev = 11.030/11.196/11.462/0.189 ms
+run1 big-default-nosha rc=0 intact mbps=1996 drops=0 sender_datagrams=828552 receiver_datagrams=828549_reads=430696
+run1 small-default-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828534 receiver_datagrams=828531_reads=431195
+run1 big-v09-nosha rc=0 intact mbps=1996 drops=0 sender_datagrams=828399 receiver_datagrams=828397_reads=432985
+run1 small-v09-nosha rc=0 intact mbps=311 drops=219 sender_datagrams=830136 receiver_datagrams=829777_reads=481678
+run2 big-default-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828539 receiver_datagrams=828536_reads=432944
+run2 small-default-nosha rc=0 intact mbps=1995 drops=0 sender_datagrams=828593 receiver_datagrams=828590_reads=432116
+run2 big-v09-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828417 receiver_datagrams=828415_reads=432172
+run2 small-v09-nosha rc=0 intact mbps=311 drops=174 sender_datagrams=830136 receiver_datagrams=829819_reads=476959
+run3 big-default-nosha rc=0 intact mbps=1995 drops=0 sender_datagrams=828563 receiver_datagrams=828560_reads=433108
+run3 small-default-nosha rc=0 intact mbps=1994 drops=78 sender_datagrams=828538 receiver_datagrams=828383_reads=447924
+run3 big-v09-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828451 receiver_datagrams=828449_reads=433230
+run3 small-v09-nosha rc=0 intact mbps=311 drops=221 sender_datagrams=830194 receiver_datagrams=829820_reads=480971
+run4 big-default-nosha rc=0 intact mbps=1998 drops=0 sender_datagrams=828595 receiver_datagrams=828592_reads=431690
+run4 small-default-nosha rc=0 intact mbps=1840 drops=230 sender_datagrams=828515 receiver_datagrams=827869_reads=579522
+run4 big-v09-nosha rc=0 intact mbps=2000 drops=0 sender_datagrams=828436 receiver_datagrams=828433_reads=432699
+run4 small-v09-nosha rc=0 intact mbps=311 drops=221 sender_datagrams=830132 receiver_datagrams=829736_reads=482630
+run5 big-default-nosha rc=0 intact mbps=2001 drops=0 sender_datagrams=828515 receiver_datagrams=828512_reads=431428
+run5 small-default-nosha rc=0 intact mbps=1990 drops=20 sender_datagrams=828477 receiver_datagrams=828435_reads=453162
+run5 big-v09-nosha rc=0 intact mbps=1997 drops=0 sender_datagrams=828412 receiver_datagrams=828410_reads=432323
+run5 small-v09-nosha rc=0 intact mbps=311 drops=267 sender_datagrams=830272 receiver_datagrams=829814_reads=482880
+# r1 netem: Sent 22954619315 bytes 16578230 pkt (dropped 228, overlimits 0 requeues 0) 

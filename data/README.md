@@ -25,6 +25,10 @@ wolfSSL 5.9.2, ngtcp2 1.26.0.
 
 | Directory | What | Backs | Command |
 |---|---|---|---|
+| `2026-11-23-defaults-only/` | Both ends with no `EMBR_*` variable set: `2c2b26d` against the tree where the connection chooses `SEND_ZC` or `sendmsg` itself and a send holds 48 packets. Delayed-path sweep (`delayed-path-first-version.txt`, `delayed-path-final.txt`), loopback (`loopback.txt`), and how long the probe may be: 16 sends against 3 (`probe-length.txt`) | section below | `harness/defsweep.sh`, `harness/vethdef.sh`, `harness/capbench.sh`, `harness/checks.sh` |
+| `2026-11-23-short-sends-and-window/` | Short sends copied instead of queued for `SEND_ZC`, a 16 MiB flow-control window, the slot count following the batch size: the delayed-path sweep before and after (`rtt-sweep.txt`), loopback (`loopback.txt`), and the default socket-buffer ceiling measured again (`sockbuf-default-ceiling.txt`, which does not repeat the day before). `2c2b26d` against the tree with the change | section below | `harness/rttsweep.sh`, `harness/capbench.sh`, `harness/gate.sh` |
+| `2026-11-23-packets-per-send/` | 16, 32 and 48 packets per send against the egress path, with the receiver that verifies on its own thread. Loopback transfers (1 GiB, n = 5, `loopback-cap.txt`), the veth 11 ms path and a shallow 100 Mbit/s queue (`veth-cap.txt`), and a profile of the sender that splits the send call into getting and zeroing pages, the copy and the rest (`sender-profile.txt`). `2c2b26d` plus the `EMBR_QUIC_GSO_SEGS` switch of `2026-11-18-gso-cap-and-slots/harness/experiment-switches.patch` | section below | `harness/capbench.sh`, `harness/sendprofile.sh` |
+| `2026-11-22-delayed-path/` | The socket-buffer ceiling, and what else limits QUIC once a path has delay. Loopback and a veth A-R-B path with netem (rate 2.2 Gbit/s, 2 to 100 ms round trip), 1 GiB: embr's 4 MiB buffers against the kernel's default ceiling (`sockbuf-*.txt`), throughput against round-trip time (`rtt-scaling.txt`), the receiver's ACKs through `SEND_ZC` against `sendmsg` (`ack-egress.txt`, `receiver-ack-egress.txt`), flow-control windows of 4, 16 and 64 MiB (`fc-window*.txt`), 1 against 4 MiB chunks (`chunk-per-rtt.txt`). Files named `-zc-acks` were measured before the ACK stall was understood. The current tree plus `harness/experiment-switches.patch` (never applied) | table below | `SCRATCH=<dir> unshare --user --map-root-user --net --mount bash harness/vethsb.sh <rate> <delay each way> <limit> <file> <runs> <label>=<embr>[,ENV=VAL...] ...` |
 | `2026-11-22-sha256-multi-buffer/` | SHA-256 of several chunks side by side with Intel's isa-l_crypto v2.26.1. `microbench.txt`: one thread, 1024 chunks of 1 MiB, OpenSSL per chunk against the library at 1 to 32 chunks per call and each of its CPU paths. `applied-loopback.txt`: 1 GiB transfers with the change applied, n = 5, the v0.9 behaviour, verifier threads chunk by chunk, and the default, QUIC and TCP, receiver pinned to one CPU, one core's two threads, 2 and 4 cores, with and without SHA extensions; `loopback.txt` the same from the prototype. `first-push-hash.txt`: the sender's first-push hash time. `checks.txt`. `harness/multi-buffer.patch` is the change as applied | table below | `g++ -O2 -std=c++20 harness/mbbench.cpp -I<prefix>/include <prefix>/lib/libisal_crypto.a -lcrypto`; `harness/abench2.sh` as in the row below with `EMBR_HASH_LANES=1` for chunk by chunk |
 | `2026-11-22-verify-threads/` | More than one verifier thread, and two ideas that did not pay. `default-rule.txt`: threads = usable CPUs − 1, at most 4, against inline hashing, receiver pinned to one core's two threads and to 2, 3 and 4 cores, QUIC and TCP, with and without SHA extensions (loopback, 1 GiB, n = 5). `threads-and-pages.txt`: 1, 2 and 3 threads by switch, the receiving thread's own CPU, an output file whose pages already exist, and `MAP_POPULATE` on tmpfs and btrfs. `checks.txt`. The applied verifier thread plus `harness/verify-threads.patch` (the rule) or `harness/experiments.patch` (the switches, never applied) | table below | `SCRATCH=<dir> EMBR=<build>/embr bash harness/abench2.sh <quic\|tcp> <receiver cpu list> <mask sha 0\|1> 5 '<label>\|<ENV=value ...>\|<prefill 0\|1>' ...` |
 | `2026-11-21-verify-thread/` | Chunk verification on a second thread (`ChunkVerifier` in `pull.cpp`, `EMBR_VERIFY=inline\|thread`): loopback, 1 GiB, n = 7, the same binary with the hash inline and on a thread, QUIC (`sendmsg` + GSO) and TCP, receiver pinned to two cores, to one core's two threads and to one CPU, with and without SHA extensions (`OPENSSL_ia32cap=:~0x20000000` hides them from the receiver's OpenSSL); `checks.txt` (tests, sanitizers, Helgrind); the patch as measured. `1bfdaf8` plus `harness/verify-thread.patch` | table below | `SCRATCH=<dir> bash harness/abench.sh <label> <quic\|tcp> <receiver cpu list> <mask sha 0\|1> 7` |
@@ -131,6 +135,197 @@ The sender hashes a file before its first push listens. Seconds until the port i
 Side by side, one thread is enough everywhere and the hash stops being the receiver's largest
 cost. These are AVX-512 numbers from a Ryzen 9 9900X; an AVX2-only CPU gets the 2,400 MB/s row,
 and the c5n's Skylake has not been measured.
+
+## Paths with delay: socket buffers, the receiver's ACKs, flow control (2026-11-22)
+
+Emulated path: sender, router and receiver in three network namespaces over veth, netem on the
+router with a 2.2 Gbit/s rate limit and the delay named; 1 GiB; AVX-512 desktop. It is a model,
+not a WAN: packets arrive one at a time, so device GRO merges nothing.
+
+**The receiver's ACKs must not go through `SEND_ZC`.** A zero-copy slot stays busy until the
+kernel lets go of the packet, and netem holds a packet for the path delay. The pull has 8 slots,
+so it could send 8 ACK packets per one-way delay and waited for a slot on 82% of its sends
+(`receiver-ack-egress.txt`; every one of those small packets was copied anyway). Throughput was
+1.09 MiB per round trip whatever the path could carry:
+
+| Round trip | pull on `SEND_ZC` (default) | pull on `sendmsg` |
+|---|---|---|
+| 5.6 ms | 1,654 Mbit/s | 2,027 |
+| 11.1 ms | 830 | 1,997 |
+| 22.1 ms | 416 | 1,107 |
+| 50.1 ms | 184 | 490 |
+
+A real NIC frees a packet at transmit completion, so the AWS run (1.71 Gbit/s at 11 ms) was not
+held this way; anything that queues packets on the receiver's way out (a shaping qdisc, a tunnel,
+a container's veth) would be.
+
+**Then the flow-control window.** With ACKs on `sendmsg`, embr's 4 MiB stream window allows about
+3 MiB per round trip. Median of 2 runs, Mbit/s:
+
+| Round trip | 4 MiB (embr's) | 16 MiB | 64 MiB |
+|---|---|---|---|
+| 22 ms | 1,106 | 1,786 | 1,780 |
+| 50 ms | 489 | 522 | 572 |
+| 100 ms | 245 | 263 | 263 |
+
+At 50 ms and more the congestion window is the limit: slow start ends early (HyStart++) and
+CUBIC grows slowly over a transfer this short.
+
+**The socket-buffer ceiling.** embr asks for 4 MiB and gets 8,388,608 here; on a host with the
+kernel's default `net.core.rmem_max`/`wmem_max` it gets 425,984. Asking for 212,992 gives exactly
+that, so the default ceiling can be measured without root. Mbit/s, median of 5, and UDP
+receive-buffer drops per transfer:
+
+| | 4 MiB | default ceiling |
+|---|---|---|
+| Loopback, current receiver, 2 cores | 10,600, 0 | 10,110, 119 |
+| Loopback, v0.9 receiver (hash inline), 2 cores | 7,410, 0 | 6,820, 164 |
+| 11 ms path, current receiver, 2 cores | 2,000, 0 | 1,988, 300 (two runs of five at 1,217 and 1,624) |
+| 11 ms path, current receiver, 1 core 2 threads | 1,998, 0 | 1,994, 20 (one run of five at 1,840) |
+| 11 ms path, v0.9 receiver | 2,000, 0 | 321, 525 |
+
+With the hash on the receiving thread the default ceiling overflowed on every chunk; with the
+verifier thread it costs under 1% at the median and an occasional slower run. The 11 ms rows use
+`sendmsg` for the pull's ACKs and no SHA extensions; `sockbuf-wanlike-zc-acks.txt` is the same
+comparison on the stalled baseline (830 against 379 Mbit/s) and should not be quoted.
+
+**Corrected on 2026-11-23: the 11 ms rows for the current receiver did not repeat.** The same
+binary and script a few hours later dropped packets at the receive buffer in every run and gave
+525-1,432 Mbit/s (`2026-11-23-short-sends-and-window/sockbuf-default-ceiling.txt`). Read those
+two rows as "between 2,000 and a third of it", not as "under 1%".
+
+## Nothing set on either end: the connection chooses its egress (2026-11-23)
+
+The version of the change that followed the section below, the same day. Three differences from it:
+a send holds up to 48 packets (the most a UDP datagram carries) with no switch to raise it; a
+connection leaves `SEND_ZC` for `sendmsg` when the kernel reports that it copied each of the
+first sends (`QUIC_ZC_PROBE_SENDS`); and `EMBR_QUIC_ZC_MIN` is gone, `EMBR_QUIC_EGRESS=zc` forcing
+every send through `SEND_ZC` instead. Short sends still go by `sendmsg`, the window is 16 MiB.
+
+Both ends started with no `EMBR_*` variable but `EMBR_QUIC_STATS`. Same emulated path (veth
+A-R-B, netem, 2,200 Mbit/s, queue of 3,000 packets), 1 GiB; loopback n = 5, median:
+
+| Path | `2c2b26d` | Changed tree |
+|---|---|---|
+| Loopback | 10.23 Gbit/s | 12.45 Gbit/s |
+| 5 ms round trip | 461 Mbit/s | 2,031 |
+| 10 ms | 236 | 2,006 |
+| 20 ms | 119 | 1,908 (1,755-1,934) |
+| 50 ms | 48 | 524 |
+
+The left column is far below the "before" of the section below because there the push was put
+on `sendmsg` by hand. Left alone, the push at `2c2b26d` is held by its own slots on this path:
+netem keeps each packet, and with it the slot, for the one-way delay, so 8 slots of 16 packets
+leave per delay (`waits` on 54,000 of 55,000 sends). A real NIC releases a slot when the packet
+is transmitted; on AWS (2026-11-22) 3% of GSO sends waited and nothing was copied. The gain on
+this table belongs to paths where the kernel copies or holds packets: loopback, container
+networks, shaping qdiscs.
+
+**How long the probe may be** (`probe-length.txt`). With a probe of 16 sends and 48 packets per
+send the changed tree was 5% slower on the 20 ms path than with 16 packets per send (median
+1,831 against 1,919 Mbit/s, 2,500 more packets retransmitted). The batch size was not the
+cause: with `SEND_ZC` off at both ends the two were equal (1,921 and 1,923). At 48 packets a
+connection has 3 slots, and on a path that holds packets the 16 answers come back three per
+one-way delay, the sender waiting for a slot 4 to 7 times while it should be reading ACKs. With
+a probe of 3 sends (no more than the slots) there are no waits and the two are equal again
+(1,933 and 1,919). On loopback the probe length does not show (12.45 Gbit/s either way).
+
+Checks on the final tree (`checks.txt`): 115 tests in the default mode and with
+`EMBR_QUIC_EGRESS=zc`, `EMBR_QUIC_GSO_SEGS=16` (111 to 114 where tests skip themselves:
+`EMBR_QUIC_EGRESS=sendmsg`, `EMBR_QUIC_GSO=0`, `EMBR_QUIC_GRO=0`); ASan and UBSan clean in three
+modes; the load gate 96 of 96 in four modes. The branch that leaves `SEND_ZC` is covered by a
+unit test on loopback; a path that holds packets is covered by the harness here, not by a test.
+
+## Short sends copied, a 16 MiB window: before and after (2026-11-23)
+
+Superseded the same day by the version in the section above; the numbers here are for this
+version. The change: a send below 1,200 bytes goes out with `sendmsg` even when `SEND_ZC` is on (so the
+pull's ACKs take no slot), the stream window is 16 MiB (connection 32 MiB), the packets per send
+are a switch (`EMBR_QUIC_GSO_SEGS`, default 16), and the slot count follows the batch size so
+the registered slab stays near 169 KiB. Same emulated path as the section above, push on
+`sendmsg` (netem would hold a `SEND_ZC` sender's slots as it held the receiver's), pull at its
+defaults. Mbit/s, three runs each, all within 1% of each other (`rtt-sweep.txt`):
+
+| Round trip | Before | After |
+|---|---|---|
+| 5.6 ms | 1,657 | 2,029 |
+| 11.1 ms | 828 | 2,002 |
+| 22.3 ms | 416 | 1,819 |
+| 50.2 ms | 182 | 518 |
+
+The receiver's egress line went from `sends=14916 waits=12201` to `sends=377968 waits=0
+small=377965`. With the window no longer the limit the sender fills the router's 3,000-packet
+queue and loses 0.4-0.8% of its packets there, as a loss-based sender does; before, flow control
+kept it under the path's rate and nothing was lost.
+
+Loopback, 1 GiB, n = 5, median Gbit/s (`loopback.txt`): unchanged at the defaults, 10.23 before
+and after with `SEND_ZC`, 10.74 before and after with `sendmsg`. At 48 packets per send: 11.30
+(`SEND_ZC`, 3 slots) and 12.45 (`sendmsg`).
+
+**The default socket-buffer ceiling, again** (`sockbuf-default-ceiling.txt`, 11 ms path, 10 runs
+each over two sets, Mbit/s, median and range):
+
+| | Median | Range |
+|---|---|---|
+| Before, 4 MiB window | 978 | 645-1,432 |
+| Before, 16 MiB window | 794 | 658-1,303 |
+| After | 767 | 525-929 |
+
+Every run lost 200-940 packets at the receive buffer. The buffer the kernel grants (425,984
+bytes of accounted memory) holds about a millisecond of a 2 Gbit/s stream, so any pause of the
+receiving thread overflows it, and each overflow is a separate loss event for the sender. With
+embr's own buffers the same receiver is at 56% of one CPU on this path and drops nothing. Why
+the day before was mostly free of drops is not known; full swap was ruled out (set 2). The
+larger window is not what hurts (the two "before" rows overlap), and this path is harder on the
+receiver than a NIC is: every packet is its own read.
+
+Checks on the changed tree: 114 tests in the default mode and with `EMBR_QUIC_EGRESS=sendmsg`,
+`EMBR_QUIC_GSO=0`, `EMBR_QUIC_GRO=0`, `EMBR_QUIC_ZC_MIN=0`, `EMBR_QUIC_GSO_SEGS=48`; ASan and
+UBSan clean; the load gate (12 rounds of 8 suites at once) in four modes, results in
+`checks.txt`. Before the slot count followed the batch size, 2 of 96 gate runs at 48 packets
+per send could not register their slab (506 KiB each, against the 8 MiB a user may lock) and
+fell back to `sendmsg`.
+
+## Packets per send, again, and what the copy costs the sender (2026-11-23)
+
+On 2026-11-18 a larger send bought 2-3%, because the receiver was the limit
+([`batch-size-and-slots.md`](batch-size-and-slots.md)). Since the receiver verifies on its own
+thread the sender is the limit on loopback, and the same change is worth more. Loopback, 1 GiB,
+n = 5, median, Gbit/s (`2026-11-23-packets-per-send/loopback-cap.txt`):
+
+| Packets per send (cap, achieved) | `sendmsg` | `SEND_ZC` (copied: loopback) |
+|---|---|---|
+| 16, 14.9 (current) | 10.74 | 10.23 |
+| 32, 27.7 | 12.10 | 11.01 |
+| 48, 40 | 12.45 | 11.45 |
+| 48, 40, receiver reads 256 before it acknowledges | 12.63 | 11.61 |
+
+Part of the gain is loopback's: a send arrives as one read, so the receiver's reads shrink with
+the sender's. On the veth paths nothing moves (`veth-cap.txt`): 1,995-2,004 Mbit/s at every
+size on the 11 ms / 2.2 Gbit/s path, 74-78 Mbit/s on a 100 Mbit/s, 20 ms, 100-packet queue,
+with the same number of retransmitted packets.
+
+**What a copying send costs.** Profile of the push process during a loopback transfer
+(`sender-profile.txt`), percent of its samples:
+
+| | `sendmsg`, 16 | `sendmsg`, 48 |
+|---|---|---|
+| The send call, whole | 26.4 | 19.7 |
+| Getting pages for the payload and zeroing them (`sk_page_frag_refill`) | 9.0 | 10.3 |
+| Copying the payload into them (`ip_generic_getfrag`) | 3.9 | 3.1 |
+| The rest of the send, loopback's receive side included | 13.4 | 6.3 |
+| wolfSSL's cipher setup per packet (`wolfSSL_EVP_CipherInit`) | 16.0 | 16.0 |
+
+This kernel zeroes every page it allocates (`CONFIG_INIT_ON_ALLOC_DEFAULT_ON=y`), and that
+zeroing is twice the copy. A send that references the caller's pages skips both, so 13% of the
+sender's cycles is the most `SEND_ZC` could save here, on a device that does not copy. The
+send-only numbers in bench.md §10 put it at 1-2% at 47 packets per send and below zero at 16:
+there the device frees each page at once and the next send gets it back warm. It is also the likely cause of the line in §10 that
+`sendmsg` gets dearer when packets are held. A whole transfer without the copy cannot be run
+on one machine: loopback and veth hand the packet to a local socket and the kernel copies it
+first (`skb_copy_ubufs`, 17% of the sender in the `zc16` profile).
+
+Not looked into: `wolfSSL_EVP_CipherInit` is the largest single symbol of the sender (14% self).
 
 ## `SEND_ZC` against `sendmsg` at the default settings (2026-11-17)
 

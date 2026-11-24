@@ -1,0 +1,16 @@
+# does throughput follow the round-trip time? current tree's build, default settings, embr's own buffers, 1 GiB, 2 runs per delay; rate limit 2200mbit, limit 3000 packets; 2026-11-23T06:07:22Z
+# delay 1ms each way, measured round trip 2.047 ms
+run1 default rc=0 intact mbps=1930 drops=0 sender_datagrams=828285 receiver_datagrams=828284_reads=433019
+run2 default rc=0 intact mbps=1929 drops=0 sender_datagrams=828310 receiver_datagrams=828309_reads=434242
+# delay 2.75ms each way, measured round trip 5.547 ms
+run1 default rc=0 intact mbps=1655 drops=0 sender_datagrams=828203 receiver_datagrams=828201_reads=433588
+run2 default rc=0 intact mbps=1655 drops=0 sender_datagrams=828198 receiver_datagrams=828196_reads=434767
+# delay 5.5ms each way, measured round trip 11.039 ms
+run1 default rc=0 intact mbps=830 drops=0 sender_datagrams=828094 receiver_datagrams=828092_reads=426487
+run2 default rc=0 intact mbps=830 drops=0 sender_datagrams=828129 receiver_datagrams=828127_reads=426373
+# delay 11ms each way, measured round trip 22.052 ms
+run1 default rc=0 intact mbps=416 drops=0 sender_datagrams=828012 receiver_datagrams=828009_reads=425344
+run2 default rc=0 intact mbps=416 drops=0 sender_datagrams=828033 receiver_datagrams=828032_reads=425658
+# delay 25ms each way, measured round trip 50.046 ms
+run1 default rc=0 intact mbps=183 drops=0 sender_datagrams=828013 receiver_datagrams=828012_reads=424625
+run2 default rc=0 intact mbps=183 drops=0 sender_datagrams=827934 receiver_datagrams=827932_reads=424418

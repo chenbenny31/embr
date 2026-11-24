@@ -13,6 +13,9 @@
 #   embrquicsm     same stack, sendmsg egress (per-datagram copy baseline), one packet per send
 #   embrquicgso    SEND_ZC egress with UDP GSO: same-size packets batched into one send
 #   embrquicsmgso  sendmsg egress with UDP GSO
+#   embrquicdef    nothing set, as a user runs it: GSO on, and the connection leaves SEND_ZC for sendmsg
+#                  when the kernel copies its first sends (by_sendmsg in the egress line says how many did)
+# The SEND_ZC rows force it (EMBR_QUIC_EGRESS=zc), so they measure SEND_ZC even where the kernel copies.
 #   nc             plaintext floor; the fair peer for embr TCP
 #   scp            encrypted reference; the fair wall-clock peer for QUIC
 # A row's environment is set on the sender only, so the receiver is identical across QUIC rows.
@@ -32,6 +35,7 @@
 #   sender_cpu/sender_irq are whole-machine CPU seconds over the transfer and include it.
 #
 # Both hosts need install.sh to have run (wolfSSL, ngtcp2, liburing, cert, socket limits).
+# Where sudo was refused the socket limits are the kernel's: SOCKBUF_MIN=0 runs with those.
 # WAN sender security group: inbound TCP 22, TCP_PORT, NC_PORT and one UDP port per QUIC row
 # starting at QUIC_PORT.
 
@@ -39,9 +43,9 @@ set -euo pipefail
 
 MODE="${1:-}"
 case "$MODE" in
-    loopback)   KIND=loopback; DEF_RUNS=5;  DEF_WARMUP=1; DEF_ROWS="embrtcp embrquic embrquicsm embrquicgso embrquicsmgso nc" ;;
+    loopback)   KIND=loopback; DEF_RUNS=5;  DEF_WARMUP=1; DEF_ROWS="embrtcp embrquic embrquicsm embrquicgso embrquicsmgso embrquicdef nc" ;;
     wan-sender|wan-receiver)
-                KIND=wan;      DEF_RUNS=10; DEF_WARMUP=2; DEF_ROWS="embrquic embrquicsm embrquicgso embrquicsmgso embrtcp nc scp" ;;
+                KIND=wan;      DEF_RUNS=10; DEF_WARMUP=2; DEF_ROWS="embrquic embrquicsm embrquicgso embrquicsmgso embrquicdef embrtcp nc scp" ;;
     *)
         sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'
         echo "Knobs: ROWS RUNS WARMUP BUILD FILE FILE_SIZE_GB CACHE_DISCIPLINE=drop|keep CERT KEY"
@@ -76,7 +80,7 @@ ROUND_GAP="${ROUND_GAP:-2}"
 
 SSH_OPTS=(-o StrictHostKeyChecking=no -o ConnectTimeout=10)
 [[ -n "$SSH_KEY" ]] && SSH_OPTS+=(-i "$SSH_KEY")
-SOCKBUF_MIN=4194304
+SOCKBUF_MIN="${SOCKBUF_MIN:-4194304}" # 0 lets a run go ahead with whatever ceiling the host has
 
 EXPECTED_BYTES=0
 EXPECTED_HASH=""
@@ -87,7 +91,7 @@ die() { log "FATAL: $*"; exit 1; }
 # ── rows ────────────────────────────────────────────────────────────────────────────────────
 
 # every QUIC row, in port order; a new egress variant is one entry here and one in row_env
-QUIC_ROWS=(embrquic embrquicsm embrquicgso embrquicsmgso)
+QUIC_ROWS=(embrquic embrquicsm embrquicgso embrquicsmgso embrquicdef)
 
 is_quic() { [[ "$1" == embrquic* ]]; }
 is_embr() { [[ "$1" == embr* ]]; }
@@ -96,10 +100,11 @@ has_row() { local r; for r in $ROWS; do [[ "$r" == "$1" ]] && return 0; done; re
 
 row_env() { # sender-side environment that defines the row
     case "$1" in
-        embrquic)      echo "EMBR_QUIC_GSO=0" ;;
+        embrquic)      echo "EMBR_QUIC_GSO=0 EMBR_QUIC_EGRESS=zc" ;;
         embrquicsm)    echo "EMBR_QUIC_GSO=0 EMBR_QUIC_EGRESS=sendmsg" ;;
-        embrquicgso)   echo "EMBR_QUIC_GSO=1" ;;
+        embrquicgso)   echo "EMBR_QUIC_GSO=1 EMBR_QUIC_EGRESS=zc" ;;
         embrquicsmgso) echo "EMBR_QUIC_GSO=1 EMBR_QUIC_EGRESS=sendmsg" ;;
+        embrquicdef)   echo "" ;; # the defaults
         *)             echo "" ;;
     esac
 }
@@ -228,12 +233,13 @@ results_header() {
       echo "$@"
       echo "# embrtcp: sendfile/splice, plaintext.  embrquic: mmap Buffer + in-place AEAD + io_uring SEND_ZC egress."
       echo "# embrquicsm: same with EMBR_QUIC_EGRESS=sendmsg on the sender.  *gso: UDP GSO on (EMBR_QUIC_GSO=1), else off."
+      echo "# embrquicdef: nothing set on the sender (GSO on; SEND_ZC unless the kernel copies).  The other SEND_ZC rows force it."
       echo "# nc: plaintext floor.  scp: encrypted reference."
       echo ""; } > "$RESULTS"
 }
 
 # counters summed over a row's connections: datagrams/sends is the GSO batch size,
-# copied/sends the share of sends the kernel copied anyway
+# copied/notifs the share of SEND_ZC sends the kernel copied anyway (by_sendmsg sends never went to SEND_ZC)
 egress_summary() { # egress_summary <row> <stderr log of its pushes>
     grep -q '^\[quic-egress\]' "$2" 2>/dev/null || return 0
     awk -v row="$1" '/^\[quic-egress\]/ { n++
@@ -242,7 +248,7 @@ egress_summary() { # egress_summary <row> <stderr log of its pushes>
          END { printf "%s egress over %d connections:", row, n
                for (i=1;i<=k;i++) printf " %s=%d", order[i], t[order[i]]
                if (t["sends"]) printf " (%.1f datagrams per send", t["datagrams"]/t["sends"]
-               if (t["sends"] && ("copied" in t)) printf ", copied %.1f%%", 100*t["copied"]/t["sends"]
+               if (t["notifs"] && ("copied" in t)) printf ", copied %.1f%% of %d SEND_ZC sends", 100*t["copied"]/t["notifs"], t["notifs"]
                if (t["datagrams"] && ("bytes" in t)) printf ", %.0f bytes per datagram", t["bytes"]/t["datagrams"]
                if (t["sends"]) printf ")"
                printf "\n" }' "$2" >&2
@@ -292,7 +298,7 @@ assert_sockbuf() { # assert_sockbuf local|remote
         r=$(sysctl -n net.core.rmem_max); w=$(sysctl -n net.core.wmem_max)
     fi
     (( r >= SOCKBUF_MIN && w >= SOCKBUF_MIN )) \
-        || die "$where net.core.rmem_max/wmem_max = $r/$w < $SOCKBUF_MIN — run install.sh there (or: sudo sysctl -w net.core.rmem_max=16777216 net.core.wmem_max=16777216)"
+        || die "$where net.core.rmem_max/wmem_max = $r/$w < $SOCKBUF_MIN — run `bash install.sh sysctl` there (sudo), or SOCKBUF_MIN=0 to measure with this limit"
     log "$where sockbuf ok: rmem_max=$r wmem_max=$w"
 }
 

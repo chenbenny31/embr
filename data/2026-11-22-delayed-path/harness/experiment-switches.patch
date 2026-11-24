@@ -1,0 +1,60 @@
+--- a/src/transport/quic_client.cpp
++++ b/src/transport/quic_client.cpp
+@@ -75,7 +75,10 @@
+     }
+ 
+     // rmem_default is (~157 datagrams at 1350 B) against 10-packet bursts and an AEAD-bound recv
+-    const int sock_buf = 4 * 1024 * 1024; // rmem_max/wmem_max, no sysctl
++    // EXPERIMENT: ask for this many bytes instead of 4 MiB; 212992 is what a host with the kernel's
++    // default net.core.rmem_max/wmem_max grants, whatever is asked
++    const char* experiment_sock_buf = std::getenv("EMBR_EXPERIMENT_SOCKBUF");
++    const int sock_buf = experiment_sock_buf != nullptr ? std::atoi(experiment_sock_buf) : 4 * 1024 * 1024;
+     ::setsockopt(udp_fd, SOL_SOCKET, SO_RCVBUF, &sock_buf, sizeof(sock_buf));
+     ::setsockopt(udp_fd, SOL_SOCKET, SO_SNDBUF, &sock_buf, sizeof(sock_buf));
+ 
+@@ -177,9 +180,12 @@
+     ngtcp2_transport_params params{};
+     ngtcp2_transport_params_default(&params);
+     params.max_idle_timeout = 30 * NGTCP2_SECONDS;
+-    params.initial_max_stream_data_bidi_local = 4 * 1024 * 1024;
+-    params.initial_max_stream_data_bidi_remote = 4 * 1024 * 1024;
+-    params.initial_max_data = 8 * 1024 * 1024;
++    // EXPERIMENT: stream flow-control window in bytes (connection window twice that); 4 MiB when unset
++    const char* experiment_window = std::getenv("EMBR_EXPERIMENT_FC_WINDOW");
++    const uint64_t stream_window = experiment_window != nullptr ? std::strtoull(experiment_window, nullptr, 10) : 4ull * 1024 * 1024;
++    params.initial_max_stream_data_bidi_local = stream_window;
++    params.initial_max_stream_data_bidi_remote = stream_window;
++    params.initial_max_data = 2 * stream_window;
+     params.initial_max_streams_bidi = 1;
+ 
+     // every ngtcp2_crypto_* entry is mandatory; omitting one fails the handshake silently
+--- a/src/transport/quic_server.cpp
++++ b/src/transport/quic_server.cpp
+@@ -72,7 +72,10 @@
+     addr.sin_addr.s_addr = htonl(INADDR_ANY);
+     addr.sin_port = htons(port);
+ 
+-    const int sock_buf = 4 * 1024 * 1024;
++    // EXPERIMENT: ask for this many bytes instead of 4 MiB; 212992 is what a host with the kernel's
++    // default net.core.rmem_max/wmem_max grants, whatever is asked
++    const char* experiment_sock_buf = std::getenv("EMBR_EXPERIMENT_SOCKBUF");
++    const int sock_buf = experiment_sock_buf != nullptr ? std::atoi(experiment_sock_buf) : 4 * 1024 * 1024;
+     ::setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &sock_buf, sizeof(sock_buf));
+     ::setsockopt(fd, SOL_SOCKET, SO_SNDBUF, &sock_buf, sizeof(sock_buf));
+ 
+@@ -229,9 +232,12 @@
+     ngtcp2_transport_params params{};
+     ngtcp2_transport_params_default(&params);
+     params.max_idle_timeout = 30 * NGTCP2_SECONDS;
+-    params.initial_max_stream_data_bidi_local = 4 * 1024 * 1024;
+-    params.initial_max_stream_data_bidi_remote = 4 * 1024 * 1024;
+-    params.initial_max_data = 8 * 1024 * 1024;
++    // EXPERIMENT: stream flow-control window in bytes (connection window twice that); 4 MiB when unset
++    const char* experiment_window = std::getenv("EMBR_EXPERIMENT_FC_WINDOW");
++    const uint64_t stream_window = experiment_window != nullptr ? std::strtoull(experiment_window, nullptr, 10) : 4ull * 1024 * 1024;
++    params.initial_max_stream_data_bidi_local = stream_window;
++    params.initial_max_stream_data_bidi_remote = stream_window;
++    params.initial_max_data = 2 * stream_window;
+     params.initial_max_streams_bidi = 1; // credit the client's open_bidi_stream needs
+ 
+     // client checks this against the dcid it invented for us

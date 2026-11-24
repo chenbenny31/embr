@@ -1,0 +1,30 @@
+# the receiver's ACK egress on a delayed path: current tree's build, embr's own buffers and windows, 1 GiB; 'zc-acks' = the default (the pull sends through io_uring SEND_ZC, 8 slots),
+# 'sendmsg-acks' = EMBR_QUIC_EGRESS=sendmsg on both ends (the push already used sendmsg in every run of this directory). veth A-R-B, rate limit 2200mbit, limit 3000 packets, receiver CPUs 2,3, 2026-11-23T06:27:19Z
+# delay 2.75ms each way, measured round trip 5.559 ms
+run1 zc-acks rc=0 intact mbps=1654 drops=0 sender_datagrams=828161 receiver_datagrams=828159_reads=434161
+run1 sendmsg-acks rc=0 intact mbps=2025 drops=0 sender_datagrams=828558 receiver_datagrams=828555_reads=431464
+run2 zc-acks rc=0 intact mbps=1654 drops=0 sender_datagrams=828180 receiver_datagrams=828178_reads=435311
+run2 sendmsg-acks rc=0 intact mbps=2029 drops=0 sender_datagrams=828468 receiver_datagrams=828467_reads=430694
+# r1 netem: Sent 4590077445 bytes 3313386 pkt (dropped 0, overlimits 0 requeues 0) 
+# pull egress line of the last zc run would be in pull.log: 
+# delay 5.5ms each way, measured round trip 11.059 ms
+run1 zc-acks rc=0 intact mbps=830 drops=0 sender_datagrams=828107 receiver_datagrams=828105_reads=426893
+run1 sendmsg-acks rc=0 intact mbps=1999 drops=0 sender_datagrams=828549 receiver_datagrams=828546_reads=428773
+run2 zc-acks rc=0 intact mbps=829 drops=0 sender_datagrams=828129 receiver_datagrams=828127_reads=427606
+run2 sendmsg-acks rc=0 intact mbps=1995 drops=0 sender_datagrams=828494 receiver_datagrams=828491_reads=429862
+# r1 netem: Sent 4590081537 bytes 3313302 pkt (dropped 0, overlimits 0 requeues 0) 
+# pull egress line of the last zc run would be in pull.log: 
+# delay 11ms each way, measured round trip 22.059 ms
+run1 zc-acks rc=0 intact mbps=416 drops=0 sender_datagrams=828051 receiver_datagrams=828050_reads=426136
+run1 sendmsg-acks rc=0 intact mbps=1107 drops=0 sender_datagrams=828457 receiver_datagrams=828455_reads=431240
+run2 zc-acks rc=0 intact mbps=417 drops=0 sender_datagrams=828056 receiver_datagrams=828055_reads=424037
+run2 sendmsg-acks rc=0 intact mbps=1107 drops=0 sender_datagrams=828426 receiver_datagrams=828424_reads=430448
+# r1 netem: Sent 4590059848 bytes 3313014 pkt (dropped 0, overlimits 0 requeues 0) 
+# pull egress line of the last zc run would be in pull.log: 
+# delay 25ms each way, measured round trip 50.069 ms
+run1 zc-acks rc=0 intact mbps=184 drops=0 sender_datagrams=827953 receiver_datagrams=827952_reads=423513
+run1 sendmsg-acks rc=0 intact mbps=490 drops=0 sender_datagrams=828241 receiver_datagrams=828238_reads=429267
+run2 zc-acks rc=0 intact mbps=184 drops=0 sender_datagrams=827951 receiver_datagrams=827950_reads=422907
+run2 sendmsg-acks rc=0 intact mbps=489 drops=0 sender_datagrams=828241 receiver_datagrams=828238_reads=432145
+# r1 netem: Sent 4590006129 bytes 3312413 pkt (dropped 0, overlimits 0 requeues 0) 
+# pull egress line of the last zc run would be in pull.log: 

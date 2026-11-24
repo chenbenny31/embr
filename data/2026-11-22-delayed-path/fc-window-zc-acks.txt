@@ -1,0 +1,18 @@
+# flow-control window against round-trip time: scratch build with EMBR_EXPERIMENT_FC_WINDOW (stream window in bytes, connection window twice that; embr's own is 4 MiB / 8 MiB)
+# veth A-R-B, rate limit 2200mbit, limit 3000 packets, 1 GiB, default settings otherwise, receiver CPUs 2,3, sender CPUs 6-9, 2026-11-23T06:13:37Z
+# delay 5.5ms each way, measured round trip 11.080 ms
+run1 window-4MiB rc=0 intact mbps=830 drops=0 sender_datagrams=828090 receiver_datagrams=828089_reads=426884
+run1 window-16MiB rc=0 intact mbps=831 drops=709 sender_datagrams=828499 receiver_datagrams=827153_reads=430778
+run1 window-64MiB rc=0 intact mbps=831 drops=634 sender_datagrams=828446 receiver_datagrams=827223_reads=431010
+run2 window-4MiB rc=0 intact mbps=829 drops=0 sender_datagrams=828096 receiver_datagrams=828095_reads=426253
+run2 window-16MiB rc=0 intact mbps=832 drops=615 sender_datagrams=828351 receiver_datagrams=827166_reads=430408
+run2 window-64MiB rc=0 intact mbps=832 drops=624 sender_datagrams=828416 receiver_datagrams=827216_reads=429201
+# r1 netem: Sent 6891547501 bytes 4969929 pkt (dropped 0, overlimits 0 requeues 0) 
+# delay 25ms each way, measured round trip 50.066 ms
+run1 window-4MiB rc=0 intact mbps=184 drops=0 sender_datagrams=828022 receiver_datagrams=828020_reads=423848
+run1 window-16MiB rc=0 intact mbps=184 drops=961 sender_datagrams=828982 receiver_datagrams=827136_reads=426194
+run1 window-64MiB rc=0 intact mbps=184 drops=637 sender_datagrams=828240 receiver_datagrams=827002_reads=425014
+run2 window-4MiB rc=0 intact mbps=184 drops=0 sender_datagrams=827948 receiver_datagrams=827946_reads=422617
+run2 window-16MiB rc=0 intact mbps=184 drops=576 sender_datagrams=828198 receiver_datagrams=827009_reads=416319
+run2 window-64MiB rc=0 intact mbps=183 drops=674 sender_datagrams=828338 receiver_datagrams=826927_reads=414522
+# r1 netem: Sent 6892523985 bytes 4969775 pkt (dropped 0, overlimits 0 requeues 0) 
