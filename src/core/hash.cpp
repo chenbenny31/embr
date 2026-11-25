@@ -25,6 +25,7 @@
 #include <vector>
 #include <exception>
 #include <mutex>
+#include <numeric>
 #include <thread>
 #include <cstdint>
 
@@ -242,17 +243,25 @@ void hash_cache_save(const std::string& file_path,
 }
 
 
-std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
-                                                                  uint64_t file_size,
-                                                                  uint32_t chunk_count) {
+std::vector<std::array<uint8_t, HASH_SIZE>> hash_chunks_parallel(int file_fd,
+                                                                 uint64_t file_size,
+                                                                 std::span<const uint32_t> chunk_indexes) {
+    const auto chunk_count = static_cast<uint32_t>(chunk_indexes.size());
+    std::vector<std::array<uint8_t, HASH_SIZE>> chunk_hashes(chunk_count);
+    if (chunk_count == 0) { return chunk_hashes; }
+    for (const uint32_t chunk_index : chunk_indexes) {
+        if (static_cast<uint64_t>(chunk_index) * CHUNK_SIZE >= file_size) {
+            throw std::out_of_range("hash_chunks_parallel: chunk " + std::to_string(chunk_index) +
+                                    " starts past the end of the file");
+        }
+    }
+
     void* mapped = ::mmap(nullptr, static_cast<size_t>(file_size),
                           PROT_READ, MAP_SHARED, file_fd, 0);
     if (mapped == MAP_FAILED) {
-        throw std::runtime_error(std::string("hash_compute_parallel: mmap failed:") +
+        throw std::runtime_error(std::string("hash_chunks_parallel: mmap failed:") +
                                  std::strerror(errno));
     }
-
-    std::vector<std::array<uint8_t, HASH_SIZE>> chunk_hashes(chunk_count);
 
     // count on its own cache line, prevents false sharing between fetch_add and any adj hot data
     struct alignas(64) AlignedCounter {
@@ -263,17 +272,17 @@ std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
     std::vector<std::exception_ptr> worker_exceptions;
     std::mutex exceptions_mtx;
 
-    const uint32_t num_workers = std::min(chunk_count,
+    const uint32_t lanes = sha256_lanes(); // at most 64
+    const uint32_t num_workers = std::min((chunk_count + lanes - 1) / lanes, // a worker takes a set of lanes
                                           static_cast<uint32_t>(std::max(1u,
                                               std::thread::hardware_concurrency())));
-    const uint32_t lanes = sha256_lanes(); // at most 64
 
     worker_exceptions.resize(num_workers, nullptr);
 
     auto worker = [&](uint32_t worker_id) {
         try {
             while (true) {
-                // memory order relaxed: each independently grabs the next set of chunk indexes,
+                // memory order relaxed: each independently grabs the next set of listed chunks,
                 // one set of lanes at a time so sha256_many can hash them side by side
                 const uint32_t first = next_chunk.value.fetch_add(lanes,
                                                                   std::memory_order_relaxed);
@@ -282,7 +291,7 @@ std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
 
                 std::array<HashInput, 64> inputs{};
                 for (uint32_t k = 0; k < count; ++k) {
-                    const uint64_t offset = static_cast<uint64_t>(first + k) * CHUNK_SIZE;
+                    const uint64_t offset = static_cast<uint64_t>(chunk_indexes[first + k]) * CHUNK_SIZE;
                     inputs[k] = {static_cast<const uint8_t*>(mapped) + offset,
                                  static_cast<size_t>(std::min(static_cast<uint64_t>(CHUNK_SIZE),
                                                               file_size - offset))};
@@ -311,4 +320,12 @@ std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
     }
 
     return chunk_hashes;
+}
+
+std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
+                                                                  uint64_t file_size,
+                                                                  uint32_t chunk_count) {
+    std::vector<uint32_t> every_chunk(chunk_count);
+    std::iota(every_chunk.begin(), every_chunk.end(), 0u);
+    return hash_chunks_parallel(file_fd, file_size, every_chunk);
 }

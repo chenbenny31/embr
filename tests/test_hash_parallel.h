@@ -244,3 +244,36 @@ TEST(Sha256Many, CountMismatchThrows) {
     std::vector<std::array<uint8_t, HASH_SIZE>> digests(3);
     EXPECT_THROW(sha256_many(inputs, digests), std::runtime_error);
 }
+
+// ── hash_chunks_parallel ─────────────────────────────────────────────────────
+
+// a list in any order, with a repeat and the short last chunk: each listed chunk's hash, in list order
+TEST(ParallelHash, ListedChunksInListedOrder) {
+    auto f = make_tempfile();
+    const uint32_t full_chunks = 40;
+    auto serial = fill_and_hash_serial(f, full_chunks);
+    const std::vector<uint8_t> tail(12345, 0x5a); // a short 41st chunk
+    ::pwrite(f.fd, tail.data(), tail.size(), static_cast<off_t>(static_cast<uint64_t>(full_chunks) * CHUNK_SIZE));
+    serial.push_back(sha256_buf(tail.data(), tail.size()));
+    const uint64_t file_size = static_cast<uint64_t>(full_chunks) * CHUNK_SIZE + tail.size();
+
+    const std::vector<uint32_t> listed = {40, 0, 5, 39, 5, 17, 18, 19, 20, 21, 22,
+                                          23, 24, 25, 26, 27, 28, 29, 30, 31, 1};
+    const auto hashes = hash_chunks_parallel(f.fd, file_size, listed);
+    ASSERT_EQ(hashes.size(), listed.size());
+    for (size_t k = 0; k < listed.size(); ++k) {
+        EXPECT_EQ(hashes[k], serial[listed[k]]) << "position " << k << " chunk " << listed[k];
+    }
+}
+
+TEST(ParallelHash, NoListedChunksGivesNoHashes) {
+    auto f = make_tempfile();
+    EXPECT_TRUE(hash_chunks_parallel(f.fd, 0, {}).empty());
+}
+
+TEST(ParallelHash, ListedChunkPastTheEndThrows) {
+    auto f = make_tempfile();
+    fill_and_hash_serial(f, 2);
+    const std::vector<uint32_t> listed = {0, 2};
+    EXPECT_THROW(hash_chunks_parallel(f.fd, 2 * CHUNK_SIZE, listed), std::out_of_range);
+}

@@ -23,6 +23,7 @@
 #include <exception>
 #include <iostream>
 #include <mutex>
+#include <numeric>
 #include <span>
 #include <stdexcept>
 #include <string>
@@ -34,18 +35,23 @@
 
 namespace {
 
-// true when the bytes on disk for one chunk hash to the value the sender announced
-bool chunk_on_disk_matches(int fd, uint32_t chunk_index, uint64_t offset, uint64_t len,
-                           const std::array<uint8_t, HASH_SIZE>& expected) {
-    void* mapped = ::mmap(nullptr, len, PROT_READ, MAP_SHARED, fd, static_cast<off_t>(offset));
-    if (mapped == MAP_FAILED) {
-        throw std::runtime_error("run_pull: mmap for verify failed at chunk " +
-                                  std::to_string(chunk_index) +
-                                  " - " + std::strerror(errno));
+// the chunks among these whose bytes on disk do not hash to what the sender announced
+// hashed in rounds of one set of lanes per hash thread; with first_only the rounds after one that
+// found a mismatch are skipped, so a different file of the same size is not read to its end
+std::vector<uint32_t> mismatched_on_disk(int fd, const FileMeta& meta,
+                                         std::span<const uint32_t> chunk_indexes, bool first_only) {
+    const size_t round = static_cast<size_t>(sha256_lanes()) *
+                         std::max(1u, std::thread::hardware_concurrency());
+    std::vector<uint32_t> mismatched;
+    for (size_t first = 0; first < chunk_indexes.size(); first += round) {
+        const auto indexes = chunk_indexes.subspan(first, std::min(round, chunk_indexes.size() - first));
+        const auto digests = hash_chunks_parallel(fd, meta.file_size, indexes);
+        for (size_t k = 0; k < indexes.size(); ++k) {
+            if (digests[k] != meta.chunk_hashes[indexes[k]]) { mismatched.push_back(indexes[k]); }
+        }
+        if (first_only && !mismatched.empty()) { break; }
     }
-    const auto computed = sha256_buf(static_cast<const uint8_t*>(mapped), len);
-    ::munmap(mapped, static_cast<size_t>(len));
-    return computed == expected;
+    return mismatched;
 }
 
 // offset and length of chunk i; only the last chunk is short
@@ -244,11 +250,9 @@ bool already_complete(const std::string& out, const FileMeta& meta) {
     if (::fstat(fd.get(), &st) < 0 || static_cast<uint64_t>(st.st_size) != meta.file_size) {
         return false;
     }
-    for (uint32_t i = 0; i < meta.chunk_count; ++i) {
-        const auto [offset, len] = chunk_span(meta, i);
-        if (!chunk_on_disk_matches(fd.get(), i, offset, len, meta.chunk_hashes[i])) { return false; }
-    }
-    return true;
+    std::vector<uint32_t> every_chunk(meta.chunk_count);
+    std::iota(every_chunk.begin(), every_chunk.end(), 0u);
+    return mismatched_on_disk(fd.get(), meta, every_chunk, true).empty();
 }
 
 // create the output for a fresh pull: a name the sender chose never replaces an existing file
@@ -306,17 +310,14 @@ void run_pull(Transport& t, const std::string& output_path) {
 
     if (resuming) {
         // the bitmap is a hint: a chunk counts as received only if its bytes on disk hash right
-        uint32_t kept = 0;
+        std::vector<uint32_t> recorded;
         for (uint32_t i = 0; i < file_meta.chunk_count; ++i) {
-            if (cm.needs_chunk(i)) { continue; }
-            const auto [offset, len] = chunk_span(file_meta, i);
-            if (chunk_on_disk_matches(fd.get(), i, offset, len, file_meta.chunk_hashes[i])) {
-                ++kept;
-            } else {
-                cm.mark_todo(i);
-            }
+            if (!cm.needs_chunk(i)) { recorded.push_back(i); }
         }
-        std::cout << "[pull] resuming partial download - " << kept << " chunks verified on disk\n";
+        const std::vector<uint32_t> stale = mismatched_on_disk(fd.get(), file_meta, recorded, false);
+        for (const uint32_t i : stale) { cm.mark_todo(i); }
+        std::cout << "[pull] resuming partial download - " << recorded.size() - stale.size()
+                  << " chunks verified on disk\n";
     } else {
         // fresh: size the file now so every chunk has a place to land
         if (::ftruncate(fd.get(), static_cast<off_t>(file_meta.file_size)) < 0) {

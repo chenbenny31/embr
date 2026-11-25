@@ -1,0 +1,15 @@
+# Is the file end what limits a QUIC transfer? Source file on an NVMe disk (btrfs); output on tmpfs or on the same disk.
+# warm = the source is in the page cache; cold = its pages are dropped after the push has hashed it and is listening,
+# so the push reads it from the disk while sending. harness/disk.sh; HEAD 638191f + the resume-check change; 2026-11-24
+# loopback QUIC, defaults, kernel 7.3.3-300.fc45.x86_64, n=5, medians [min, max]; sender CPUs 6-9, receiver CPUs 2-5
+1 GiB warm source, tmpfs output    n=5 gbps=12.45 [11.93, 12.63] wall=0.69 push_cpu_per_gib=0.65 pull_cpu_per_gib=0.79 source_cached=100% failed=0
+1 GiB warm source, btrfs output    n=5 gbps=12.10 [11.61, 12.10] wall=0.71 push_cpu_per_gib=0.66 pull_cpu_per_gib=0.67 source_cached=100% failed=0
+1 GiB cold source, tmpfs output    n=5 gbps=11.61 [11.45, 11.61] wall=0.74 push_cpu_per_gib=0.63 pull_cpu_per_gib=0.88 source_cached=0% failed=0
+1 GiB cold source, btrfs output    n=5 gbps=11.61 [10.48, 12.45] wall=0.74 push_cpu_per_gib=0.66 pull_cpu_per_gib=0.77 source_cached=0% failed=0
+
+# 16 GiB: 1.5 GB/s for 11 s, more than the kernel lets stay dirty before it writes back (vm.dirty_background_ratio 10, vm.dirty_ratio 20, 60 GiB RAM).
+# The "warm" row is not: the kernel had dropped 69% of the source after the hash pass. The two tmpfs rows failed for want of
+# room on tmpfs ("cannot reserve disk space: Disk quota exceeded"), so there is no tmpfs figure at this size.
+# loopback QUIC, defaults, kernel 7.3.3-300.fc45.x86_64, n=3, medians [min, max]; sender CPUs 6-9, receiver CPUs 2-5
+16 GiB source 31% cached, btrfs out n=3 gbps=12.23 [10.78, 12.43] wall=11.24 push_cpu_per_gib=0.65 pull_cpu_per_gib=0.76 source_cached=31% failed=0
+16 GiB cold source, btrfs output   n=3 gbps=12.56 [12.51, 12.60] wall=10.94 push_cpu_per_gib=0.64 pull_cpu_per_gib=0.75 source_cached=0% failed=0

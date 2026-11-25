@@ -1,0 +1,32 @@
+# The receiving thread's profile (ordinary sampling, cpu/cycles/), one loopback 1 GiB QUIC transfer, defaults, output on tmpfs.
+# 81% of the pull process's samples are this thread, 19% the verifier thread (isa-l_crypto's lloop). harness/prof-pull.sh; 2026-11-23
+  6.32% _copy_to_iter
+  6.02% __memmove_avx512_unaligned_erms
+  5.71% AES_GCM_decrypt_update_avx512
+  4.24% _raw_spin_lock_irq
+  2.86% wc_AesGcmSetExtIV
+  2.77% wc_AesGcmDecryptUpdate
+  2.71% _raw_spin_lock
+  2.68% AES_GCM_ghash_block_avx512
+  2.26% L_AES_GCM_decrypt_update_avx512_no_ext
+  2.26% cap_vm_enough_memory
+  2.14% AES_GCM_init_avx512
+  2.11% L_AES_GCM_decrypt_update_avx512_no_windows
+  1.53% ngtcp2_ksl_range_exclusive_search
+  1.47% conn_recv_pkt
+  1.38% L_AES_GCM_decrypt_update_avx512_a_il_last
+  1.35% ngtcp2_gaptr_push
+  1.35% L_AES_ECB_encrypt_avx1_enc_16
+  1.32% L_AES_GCM_decrypt_update_avx512_win_loop
+  1.23% [unknown]
+  1.20% shmem_get_folio_gfp
+  1.08% wolfSSL_EVP_CipherUpdate
+  1.08% wolfSSL_EVP_CipherInit
+  1.05% clear_highpages_kasan_tagged
+  0.93% ngtcp2_range_intersect
+  0.90% L_AES_GCM_decrypt_update_avx512_l1_avx512_ctr16_last
+  0.87% asm_exc_page_fault
+  0.84% folio_add_file_rmap_ptes
+  0.78% zap_present_ptes.constprop.0
+  0.75% ngtcp2_get_pkt_num
+  0.75% arch_vma_access_permitted.part.0.isra.0

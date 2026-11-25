@@ -471,3 +471,50 @@ TEST(RunPull, ExplicitOutPathOverwrites) {
     EXPECT_EQ(pull_from_push(src.file.path, out.path), "");
     EXPECT_EQ(read_all(out.path), src.bytes);
 }
+
+// more recorded chunks than a set of lanes: the stale ones are found wherever they sit, the short
+// last chunk included
+TEST(RunPull, ResumeChecksManyRecordedChunksAndRefetchesTheStaleOnes) {
+    SourceFile src(40 * CHUNK_SIZE + 12345); // 41 chunks
+    auto out = make_tempfile();
+
+    // chunk 20 was never received; 3, 17 and the last one are recorded as received but hold zeros
+    std::vector<uint8_t> on_disk = src.bytes;
+    for (const size_t chunk : {3u, 17u, 20u, 40u}) {
+        const size_t begin = chunk * CHUNK_SIZE;
+        std::fill(on_disk.begin() + begin, on_disk.begin() + std::min(begin + CHUNK_SIZE, on_disk.size()), 0);
+    }
+    write_all(out.path, on_disk);
+    ChunkManager cm(41);
+    for (uint32_t i = 0; i < 41; ++i) {
+        if (i != 20) { cm.mark_done(i); }
+    }
+    PartialFile::save(out.path, sha256_buf(src.bytes.data(), CHUNK_SIZE), cm);
+
+    testing::internal::CaptureStdout();
+    const std::string err = pull_from_push(src.file.path, out.path);
+    const std::string log = testing::internal::GetCapturedStdout();
+
+    EXPECT_EQ(err, "");
+    EXPECT_NE(log.find("resuming partial download - 37 chunks verified on disk"), std::string::npos) << log;
+    EXPECT_NE(log.find("requesting 4/41 chunks"), std::string::npos) << log;
+    EXPECT_EQ(read_all(out.path), src.bytes);
+}
+
+// the right size is not enough: one wrong byte far into the file and it is fetched again
+TEST(RunPull, SameSizeFileWithOneWrongByteIsNotAlreadyComplete) {
+    SourceFile src(40 * CHUNK_SIZE + 12345);
+    auto out = make_tempfile();
+    std::vector<uint8_t> other = src.bytes;
+    other[37 * CHUNK_SIZE + 5] ^= 0xff;
+    write_all(out.path, other);
+
+    testing::internal::CaptureStdout();
+    const std::string err = pull_from_push(src.file.path, out.path);
+    const std::string log = testing::internal::GetCapturedStdout();
+
+    EXPECT_EQ(err, "");
+    EXPECT_EQ(log.find("already complete"), std::string::npos) << log;
+    EXPECT_NE(log.find("requesting 41/41 chunks"), std::string::npos) << log;
+    EXPECT_EQ(read_all(out.path), src.bytes);
+}

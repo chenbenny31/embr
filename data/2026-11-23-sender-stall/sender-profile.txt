@@ -1,0 +1,87 @@
+# The sender's profile under two sampling events, one loopback 1 GiB QUIC transfer each, both ends at defaults (638191f).
+# cpu/cycles/P is what perf picks by default: on this CPU (Ryzen 9 9900X) it tags an op at dispatch, so the time a stalled
+# pipeline loses lands on code issued after the stall. cpu/cycles/ interrupts at retirement and lands next to the cause.
+# harness/prof.sh; kernel 7.3.3-300.fc45.x86_64; 2026-11-23
+
+== precise (cpu/cycles/P), self time by symbol
+    14.48%  [.] wolfSSL_EVP_CipherInit
+     8.23%  [k] clear_highpages_kasan_tagged
+     7.21%  [.] AES_GCM_encrypt_update_avx512
+     3.87%  [.] conn_write_pkt
+     2.94%  [k] __css_rstat_updated
+     2.33%  [.] wc_AesGcmEncryptUpdate
+     2.32%  [.] __memmove_avx512_unaligned_erms
+     1.72%  [k] __mod_memcg_lruvec_state
+     1.68%  [.] ngtcp2_conn_write_vmsg
+     1.66%  [.] wc_AesGcmInit
+     1.52%  [k] _copy_from_iter
+     1.44%  [.] L_AES_GCM_encrypt_update_avx512_last_win
+     1.41%  [.] ngtcp2_ksl_insert
+     1.27%  [.] ngtcp2_ksl_int64_greater_search
+     1.26%  [.] L_AES_GCM_encrypt_update_avx512_a_il_last
+     1.06%  [.] ngtcp2_ppe_final
+
+== ordinary (cpu/cycles/), self time by symbol
+    13.09%  [.] wc_AesGcmSetExtIV
+     9.96%  [.] __memmove_avx512_unaligned_erms
+     7.88%  [k] clear_highpages_kasan_tagged
+     5.78%  [.] AES_GCM_encrypt_update_avx512
+     3.92%  [k] next_uptodate_folio
+     3.67%  [.] AES_GCM_ghash_block_avx512
+     3.19%  [.] ngtcp2_conn_write_vmsg
+     2.63%  [k] _copy_from_iter
+     2.11%  [k] zap_present_ptes.constprop.0
+     2.05%  [.] AES_GCM_init_avx512
+     1.73%  [.] conn_write_pkt
+     1.47%  [.] wolfSSL_EVP_CipherInit
+     1.47%  [.] wc_AesGcmEncryptUpdate
+     1.24%  [.] ngtcp2_rtb_recv_ack
+     1.20%  [.] 0x0000000000000a8c
+     1.02%  [.] L_AES_GCM_encrypt_update_avx512_win_loop
+
+== ordinary sampling: where in wc_AesGcmSetExtIV (percent of the function's samples)
+0.00 :   37cc0:        jmp     0x37b81 <wc_AesGcmSetExtIV+0x61>
+0.00 :   37cc5:        nopl    (%rax)
+0.00 :   37cc8:        movq    (%rsi), %rax
+98.60 :   37ccb:        movq    %rax, 0x100(%rdi)
+0.00 :   37cd2:        movl    %edx, %eax
+0.00 :   37cd4:        movq    -0x8(%rsi,%rax), %rcx
+0.00 :   37cd9:        movq    %rcx, 0xf8(%rdi,%rax)
+# the two loads are the 12-byte nonce read as bytes 0-7 and 4-11. ngtcp2 1.26.0 (lib/ngtcp2_crypto.c, ngtcp2_crypto_create_nonce)
+# has just written it as a 12-byte copy followed by an 8-byte store over bytes 4-11, so the first load needs bytes from two
+# stores, cannot be forwarded, and waits until every earlier store has left the store buffer: the copy of the packet's
+# payload out of the file mapping is among them, and that copy waits for the file's bytes to come from memory.
+
+== precise sampling: where in wolfSSL_EVP_CipherInit (the same lost time, charged a few hundred ops later)
+8.08 :   196ff6:        movl    0x4c4(%rbx), %eax
+21.57 :   196ffc:        movl    $0x10, 0x4(%rbx)
+24.50 :   197003:        movq    $0x0, 0x4d8(%rbx)
+8.42 :   19700e:        movl    $0x0, 0x4e0(%rbx)
+
+== ordinary sampling, second pair of runs: without and with the next packet's source bytes prefetched
+-- without: Event count (approx.): 3718843460
+    10.52%  [.] wc_AesGcmSetExtIV
+     8.96%  [.] __memmove_avx512_unaligned_erms
+     6.42%  [k] clear_highpages_kasan_tagged
+     6.37%  [.] AES_GCM_encrypt_update_avx512
+     5.12%  [k] next_uptodate_folio
+     3.36%  [.] ngtcp2_conn_write_vmsg
+     3.06%  [.] AES_GCM_ghash_block_avx512
+     2.30%  [.] conn_write_pkt
+     2.29%  [k] _copy_from_iter
+     1.87%  [.] wolfSSL_EVP_CipherInit
+     1.66%  [.] wc_AesGcmEncryptUpdate
+     1.62%  [.] L_AES_GCM_encrypt_update_avx512_a_il_last
+-- prefetch 4096 bytes ahead: Event count (approx.): 3373399323
+     8.34%  [.] __memmove_avx512_unaligned_erms
+     8.29%  [.] AES_GCM_encrypt_update_avx512
+     5.37%  [k] clear_highpages_kasan_tagged
+     5.23%  [k] next_uptodate_folio
+     5.03%  [.] wc_AesGcmSetExtIV
+     4.59%  [.] ngtcp2_conn_write_vmsg
+     4.04%  [.] AES_GCM_ghash_block_avx512
+     2.35%  [.] conn_write_pkt
+     1.94%  [.] 0x0000000000000a8c
+     1.61%  [.] AES_GCM_init_avx512
+     1.58%  [k] _copy_from_iter
+     1.58%  [.] L_AES_GCM_encrypt_update_avx512_a_il_last

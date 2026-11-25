@@ -1,0 +1,24 @@
+# Source prefetch and a populated mapping on the sender, loopback, 1 GiB, QUIC. Experiment switches of harness/experiment.patch on 638191f.
+# push_cpu is user+sys of the whole push process (its file hashes were cached, so it is the transfer).
+
+## first pass, n=5
+# loopback, 1073741824 bytes, receiver CPUs 2-5, sender CPUs 6-9, kernel 7.3.3-300.fc45.x86_64, n=5, medians
+defaults                     n=5 gbps=12.10 [11.77, 12.45] packets_per_send=39.6 sends=21070 push_cpu=0.65 (sys 0.20) push_cpu_of_wall=92% pull_cpu=0.84 waits=0 copied=3 failed=0
+prefetch 2700 B ahead        n=5 gbps=11.77 [11.61, 11.93] packets_per_send=35.9 sends=23151 push_cpu=0.60 (sys 0.22) push_cpu_of_wall=82% pull_cpu=0.86 waits=0 copied=3 failed=0
+prefetch 4096 B ahead        n=5 gbps=11.77 [11.61, 11.77] packets_per_send=36.1 sends=23170 push_cpu=0.60 (sys 0.18) push_cpu_of_wall=82% pull_cpu=0.87 waits=0 copied=3 failed=0
+prefetch 8192 B ahead        n=5 gbps=11.77 [11.45, 11.93] packets_per_send=36.5 sends=22878 push_cpu=0.62 (sys 0.21) push_cpu_of_wall=85% pull_cpu=0.86 waits=0 copied=3 failed=0
+prefetch 32768 B ahead       n=5 gbps=11.93 [11.77, 12.27] packets_per_send=37.9 sends=21959 push_cpu=0.66 (sys 0.21) push_cpu_of_wall=92% pull_cpu=0.86 waits=0 copied=3 failed=0
+map populated                n=5 gbps=12.10 [11.77, 12.27] packets_per_send=39.2 sends=21256 push_cpu=0.65 (sys 0.20) push_cpu_of_wall=92% pull_cpu=0.85 waits=0 copied=3 failed=0
+populated + prefetch 8192    n=5 gbps=11.61 [11.61, 11.93] packets_per_send=36.4 sends=22920 push_cpu=0.59 (sys 0.21) push_cpu_of_wall=80% pull_cpu=0.87 waits=0 copied=3 failed=0
+
+## second pass, n=10
+# loopback, 1073741824 bytes, receiver CPUs 2-5, sender CPUs 6-9, kernel 7.3.3-300.fc45.x86_64, n=10, medians
+defaults                     n=10 gbps=12.10 [11.61, 12.45] packets_per_send=39.5 sends=21062 push_cpu=0.66 (sys 0.20) push_cpu_of_wall=92% pull_cpu=0.85 waits=0 copied=3 failed=0
+prefetch 1350 B ahead        n=10 gbps=11.77 [11.45, 11.93] packets_per_send=36.0 sends=23198 push_cpu=0.60 (sys 0.21) push_cpu_of_wall=82% pull_cpu=0.87 waits=0 copied=3 failed=0
+prefetch 2700 B ahead        n=10 gbps=11.77 [11.77, 11.93] packets_per_send=36.2 sends=23032 push_cpu=0.60 (sys 0.21) push_cpu_of_wall=82% pull_cpu=0.87 waits=0 copied=3 failed=0
+prefetch 4096 B ahead        n=10 gbps=11.77 [11.77, 11.93] packets_per_send=36.3 sends=23029 push_cpu=0.61 (sys 0.21) push_cpu_of_wall=84% pull_cpu=0.87 waits=0 copied=3 failed=0
+
+## sender confined to one CPU, n=8
+# loopback, 1073741824 bytes, receiver CPUs 2-5, sender CPUs 6, kernel 7.3.3-300.fc45.x86_64, n=8, medians
+defaults, sender on one CPU  n=8 gbps=11.93 [7.67, 12.45] packets_per_send=39.8 sends=20936 push_cpu=0.66 (sys 0.21) push_cpu_of_wall=92% pull_cpu=0.86 waits=0 copied=3 failed=0
+prefetch 2700, sender on one CPU n=8 gbps=11.30 [8.10, 11.93] packets_per_send=36.9 sends=22608 push_cpu=0.64 (sys 0.22) push_cpu_of_wall=84% pull_cpu=0.91 waits=0 copied=3 failed=0

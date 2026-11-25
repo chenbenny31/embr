@@ -1,0 +1,8 @@
+# checks on the resume-path change; 2026-11-25T04:22:36Z
+asan build exit 0
+asan [default] exit 0 [  PASSED  ] 120 tests.  reports=0
+asan [EMBR_HASH_LANES=1] exit 0 [  PASSED  ] 120 tests.  reports=0
+gate [default]: 96 runs, 0 failed
+gate [EMBR_HASH_LANES=1]: 96 runs, 0 failed
+gate [default]: 96 runs, 0 failed
+# done 2026-11-25T04:26:59Z

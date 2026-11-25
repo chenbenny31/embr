@@ -1,0 +1,7 @@
+# What would more than one connection give? k independent transfers of the same 1 GiB file at once, each push on its own CPU,
+# each pull on its own two CPUs. Nothing is shared but the source file's pages and the loopback device, so this is the most
+# k connections of one transfer could reach. harness/pairs.sh; 2026-11-24
+# loopback QUIC, defaults, 1073741824 bytes per transfer, kernel 7.3.3-300.fc45.x86_64, n=5, medians [min, max]
+1 at once   n=5 total_gbps=11.90 [11.60, 12.03] wall=0.72 failed_rounds=0
+2 at once   n=5 total_gbps=22.44 [22.28, 22.60] wall=0.77 failed_rounds=0
+4 at once   n=5 total_gbps=38.59 [37.94, 39.18] wall=0.89 failed_rounds=0

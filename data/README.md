@@ -25,6 +25,9 @@ wolfSSL 5.9.2, ngtcp2 1.26.0.
 
 | Directory | What | Backs | Command |
 |---|---|---|---|
+| `2026-11-24-file-io-and-connections/` | Whether the file end limits a QUIC transfer, asked before building an io_uring read-ahead / write-behind pipeline: source warm and cold, output on tmpfs and on an NVMe disk, 1 GiB (n = 5) and 16 GiB (n = 3) (`disk.txt`); and 1, 2 and 4 independent transfers at once as the most that more than one connection could give (`connections.txt`). Loopback, defaults | "Reading ahead and writing behind: the kernel already does both" below | `SCRATCH=<dir> bash harness/disk.sh 5 "label\|source\|output\|cold" ...`; `SCRATCH=<dir> FILE=<1 GiB file> bash harness/pairs.sh 5 1 2 4` |
+| `2026-11-24-resume-check/` | How long a pull takes to find that the output is already complete, or to check a partial download before resuming it: one chunk at a time on one thread against sets of lanes on several threads (`check-times.txt`; 1 GiB, 1 GiB on two CPUs, 4 GiB; with and without SHA extensions). `638191f` against the tree with the change | section below | `harness/checkbench.sh` |
+| `2026-11-23-sender-stall/` | What `wolfSSL_EVP_CipherInit` at 14% of the sender really is: the sender profiled with precise and with ordinary cycle sampling (`sender-profile.txt`), the next packet's source bytes prefetched and the file mapping populated (`prefetch.txt`), and the receiving thread's profile (`receiver-thread-profile.txt`). `638191f` plus `harness/experiment.patch` | section below | `harness/prof.sh`, `harness/prof-pull.sh`, `harness/capbench.sh` |
 | `2026-11-23-defaults-only/` | Both ends with no `EMBR_*` variable set: `2c2b26d` against the tree where the connection chooses `SEND_ZC` or `sendmsg` itself and a send holds 48 packets. Delayed-path sweep (`delayed-path-first-version.txt`, `delayed-path-final.txt`), loopback (`loopback.txt`), and how long the probe may be: 16 sends against 3 (`probe-length.txt`) | section below | `harness/defsweep.sh`, `harness/vethdef.sh`, `harness/capbench.sh`, `harness/checks.sh` |
 | `2026-11-23-short-sends-and-window/` | Short sends copied instead of queued for `SEND_ZC`, a 16 MiB flow-control window, the slot count following the batch size: the delayed-path sweep before and after (`rtt-sweep.txt`), loopback (`loopback.txt`), and the default socket-buffer ceiling measured again (`sockbuf-default-ceiling.txt`, which does not repeat the day before). `2c2b26d` against the tree with the change | section below | `harness/rttsweep.sh`, `harness/capbench.sh`, `harness/gate.sh` |
 | `2026-11-23-packets-per-send/` | 16, 32 and 48 packets per send against the egress path, with the receiver that verifies on its own thread. Loopback transfers (1 GiB, n = 5, `loopback-cap.txt`), the veth 11 ms path and a shallow 100 Mbit/s queue (`veth-cap.txt`), and a profile of the sender that splits the send call into getting and zeroing pages, the copy and the rest (`sender-profile.txt`). `2c2b26d` plus the `EMBR_QUIC_GSO_SEGS` switch of `2026-11-18-gso-cap-and-slots/harness/experiment-switches.patch` | section below | `harness/capbench.sh`, `harness/sendprofile.sh` |
@@ -194,6 +197,111 @@ binary and script a few hours later dropped packets at the receive buffer in eve
 525-1,432 Mbit/s (`2026-11-23-short-sends-and-window/sockbuf-default-ceiling.txt`). Read those
 two rows as "between 2,000 and a third of it", not as "under 1%".
 
+## Reading ahead and writing behind: the kernel already does both (2026-11-24)
+
+Question: would an io_uring pipeline (the sender reads batch n + 1 from the file while it sends batch n, the
+receiver takes batch n + 1 off the socket while batch n is written) make a QUIC transfer faster? Measured
+before building it, with the tree as it is (file mapped on both ends, one thread per connection).
+
+| Loopback, defaults | Gbit/s |
+|---|---|
+| 1 GiB, source in the page cache, output on tmpfs | 12.45 |
+| 1 GiB, source in the page cache, output on the NVMe disk (btrfs) | 12.10 |
+| 1 GiB, source read from the disk while sending | 11.61 |
+| 16 GiB, source read from the disk while sending, output on the disk | 12.56 [12.51, 12.60] |
+
+The file end does not limit the transfer: the kernel's read-ahead stays in front of the sender as it walks
+the mapping, and its writeback follows the receiver, with both ends on a disk and 16 GiB going through. What
+the receiving thread spends on the file is the copy into the mapping (6%) and the page faults behind it
+(about 8% in the profile of 2026-11-23; preparing the pages ahead recovered at most 5%, 2026-11-22). A disk
+slower than the path would limit the transfer whichever way it is written. Not measured: such a disk, where
+writing through a mapping makes the receiving thread wait inside a page fault instead of holding the sender
+back through flow control.
+
+What limits it is one thread per end doing the cipher, ngtcp2 and the UDP stack for every packet. Several
+independent transfers at once, each on its own CPUs:
+
+| At once | Total Gbit/s | Against one |
+|---|---|---|
+| 1 | 11.90 | |
+| 2 | 22.44 | 1.89× |
+| 4 | 38.59 | 3.24× |
+
+That is the most that k connections for one transfer could reach on this machine. On the AWS path of
+2026-11-22 the ceiling of 2.1–2.2 Gbit/s was per flow (two plaintext streams carried twice as much), so a
+second connection is also the only way past it there; the two vCPUs of a c5n.large are one core's two
+threads, which is why two embr transfers gained only 19% on that instance.
+
+## The checks before a transfer hash side by side too (2026-11-24)
+
+A pull that finds its output already there hashes every chunk to decide whether it is complete,
+and a resumed pull hashes every chunk its bitmap records before trusting it. Both did that one
+chunk at a time on one thread with OpenSSL, while received chunks have been hashed side by side
+since `2c2b26d`. The change gives both the sender's parallel hash (`hash_chunks_parallel`, a
+list of chunks instead of all of them), in rounds of one set of lanes per thread so that a
+different file of the same size is given up after the first round.
+
+Wall time of the whole pull, TCP on loopback, files in memory (`check-times.txt`; the resume case
+has every chunk but the last recorded, and its times are the same within 0.02 s):
+
+| Already complete | Before | After |
+|---|---|---|
+| 1 GiB | 0.47 s | 0.05 s |
+| 1 GiB, no SHA extensions | 1.16 s | 0.05 s |
+| 1 GiB, pull on one core's two threads | 0.47 s | 0.13 s |
+| 1 GiB, the same, no SHA extensions | 1.16 s | 0.13 s |
+| 4 GiB | 1.82 s | 0.17 s |
+| 4 GiB, no SHA extensions | 4.55 s | 0.17 s |
+
+CPU time does not fall on the 24-thread desktop (0.46 to 0.48 s for 1 GiB: 24 threads on 12 cores
+share memory and AVX-512 units); on two threads it falls from 1.15 to 0.23 s.
+
+Checks on the changed tree (`checks.txt`): 120 tests, also with `EMBR_HASH_LANES=1`; ASan and UBSan
+clean in both; 12 rounds of 8 concurrent runs of the pull, hash and partial-file tests in both,
+and of the QUIC suite, 96 of 96 each.
+
+## The sender's 14% in `wolfSSL_EVP_CipherInit` is time spent waiting for the file (2026-11-23)
+
+`perf record` picks `cycles:P` by default. On this CPU that event tags an op when it is
+dispatched, so the time a stalled pipeline loses is charged to code issued after the stall. With
+it the sender shows 14.5% of its cycles on four stores at the top of `wolfSSL_EVP_CipherInit`.
+With ordinary sampling (`cpu/cycles/`, taken at retirement) that function is 1.5%, and the time
+is on one instruction of `wc_AesGcmSetExtIV`, the first load of the packet's 12-byte nonce
+(`sender-profile.txt`):
+
+| Sender, ordinary sampling | Share of cycles |
+|---|---|
+| `wc_AesGcmSetExtIV`, one load | 10.5-13.1% |
+| `memmove`, the payload from the file mapping into the packet | 9.0-10.0% |
+| AES-GCM (encrypt, GHASH, init) | about 15% |
+| Kernel zeroing pages for the send | 6.4-7.9% |
+| Kernel mapping the file's pages (`next_uptodate_folio`, `zap_present_ptes`) | 5-6% |
+
+ngtcp2 writes the nonce as a 12-byte copy and then an 8-byte store over its last 8 bytes; wolfSSL
+reads it back as bytes 0-7 and 4-11. The first of those loads needs bytes from two stores, so
+the CPU cannot hand it the value from the store buffer and it waits until every earlier store
+has been written to the cache. The copy of the packet's payload is among those stores, and it
+waits for the file's bytes to arrive from memory: the file is read 1,300 bytes at a time, and
+the hardware prefetcher starts over at every 4 KiB page. So the load is where the wait for the
+file shows, and neither library is slow in itself.
+
+Prefetching the bytes of the next packet in `write_stream()` (`prefetch.txt`, n = 10):
+
+| | Sender CPU, s per GiB | Gbit/s | Packets per send |
+|---|---|---|---|
+| As committed | 0.66 | 12.10 (11.61-12.45) | 39.5 |
+| Prefetch 1,350-2,700 bytes ahead | 0.60 | 11.77 (11.45-11.93) | 36.0-36.2 |
+
+The stall halves (10.5% of 3.72e9 cycles to 5.0% of 3.37e9) and the sender needs 9% less CPU,
+but the transfer does not get faster: the receiving thread is the limit (about 99% of one CPU,
+the sender 92% before and 82% after), and a sender that finishes its bursts sooner sends
+smaller ones, which costs the receiver more reads. Prefetching 32 KiB ahead gains nothing, and
+`MAP_POPULATE` on the mapping changes nothing (0.65 s, 12.10 Gbit/s). Not applied.
+
+The receiving thread has no such single cost (`receiver-thread-profile.txt`): AES-GCM about 20%,
+the kernel's copy out of the socket 6%, the copy into the output mapping 6%, spinlocks 7%, and
+a long tail. Its output was on tmpfs here.
+
 ## Nothing set on either end: the connection chooses its egress (2026-11-23)
 
 The version of the change that followed the section below, the same day. Three differences from it:
@@ -325,7 +433,9 @@ there the device frees each page at once and the next send gets it back warm. It
 on one machine: loopback and veth hand the packet to a local socket and the kernel copies it
 first (`skb_copy_ubufs`, 17% of the sender in the `zc16` profile).
 
-Not looked into: `wolfSSL_EVP_CipherInit` is the largest single symbol of the sender (14% self).
+Looked into the same day: `wolfSSL_EVP_CipherInit` as the largest single symbol of the sender (14% self) is an effect
+of the sampling event, see the section on it above. The page-zeroing and copy rows of this profile were taken
+with the same event and may be shifted too; with ordinary sampling the zeroing is 6.4-7.9%.
 
 ## `SEND_ZC` against `sendmsg` at the default settings (2026-11-17)
 

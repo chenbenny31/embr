@@ -1,0 +1,37 @@
+# How long a pull takes to find that it has nothing, or one chunk, to fetch: 638191f (before) against the tree where both checks
+# hash on several threads, a set of lanes at a time (after). no-sha-ext: OPENSSL_ia32cap=:~0x20000000 on the pull, which hides the
+# CPU's SHA extensions from OpenSSL (the one-by-one path), as on a CPU without them. harness/checkbench.sh
+
+## 1 GiB
+# f1g.bin: 1073741824 bytes, 1024 chunks; kernel 7.3.3-300.fc45.x86_64; 24 CPUs; n=5; 2026-11-24T07:24:01Z
+complete  before                 wall=0.47s cpu=0.46s  already complete;
+complete  after                  wall=0.05s cpu=0.48s  already complete;
+complete  before-no-sha-ext      wall=1.16s cpu=1.15s  already complete;
+complete  after-no-sha-ext       wall=0.05s cpu=0.48s  already complete;
+resume    before                 wall=0.47s cpu=0.46s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+resume    after                  wall=0.05s cpu=0.49s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+resume    before-no-sha-ext      wall=1.16s cpu=1.15s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+resume    after-no-sha-ext       wall=0.05s cpu=0.49s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+# output intact after the last run
+
+## 1 GiB, pull on one core's two threads (the c5n.large stand-in)
+# f1g.bin: 1073741824 bytes, 1024 chunks; kernel 7.3.3-300.fc45.x86_64; 24 CPUs; pull on CPUs 2,14; n=5; 2026-11-24T07:35:40Z
+complete  before-no-sha-ext      wall=1.16s cpu=1.15s  already complete;
+complete  after-no-sha-ext       wall=0.13s cpu=0.23s  already complete;
+complete  before                 wall=0.47s cpu=0.46s  already complete;
+complete  after                  wall=0.13s cpu=0.24s  already complete;
+resume    before-no-sha-ext      wall=1.16s cpu=1.15s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+resume    after-no-sha-ext       wall=0.14s cpu=0.23s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+resume    before                 wall=0.49s cpu=0.48s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+resume    after                  wall=0.14s cpu=0.24s  resuming partial download - 1023 chunks verified on disk;requesting 1/1024 chunks;
+# output intact after the last run
+
+## 4 GiB
+# f4g.bin: 4294967296 bytes, 4096 chunks; kernel 7.3.3-300.fc45.x86_64; 24 CPUs; pull on CPUs all; n=3; 2026-11-25T04:20:41Z
+complete  before                 wall=1.82s cpu=1.81s  already complete;
+complete  after                  wall=0.17s cpu=2.02s  already complete;
+complete  before-no-sha-ext      wall=4.55s cpu=4.53s  already complete;
+resume    before                 wall=1.80s cpu=1.79s  resuming partial download - 4095 chunks verified on disk;requesting 1/4096 chunks;
+resume    after                  wall=0.17s cpu=2.02s  resuming partial download - 4095 chunks verified on disk;requesting 1/4096 chunks;
+resume    before-no-sha-ext      wall=4.55s cpu=4.51s  resuming partial download - 4095 chunks verified on disk;requesting 1/4096 chunks;
+# output intact after the last run

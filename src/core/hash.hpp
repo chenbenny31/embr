@@ -48,9 +48,14 @@ void hash_cache_save(const std::string& file_path,
                      uint32_t chunk_count,
                      const std::vector<std::array<uint8_t, HASH_SIZE>>& chunk_hashes);
 
-// Compute SHA256 for chunks in parallel, return hashes in chunk order
-// mmap the entire file once, min(hardware_concurrency, chunk_count) jthread workers
-// with alignas(64) atomic counter
+// SHA256 of the listed chunks of a file, digests in the order listed
+// mmap the entire file once; jthread workers take a set of lanes at a time off an
+// alignas(64) atomic counter, min(hardware_concurrency, sets) of them
+std::vector<std::array<uint8_t, HASH_SIZE>> hash_chunks_parallel(int file_fd,
+                                                                 uint64_t file_size,
+                                                                 std::span<const uint32_t> chunk_indexes);
+
+// hash_chunks_parallel over every chunk, in chunk order
 std::vector<std::array<uint8_t, HASH_SIZE>> hash_compute_parallel(int file_fd,
                                                                   uint64_t file_size,
                                                                   uint32_t chunk_count);

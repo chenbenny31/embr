@@ -1,0 +1,30 @@
+--- a/src/transport/quic_transport.cpp
++++ b/src/transport/quic_transport.cpp
+@@ -195,8 +195,13 @@
+     const size_t delta = static_cast<size_t>(offset - base_off);
+     const size_t map_len = len + delta;
+ 
+-    void* map = ::mmap(nullptr, map_len, PROT_READ, MAP_PRIVATE,
++    static const bool populate = std::getenv("EMBR_EXPERIMENT_POPULATE") != nullptr;
++    void* map = ::mmap(nullptr, map_len, PROT_READ, MAP_PRIVATE | (populate ? MAP_POPULATE : 0),
+                        file_fd, static_cast<off_t>(base_off));
++    static const char* advice = std::getenv("EMBR_EXPERIMENT_MADVISE");
++    if (map != MAP_FAILED && advice) {
++        ::madvise(map, map_len, std::strcmp(advice, "seq") == 0 ? MADV_SEQUENTIAL : MADV_WILLNEED);
++    }
+     if (map == MAP_FAILED) {
+         throw std::runtime_error(
+             std::string("QuicTransport::send_file: mmap failed: ") + std::strerror(errno));
+@@ -338,6 +343,12 @@
+         if (wdatalen > 0) {
+             accepted += static_cast<ssize_t>(wdatalen);
+             stream_offset_ += static_cast<uint64_t>(wdatalen);
++            static const size_t ahead = [] { const char* n = std::getenv("EMBR_EXPERIMENT_PREFETCH"); return n ? static_cast<size_t>(std::atol(n)) : 0; }();
++            if (ahead > 0 && accepted + ahead < len) {
++                const uint8_t* p = base + accepted + ahead;
++                const uint8_t* end = std::min(p + QUIC_MAX_PKTLEN, base + len);
++                for (; p < end; p += 64) { __builtin_prefetch(p); }
++            }
+         }
+ 
+         const SendResult sr = send_packet(static_cast<size_t>(nwrite));
